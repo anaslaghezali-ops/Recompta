@@ -263,6 +263,7 @@ function engineLabel(engine) {
   if (engine === "ai") return "IA";
   if (engine === "tesseract") return "OCR";
   if (engine === "text") return "PDF";
+  if (engine === "manual") return "Manuel";
   return "";
 }
 

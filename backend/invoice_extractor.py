@@ -35,6 +35,8 @@ def _parse_amount(raw: str) -> float | None:
     cleaned = raw.replace("\u00a0", "").replace(" ", "").strip()
     if not cleaned or cleaned in {"-", "--"}:
         return None
+    negative = cleaned.startswith("-") or cleaned.startswith("(")
+    cleaned = cleaned.lstrip("-(").rstrip(")")
     if "," in cleaned and "." in cleaned:
         if cleaned.rfind(",") > cleaned.rfind("."):
             cleaned = cleaned.replace(".", "").replace(",", ".")
@@ -43,9 +45,16 @@ def _parse_amount(raw: str) -> float | None:
     else:
         cleaned = cleaned.replace(",", ".")
     try:
-        return float(cleaned)
+        value = float(cleaned)
+        return -abs(value) if negative else value
     except ValueError:
         return None
+
+
+def _positive_amount(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return abs(value)
 
 
 def _parse_date(raw: str) -> date | None:
@@ -76,15 +85,26 @@ def extract_text_from_pdf(content: bytes) -> str:
     return "\n".join(chunks)
 
 
-def pdf_first_page_to_png(content: bytes, dpi: int = 200) -> bytes:
+KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {
+    "000229475000050": ("ACHIBEST", "1102277"),
+    "000161664000072": ("MOSE Food", "14427958"),
+}
+
+
+def pdf_to_png_pages(content: bytes, max_pages: int = 3, dpi: int = 200) -> list[bytes]:
     import pymupdf
 
     doc = pymupdf.open(stream=content, filetype="pdf")
-    if doc.page_count == 0:
-        return b""
-    page = doc[0]
-    pix = page.get_pixmap(dpi=dpi)
-    return pix.tobytes("png")
+    pages: list[bytes] = []
+    for index in range(min(doc.page_count, max_pages)):
+        pix = doc[index].get_pixmap(dpi=dpi)
+        pages.append(pix.tobytes("png"))
+    return pages
+
+
+def pdf_first_page_to_png(content: bytes, dpi: int = 200) -> bytes:
+    pages = pdf_to_png_pages(content, max_pages=1, dpi=dpi)
+    return pages[0] if pages else b""
 
 
 def ocr_image_bytes(content: bytes, lang: str = "fra+eng") -> str:
@@ -140,7 +160,52 @@ def _extract_amounts(text: str) -> tuple[float | None, float | None, float | Non
     if ttc is None and ht is not None and tva is not None:
         ttc = round(ht + tva, 2)
 
+    ht, tva, ttc = (_positive_amount(v) for v in (ht, tva, ttc))
     return ht, tva, ttc
+
+
+def _extract_avoir_totals(text: str) -> tuple[float | None, float | None, float | None]:
+    if not re.search(r"\bAVOIR\b", text, re.I):
+        return None, None, None
+
+    ventilation = re.search(
+        r"Taux\s+Base\s+HT\s+Montant\s+TVA\s+.*?(-?[\d .,\u00a0]+)\s*(-?[\d .,\u00a0]+)\s+(\d+[,.]\d+)",
+        text,
+        re.I | re.S,
+    )
+    if ventilation:
+        tva = _positive_amount(_parse_amount(ventilation.group(1)))
+        ht = _positive_amount(_parse_amount(ventilation.group(2)))
+        if ht and tva:
+            return ht, tva, round(ht + tva, 2)
+
+    block = re.search(r"Net\s+à\s+payer\s*(.*?)(?:ARRETEE|$)", text, re.I | re.S)
+    if block:
+        amounts: list[float] = []
+        for match in re.finditer(r"(-?[\d]{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)\s*(?:DH)?", block.group(1)):
+            value = _positive_amount(_parse_amount(match.group(1)))
+            if value and value > 0:
+                amounts.append(value)
+        unique = sorted(set(amounts))
+        if len(unique) >= 3:
+            tva, ht, ttc = unique[0], unique[1], unique[2]
+            return ht, tva, ttc
+
+    return None, None, None
+
+
+def _resolve_supplier_from_ice(text: str, supplier: str, ice: str) -> tuple[str, str]:
+    if_fiscal = _extract_supplier_if(text)
+    if ice in KNOWN_ICE_SUPPLIERS:
+        known_name, known_if = KNOWN_ICE_SUPPLIERS[ice]
+        return known_name, known_if or if_fiscal
+    return supplier, if_fiscal
+
+
+def _needs_ai_upgrade(result: ExtractionResult) -> bool:
+    if not result.lines:
+        return True
+    return all(line.m_ht <= 0 and line.m_ttc <= 0 for line in result.lines)
 
 
 def _guess_taux(ht: float | None, tva: float | None) -> float:
@@ -321,6 +386,7 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
     if_fiscal = _extract_supplier_if(text)
     fact_num = _extract_invoice_number(text, filename)
     supplier = _extract_supplier_name(text)
+    supplier, if_fiscal = _resolve_supplier_from_ice(text, supplier, ice_match)
 
     date_candidates = []
     for pattern in MOROCCAN_DATE_PATTERNS:
@@ -395,7 +461,14 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
             tva = tva or tva2
             ttc = ttc or ttc2
         if ht is None or ttc is None:
+            ht3, tva3, ttc3 = _extract_avoir_totals(text)
+            ht = ht or ht3
+            tva = tva or tva3
+            ttc = ttc or ttc3
+        if ht is None or ttc is None:
             warnings.append("Montants HT/TTC non détectés automatiquement.")
+        elif re.search(r"\bAVOIR\b", text, re.I):
+            warnings.append("Document AVOIR détecté — montants saisis en positif.")
 
         taux = _guess_taux(ht, tva)
         if tva is None and ht is not None:
@@ -487,24 +560,28 @@ def preferred_engine() -> str:
 
 
 async def _extract_with_openai(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
+    return await _extract_with_openai_images(filename, [(content, mime_type)])
+
+
+async def _extract_with_openai_images(
+    filename: str, images: list[tuple[bytes, str]]
+) -> ExtractionResult:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY non configurée")
 
+    message_content: list[dict] = [{"type": "text", "text": AI_EXTRACTION_PROMPT}]
+    for image_bytes, image_mime in images:
+        message_content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": _image_to_base64(image_bytes, image_mime)},
+            }
+        )
+
     payload = {
         "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": AI_EXTRACTION_PROMPT},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": _image_to_base64(content, mime_type)},
-                    },
-                ],
-            }
-        ],
+        "messages": [{"role": "user", "content": message_content}],
         "response_format": {"type": "json_object"},
         "temperature": 0,
     }
@@ -528,6 +605,13 @@ async def _extract_with_openai(filename: str, content: bytes, mime_type: str) ->
     )
 
 
+async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
+    pages = pdf_to_png_pages(content, max_pages=3)
+    if not pages:
+        raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
+    return await _extract_with_openai_images(filename, [(page, "image/png") for page in pages])
+
+
 async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResult:
     text = ocr_image_bytes(image_bytes)
     if not text.strip():
@@ -548,27 +632,25 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
     if mime_type == "application/pdf":
         text = extract_text_from_pdf(content)
         if text.strip():
-            return _heuristic_extract(filename, text)
+            result = _heuristic_extract(filename, text)
+            if ai_available() and _needs_ai_upgrade(result):
+                try:
+                    return await _extract_pdf_with_ai(filename, content)
+                except Exception as exc:  # noqa: BLE001
+                    result.warnings.append(f"Extraction IA échouée ({exc}) — résultat texte conservé.")
+            return result
 
-        # PDF scanné : IA en priorité, Tesseract en secours
-        warnings_ai = ""
         if ai_available():
             try:
-                png_bytes = pdf_first_page_to_png(content)
-                if png_bytes:
-                    return await _extract_with_openai(filename, png_bytes, "image/png")
+                return await _extract_pdf_with_ai(filename, content)
             except Exception as exc:  # noqa: BLE001
-                warnings_ai = f"IA indisponible ({exc}), repli sur Tesseract."
-        else:
-            return ExtractionResult(
-                filename=filename,
-                lines=[],
-                confidence="low",
-                engine="manual",
-                warnings=[
-                    "OPENAI_API_KEY manquante dans backend/.env — créez le fichier et redémarrez uvicorn."
-                ],
-            )
+                return ExtractionResult(
+                    filename=filename,
+                    lines=[],
+                    confidence="low",
+                    engine="ai",
+                    warnings=[f"Extraction IA échouée: {exc}"],
+                )
 
         if not tesseract_available():
             return ExtractionResult(
@@ -576,16 +658,15 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                 lines=[],
                 confidence="low",
                 engine="manual",
-                warnings=[warnings_ai or "Tesseract non installé.", "Configurez OPENAI_API_KEY dans backend/.env."],
+                warnings=[
+                    "PDF scanné : configurez OPENAI_API_KEY dans backend/.env et redémarrez uvicorn."
+                ],
             )
 
         try:
             png_bytes = pdf_first_page_to_png(content)
             if png_bytes:
-                result = await _extract_with_ocr(filename, png_bytes)
-                if warnings_ai:
-                    result.warnings.insert(0, warnings_ai)
-                return result
+                return await _extract_with_ocr(filename, png_bytes)
         except Exception as exc:  # noqa: BLE001
             return ExtractionResult(
                 filename=filename,
@@ -612,8 +693,8 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                         filename=filename,
                         lines=[],
                         confidence="low",
-                        engine="manual",
-                        warnings=[f"IA échouée: {exc}", "Vérifiez OPENAI_API_KEY dans backend/.env."],
+                        engine="ai",
+                        warnings=[f"Extraction IA échouée: {exc}"],
                     )
                 try:
                     result = await _extract_with_ocr(filename, content)
@@ -624,8 +705,8 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                         filename=filename,
                         lines=[],
                         confidence="low",
-                        engine="tesseract",
-                        warnings=[f"Extraction échouée: {ocr_exc}"],
+                        engine="ai",
+                        warnings=[f"Extraction IA échouée: {exc}", f"OCR échoué: {ocr_exc}"],
                     )
         return ExtractionResult(
             filename=filename,

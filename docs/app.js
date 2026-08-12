@@ -263,6 +263,7 @@ function engineLabel(engine) {
   if (engine === "ai") return "IA";
   if (engine === "tesseract") return "OCR";
   if (engine === "text") return "PDF";
+  if (engine === "manual") return "Manuel";
   return "";
 }
 
@@ -429,6 +430,8 @@ async function extractFiles() {
     setStep(3);
 
     let msg = `${newLines} ligne(s) extraite(s) depuis ${okFiles} facture(s).`;
+    const aiFiles = results.filter((result) => result.engine === "ai").length;
+    if (aiFiles) msg += ` ${aiFiles} via IA.`;
     if (warnFiles) msg += ` ${warnFiles} fichier(s) sans résultat.`;
 
     els.extractionStatus.textContent = msg;
