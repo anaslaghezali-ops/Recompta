@@ -90,10 +90,10 @@ Guide complet : **[docs/SAAS.md](docs/SAAS.md)**
 - Multi-tenant : chaque cabinet voit uniquement ses clients
 - Pages : `/login.html` → `/register.html` → `/dashboard.html` → import TVA
 
-**Setup Supabase** (projet dédié `recompta`) :
-1. Créer un projet sur https://supabase.com
-2. SQL Editor → coller `supabase/migrations/001_recompta_saas.sql`
-3. Copier URL + clés dans `backend/.env`
+**Setup Supabase** — **nouveau projet uniquement** (ne pas modifier un Supabase existant) :
+1. Créer un **nouveau** projet sur https://supabase.com (ex. `recompta-prod`)
+2. SQL Editor → coller `supabase/migrations/001_recompta_saas.sql` dans **ce** projet seulement
+3. Copier URL + clés du **nouveau** projet dans `backend/.env`
 
 ## Mettre en ligne (lien web pour le cabinet)
 

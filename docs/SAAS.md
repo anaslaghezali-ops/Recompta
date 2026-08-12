@@ -64,11 +64,14 @@ VOUS (éditeur Recompta)
 | OCR / IA | OpenAI Vision |
 | Paiement | Stripe Billing |
 
-## Important : projet Supabase dédié
+## Important : projet Supabase **dédié** (ne pas toucher l'existant)
 
-Créez un **nouveau projet** sur https://supabase.com nommé `recompta` (ne pas mélanger avec d'autres apps).
+> **⚠️ Ne jamais exécuter les migrations Recompta sur un Supabase déjà utilisé** (autre produit, assurance, etc.).
+> Recompta doit avoir **son propre projet Supabase**, totalement séparé.
 
-Puis exécutez la migration : `supabase/migrations/001_recompta_saas.sql`
+1. Créez un **nouveau projet** sur https://supabase.com → nom suggéré : `recompta`
+2. Dans ce nouveau projet uniquement : SQL Editor → coller `supabase/migrations/001_recompta_saas.sql` → Run
+3. Copiez les clés de **ce nouveau projet** dans `backend/.env` (pas celles d'un autre projet)
 
 ## Variables d'environnement
 
