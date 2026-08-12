@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
 
-load_dotenv()  # charge backend/.env ou .env à la racine
+# Charge backend/.env même si uvicorn est lancé depuis un autre répertoire
+_backend_dir = Path(__file__).resolve().parent
+load_dotenv(_backend_dir / ".env")
+load_dotenv(_backend_dir.parent / ".env")
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,12 +33,13 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict:
-    from invoice_extractor import ai_available, preferred_engine
+    from invoice_extractor import ai_available, preferred_engine, tesseract_available
 
     return {
         "status": "ok",
         "extraction_engine": preferred_engine(),
         "ai_configured": ai_available(),
+        "tesseract_available": tesseract_available(),
     }
 
 

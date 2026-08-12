@@ -473,7 +473,13 @@ Retourne UNIQUEMENT un JSON valide :
 
 
 def ai_available() -> bool:
-    return bool(os.getenv("OPENAI_API_KEY"))
+    return bool(os.getenv("OPENAI_API_KEY", "").strip().startswith("sk-"))
+
+
+def tesseract_available() -> bool:
+    import shutil
+
+    return shutil.which("tesseract") is not None
 
 
 def preferred_engine() -> str:
@@ -554,7 +560,24 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
             except Exception as exc:  # noqa: BLE001
                 warnings_ai = f"IA indisponible ({exc}), repli sur Tesseract."
         else:
-            warnings_ai = "Configurez OPENAI_API_KEY pour une extraction IA plus précise."
+            return ExtractionResult(
+                filename=filename,
+                lines=[],
+                confidence="low",
+                engine="manual",
+                warnings=[
+                    "OPENAI_API_KEY manquante dans backend/.env — créez le fichier et redémarrez uvicorn."
+                ],
+            )
+
+        if not tesseract_available():
+            return ExtractionResult(
+                filename=filename,
+                lines=[],
+                confidence="low",
+                engine="manual",
+                warnings=[warnings_ai or "Tesseract non installé.", "Configurez OPENAI_API_KEY dans backend/.env."],
+            )
 
         try:
             png_bytes = pdf_first_page_to_png(content)
@@ -584,6 +607,14 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
             try:
                 return await _extract_with_openai(filename, content, mime_type)
             except Exception as exc:  # noqa: BLE001
+                if not tesseract_available():
+                    return ExtractionResult(
+                        filename=filename,
+                        lines=[],
+                        confidence="low",
+                        engine="manual",
+                        warnings=[f"IA échouée: {exc}", "Vérifiez OPENAI_API_KEY dans backend/.env."],
+                    )
                 try:
                     result = await _extract_with_ocr(filename, content)
                     result.warnings.insert(0, f"IA indisponible ({exc}), repli sur Tesseract.")
@@ -596,20 +627,13 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                         engine="tesseract",
                         warnings=[f"Extraction échouée: {ocr_exc}"],
                     )
-        try:
-            result = await _extract_with_ocr(filename, content)
-            result.warnings.insert(
-                0, "OCR local (Tesseract). Ajoutez OPENAI_API_KEY pour une meilleure précision."
-            )
-            return result
-        except Exception as exc:  # noqa: BLE001
-            return ExtractionResult(
-                filename=filename,
-                lines=[],
-                confidence="low",
-                engine="tesseract",
-                warnings=[f"OCR échoué: {exc}"],
-            )
+        return ExtractionResult(
+            filename=filename,
+            lines=[],
+            confidence="low",
+            engine="manual",
+            warnings=["OPENAI_API_KEY manquante dans backend/.env — créez le fichier et redémarrez uvicorn."],
+        )
 
     return ExtractionResult(
         filename=filename,
