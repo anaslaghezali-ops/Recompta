@@ -236,6 +236,8 @@ function renderWarnings(warnings) {
 function clearWarnings() {
   renderWarnings([]);
 }
+
+function setLoading(loading) {
   els.extractBtn.classList.toggle("loading", loading);
   els.extractBtn.querySelector(".btn-label").textContent = loading
     ? "Extraction en cours…"
