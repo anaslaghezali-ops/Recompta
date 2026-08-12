@@ -13,11 +13,37 @@ else
   echo "✓ Tesseract installé"
 fi
 
-if [ -f .env ] && grep -qE '^OPENAI_API_KEY=sk-' .env 2>/dev/null; then
-  echo "✓ OPENAI_API_KEY trouvée dans backend/.env"
+if [ -f .env ] && grep -qE '^[[:space:]]*OPENAI_API_KEY[[:space:]]*=' .env 2>/dev/null; then
+  echo "✓ Fichier backend/.env trouvé"
   python3 - <<'PY'
 import asyncio
+import os
+import re
+from pathlib import Path
+
+from dotenv import load_dotenv
+
 from invoice_extractor import verify_openai_key
+
+env_path = Path(".env")
+load_dotenv(env_path, override=True)
+
+api_key = os.getenv("OPENAI_API_KEY", "").strip().strip('"').strip("'")
+if api_key:
+    os.environ["OPENAI_API_KEY"] = api_key
+
+if not api_key.startswith("sk-"):
+    print("✗ OPENAI_API_KEY introuvable ou mal formatée dans backend/.env")
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if re.search(r"OPENAI_API_KEY", line, re.I):
+                preview = line.strip()
+                if len(preview) > 48:
+                    preview = preview[:45] + "..."
+                print(f"  Ligne détectée : {preview}")
+    print("  Format attendu (une seule ligne, sans guillemets) :")
+    print("    OPENAI_API_KEY=sk-votre-clé-ici")
+    raise SystemExit(1)
 
 ok, message = asyncio.run(verify_openai_key())
 if ok:
