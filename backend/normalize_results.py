@@ -118,6 +118,15 @@ def apply_avoir_signs(result: ExtractionResult) -> ExtractionResult:
     return result
 
 
+def _should_consolidate_group(group: list[InvoiceLine]) -> bool:
+    """Fusionne seulement les éclats produit (ex. EatMeat) où la TVA est sur une seule ligne."""
+    if len(group) <= 1:
+        return False
+    has_zero_tva = any(abs(line.tva) < 1e-9 for line in group)
+    has_non_zero_tva = any(abs(line.tva) >= 1e-9 for line in group)
+    return has_zero_tva and has_non_zero_tva
+
+
 def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
     if len(lines) <= 1:
         return lines
@@ -128,8 +137,8 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
 
     merged: list[InvoiceLine] = []
     for (fact_num, taux), group in groups.items():
-        if len(group) == 1:
-            merged.append(group[0])
+        if len(group) == 1 or not _should_consolidate_group(group):
+            merged.extend(group)
             continue
 
         total_ht = round(sum(line.m_ht for line in group), 2)

@@ -342,23 +342,43 @@ def _extract_line_items(text: str) -> list[dict[str, float | str]]:
 def _extract_achibest_tva_table(text: str) -> list[dict[str, float]]:
     """Parse le tableau Taux / Montant HT / TVA des factures ACHIBEST."""
     items: list[dict[str, float]] = []
-    pattern = re.compile(
-        r"(\d+[,.]\d+)\s*[.\s]+([\d .,\u00a0]+)\s+([\d .,\u00a0]+)",
+    block = text
+    lower = text.lower()
+    for marker in ("taux", "montant ht", "ventilation"):
+        idx = lower.find(marker)
+        if idx != -1:
+            block = text[idx:]
+            break
+
+    amount = r"(?:-?[\d]{1,3}(?:[.\s]\d{3})*(?:,\d{2})|-?[\d]+,\d{2})"
+    row_pattern = re.compile(
+        rf"^\s*(\d{{1,2}}[,.]\d{{2}})\s+({amount})\s+({amount})\s*$",
+        re.M,
     )
-    for match in pattern.finditer(text):
+
+    for match in row_pattern.finditer(block):
         taux = _parse_amount(match.group(1))
         ht = _parse_amount(match.group(2))
         tva = _parse_amount(match.group(3))
-        if taux is None or ht is None or tva is None or ht <= 0:
+        if taux is None or ht is None or tva is None:
+            continue
+        if abs(ht) < 0.01 and abs(tva) < 0.01:
             continue
         taux_norm = taux / 100 if taux > 1 else taux
         if taux_norm not in (0.1, 0.2):
             continue
+        if abs(ht) > 0:
+            ratio = round(abs(tva) / abs(ht), 2)
+            if ratio not in (0.1, 0.2) and not (0.08 <= ratio <= 0.12 or 0.18 <= ratio <= 0.22):
+                continue
+        sign = -1 if ht < 0 or tva < 0 else 1
+        ht_val = abs(ht) * sign
+        tva_val = abs(tva) * sign
         items.append(
             {
-                "m_ht": ht,
-                "tva": tva,
-                "m_ttc": round(ht + tva, 2),
+                "m_ht": ht_val,
+                "tva": tva_val,
+                "m_ttc": round(ht_val + tva_val, 2),
                 "taux": taux_norm,
             }
         )
@@ -540,6 +560,7 @@ Règles importantes :
 - ACHIBEST : ICE = 000229475000050, IF = 1102277
 - IF = identifiant fiscal du fournisseur
 - Si plusieurs taux TVA (10% et 20%), crée UNE entrée par taux avec les montants HT/TVA/TTC correspondants
+- Si le tableau de ventilation TVA a plusieurs lignes au même taux (ex. deux lignes à 10%), crée une entrée DISTINCTE par ligne (ne pas fusionner)
 - Sinon, UNE seule ligne avec les totaux HT/TVA/TTC de la facture (ne pas dupliquer par produit)
 - designation : MATIERES CONSOMMABLES (achats), PRESTATIONS (services), TELEPHONIE, FRAIS BANCAIRE
 - id_paie : 1 (paiement comptant) ou 4 (virement/crédit) — utilise 4 par défaut
@@ -674,11 +695,66 @@ async def _extract_with_openai_images(
     )
 
 
+async def _supplement_achibest_ventilation(
+    result: ExtractionResult, filename: str, content: bytes
+) -> ExtractionResult:
+    haystack = f"{filename}\n" + " ".join(line.lib_frss for line in result.lines)
+    if "achibest" not in haystack.lower() and "achibest" not in filename.lower():
+        return result
+
+    if not tesseract_available():
+        return result
+
+    try:
+        pages = pdf_to_png_pages(content, max_pages=1)
+        if not pages:
+            return result
+        text = ocr_image_bytes(pages[0])
+        vent = _extract_achibest_tva_table(text)
+        if len(vent) <= len(result.lines):
+            return result
+
+        template = result.lines[0] if result.lines else None
+        fact_num = template.fact_num if template else _extract_invoice_number(text, filename)
+        supplier = template.lib_frss if template and template.lib_frss else _extract_supplier_name(text)
+        ice = template.ice_frs if template and template.ice_frs else _extract_supplier_ice(text)
+        if_fiscal = template.if_fournisseur if template and template.if_fournisseur else _extract_supplier_if(text)
+        invoice_date = template.date_fac if template else None
+
+        result.lines = [
+            InvoiceLine(
+                fact_num=fact_num,
+                designation=Designation.MATIERES_CONSOMMABLES,
+                m_ht=row["m_ht"],
+                tva=row["tva"],
+                m_ttc=row["m_ttc"],
+                **{
+                    "if": if_fiscal,
+                    "lib_frss": supplier or "ACHIBEST",
+                    "ice_frs": ice,
+                    "taux": row["taux"],
+                    "id_paie": 4,
+                    "date_paie": invoice_date,
+                    "date_fac": invoice_date,
+                },
+            )
+            for row in vent
+        ]
+        result.warnings.append(
+            f"Ventilation ACHIBEST complétée via OCR ({len(result.lines)} ligne(s) de TVA)."
+        )
+    except Exception:  # noqa: BLE001
+        return result
+
+    return result
+
+
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
     pages = pdf_to_png_pages(content, max_pages=3)
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
-    return await _extract_with_openai_images(filename, [(page, "image/png") for page in pages])
+    result = await _extract_with_openai_images(filename, [(page, "image/png") for page in pages])
+    return await _supplement_achibest_ventilation(result, filename, content)
 
 
 async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResult:

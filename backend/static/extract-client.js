@@ -377,6 +377,13 @@ function applySupplierPathHints(filename, line) {
   if (hint.if) line.if = hint.if;
 }
 
+function shouldConsolidateGroup(group) {
+  if (group.length <= 1) return false;
+  const hasZeroTva = group.some((line) => Math.abs(Number(line.tva)) < 1e-9);
+  const hasNonZeroTva = group.some((line) => Math.abs(Number(line.tva)) >= 1e-9);
+  return hasZeroTva && hasNonZeroTva;
+}
+
 function consolidateLines(lines) {
   if (lines.length <= 1) return lines;
 
@@ -389,8 +396,8 @@ function consolidateLines(lines) {
 
   const merged = [];
   for (const group of groups.values()) {
-    if (group.length === 1) {
-      merged.push(group[0]);
+    if (group.length === 1 || !shouldConsolidateGroup(group)) {
+      merged.push(...group);
       continue;
     }
 
@@ -581,16 +588,42 @@ function extractLineItems(text) {
 
 function extractAchibestTvaTable(text) {
   const items = [];
-  const pattern = /(\d+[,.]\d+)\s*[.\s]+([\d .,\u00a0]+)\s+([\d .,\u00a0]+)/g;
+  let block = text;
+  const lower = text.toLowerCase();
+  for (const marker of ["taux", "montant ht", "ventilation"]) {
+    const idx = lower.indexOf(marker);
+    if (idx !== -1) {
+      block = text.slice(idx);
+      break;
+    }
+  }
+
+  const amount = String.raw`(?:-?[\d]{1,3}(?:[.\s]\d{3})*(?:,\d{2})|-?[\d]+,\d{2})`;
+  const rowPattern = new RegExp(String.raw`^\s*(\d{1,2}[,.]\d{2})\s+(${amount})\s+(${amount})\s*$`, "gm");
   let match;
-  while ((match = pattern.exec(text)) !== null) {
+  while ((match = rowPattern.exec(block)) !== null) {
     const taux = parseAmount(match[1]);
     const ht = parseAmount(match[2]);
     const tva = parseAmount(match[3]);
-    if (taux === null || ht === null || tva === null || ht <= 0) continue;
+    if (taux === null || ht === null || tva === null) continue;
+    if (Math.abs(ht) < 0.01 && Math.abs(tva) < 0.01) continue;
     const tauxNorm = taux > 1 ? taux / 100 : taux;
     if (tauxNorm !== 0.1 && tauxNorm !== 0.2) continue;
-    items.push({ m_ht: ht, tva, m_ttc: Math.round((ht + tva) * 100) / 100, taux: tauxNorm });
+    if (Math.abs(ht) > 0) {
+      const ratio = Math.round((Math.abs(tva) / Math.abs(ht)) * 100) / 100;
+      if (ratio !== 0.1 && ratio !== 0.2 && !(ratio >= 0.08 && ratio <= 0.12) && !(ratio >= 0.18 && ratio <= 0.22)) {
+        continue;
+      }
+    }
+    const sign = ht < 0 || tva < 0 ? -1 : 1;
+    const htVal = Math.abs(ht) * sign;
+    const tvaVal = Math.abs(tva) * sign;
+    items.push({
+      m_ht: htVal,
+      tva: tvaVal,
+      m_ttc: Math.round((htVal + tvaVal) * 100) / 100,
+      taux: tauxNorm,
+    });
   }
   return items;
 }
