@@ -18,7 +18,11 @@ from fastapi.staticfiles import StaticFiles
 from excel_export import export_filename, export_to_bytes
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
-from normalize_results import normalize_extraction_results
+from normalize_results import (
+    activate_client_ice_exclusions,
+    deactivate_client_ice_exclusions,
+    normalize_extraction_results,
+)
 from zip_utils import iter_invoice_files
 
 app = FastAPI(title="Recompta API", version="0.2.0")
@@ -91,38 +95,44 @@ async def reference() -> dict:
 
 
 @app.post("/api/extract", response_model=list[ExtractionResult])
-async def extract_files(files: Annotated[list[UploadFile], File(...)]) -> list[ExtractionResult]:
+async def extract_files(
+    files: Annotated[list[UploadFile], File(...)],
+    client_ice: Annotated[str, Form()] = "",
+) -> list[ExtractionResult]:
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
     results: list[ExtractionResult] = []
+    token = activate_client_ice_exclusions(client_ice)
+    try:
+        for upload in files:
+            content = await upload.read()
+            upload_name = upload.filename or "inconnu"
+            mime_type = upload.content_type or "application/octet-stream"
+            invoice_files = iter_invoice_files(upload_name, content, mime_type)
 
-    for upload in files:
-        content = await upload.read()
-        upload_name = upload.filename or "inconnu"
-        mime_type = upload.content_type or "application/octet-stream"
-        invoice_files = iter_invoice_files(upload_name, content, mime_type)
-
-        if not invoice_files:
-            results.append(
-                ExtractionResult(
-                    filename=upload_name,
-                    lines=[],
-                    warnings=[
-                        "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
-                    ],
+            if not invoice_files:
+                results.append(
+                    ExtractionResult(
+                        filename=upload_name,
+                        lines=[],
+                        warnings=[
+                            "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
+                        ],
+                    )
                 )
-            )
-            continue
+                continue
 
-        for relative_name, file_content, file_mime in invoice_files:
-            display_name = relative_name if relative_name != upload_name else upload_name
-            result = await extract_invoice(display_name, file_content, file_mime)
-            if len(invoice_files) > 1 or relative_name != upload_name:
-                result.filename = display_name
-            results.append(result)
+            for relative_name, file_content, file_mime in invoice_files:
+                display_name = relative_name if relative_name != upload_name else upload_name
+                result = await extract_invoice(display_name, file_content, file_mime)
+                if len(invoice_files) > 1 or relative_name != upload_name:
+                    result.filename = display_name
+                results.append(result)
 
-    return normalize_extraction_results(results)
+        return normalize_extraction_results(results, client_ice=client_ice)
+    finally:
+        deactivate_client_ice_exclusions(token)
 
 
 @app.post("/api/export")

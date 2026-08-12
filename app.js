@@ -1,4 +1,4 @@
-import { extractAllFiles, normalizeExtractionResults } from "./extract-client.js";
+import { extractAllFiles, normalizeExtractionResults, setExtractionContext } from "./extract-client.js";
 import { exportDedTvaExcel } from "./export-client.js";
 import {
   extractViaServer,
@@ -23,6 +23,7 @@ const DESIGNATIONS = [
 
 const els = {
   clientName: document.getElementById("clientName"),
+  clientIce: document.getElementById("clientIce"),
   period: document.getElementById("period"),
   filenamePreview: document.getElementById("filenamePreview"),
   engineBadge: document.getElementById("engineBadge"),
@@ -273,6 +274,27 @@ function resolvedApiUrl() {
   return getApiUrl();
 }
 
+function loadClientSettings() {
+  const savedIce = localStorage.getItem("recompta_client_ice");
+  if (savedIce) els.clientIce.value = savedIce;
+}
+
+function persistClientIce() {
+  const ice = els.clientIce.value.trim().replace(/\D/g, "");
+  if (ice) localStorage.setItem("recompta_client_ice", ice);
+  else localStorage.removeItem("recompta_client_ice");
+}
+
+function currentClientIce() {
+  const digits = els.clientIce.value.trim().replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.slice(-15).padStart(15, "0");
+}
+
+function applyExtractionContext() {
+  setExtractionContext({ clientIce: currentClientIce() });
+}
+
 function loadApiSettings() {
   const saved = localStorage.getItem("recompta_api_url") || "";
   els.apiServerUrl.value = saved;
@@ -352,6 +374,8 @@ async function refreshEngineBadge() {
 }
 
 async function runExtraction(files) {
+  applyExtractionContext();
+  const clientIce = currentClientIce();
   const apiUrl = resolvedApiUrl();
   const wantAi = els.useAiServer.checked;
 
@@ -364,8 +388,11 @@ async function runExtraction(files) {
       const health = await fetchServerHealth(apiUrl);
       if (health.ai_verified) {
         els.extractionStatus.textContent = "Extraction IA en cours (serveur)…";
-        return extractViaServer(files, apiUrl, (_c, _t, label) => {
-          els.extractionStatus.textContent = label;
+        return extractViaServer(files, apiUrl, {
+          clientIce,
+          onProgress: (_c, _t, label) => {
+            els.extractionStatus.textContent = label;
+          },
         });
       }
       if (health.ai_configured) {
@@ -394,7 +421,7 @@ async function runExtraction(files) {
 
   try {
     els.extractionStatus.textContent = `Relance IA pour ${incomplete.length} fichier(s) incomplet(s)…`;
-    const aiResults = await extractViaServer(files, apiUrl);
+    const aiResults = await extractViaServer(files, apiUrl, { clientIce });
     return mergeWithAiRetry(localResults, aiResults);
   } catch {
     return localResults;
@@ -506,6 +533,8 @@ function clearAll() {
 }
 
 els.clientName.addEventListener("input", updateFilenamePreview);
+els.clientIce.addEventListener("change", persistClientIce);
+els.clientIce.addEventListener("blur", persistClientIce);
 els.period.addEventListener("input", updateFilenamePreview);
 els.apiServerUrl.addEventListener("change", persistApiSettings);
 els.apiServerUrl.addEventListener("blur", persistApiSettings);
@@ -537,6 +566,7 @@ els.clearBtn.addEventListener("click", clearAll);
 });
 
 loadApiSettings();
+loadClientSettings();
 updateFilenamePreview();
 updateButtons();
 setStep(1);

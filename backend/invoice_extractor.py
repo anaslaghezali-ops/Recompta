@@ -254,19 +254,30 @@ def _extract_supplier_name(text: str) -> str:
 
 
 def _extract_supplier_ice(text: str) -> str:
+    from normalize_results import get_excluded_client_ices, normalize_ice_digits
+
+    excluded = get_excluded_client_ices()
+
     footer_match = re.search(
         r"(?:SARL|Capital|RC\s*:).*?ICE\s*[:\s]*(\d{15})",
         text,
         re.I | re.S,
     )
     if footer_match:
-        return footer_match.group(1)
+        ice = normalize_ice_digits(footer_match.group(1))
+        if ice and ice not in excluded:
+            return ice
 
-    matches = ICE_PATTERN.findall(text)
-    if matches:
-        return matches[-1]
-    plain = re.findall(r"\b(\d{15})\b", text)
-    return plain[-1] if plain else ""
+    for ice in reversed(ICE_PATTERN.findall(text)):
+        normalized = normalize_ice_digits(ice)
+        if normalized and normalized not in excluded:
+            return normalized
+
+    for ice in reversed(re.findall(r"\b(\d{15})\b", text)):
+        normalized = normalize_ice_digits(ice)
+        if normalized and normalized not in excluded:
+            return normalized
+    return ""
 
 
 def _extract_supplier_if(text: str) -> str:
@@ -617,7 +628,18 @@ async def _extract_with_openai_images(
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY non configurée")
 
-    message_content: list[dict] = [{"type": "text", "text": AI_EXTRACTION_PROMPT}]
+    from normalize_results import get_excluded_client_ices
+
+    prompt = AI_EXTRACTION_PROMPT
+    excluded = get_excluded_client_ices()
+    if excluded:
+        prompt += (
+            "\n- NE JAMAIS utiliser l'ICE client "
+            + ", ".join(sorted(excluded))
+            + " comme ICE fournisseur (c'est l'acheteur, pas le fournisseur)"
+        )
+
+    message_content: list[dict] = [{"type": "text", "text": prompt}]
     for image_bytes, image_mime in images:
         message_content.append(
             {

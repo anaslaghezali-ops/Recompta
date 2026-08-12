@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from contextvars import ContextVar
 from pathlib import PurePosixPath
 
 from models import ExtractionResult, InvoiceLine
+
+_excluded_client_ices: ContextVar[frozenset[str]] = ContextVar(
+    "_excluded_client_ices",
+    default=frozenset(),
+)
 
 FOLDER_SUPPLIERS: dict[str, dict[str, str]] = {
     "achibest": {
@@ -20,6 +26,28 @@ FOLDER_SUPPLIERS: dict[str, dict[str, str]] = {
     "mose": {"lib_frss": "MOSE Food"},
     "mose food": {"lib_frss": "MOSE Food"},
 }
+
+
+def build_excluded_ices(client_ice: str) -> set[str]:
+    normalized = normalize_ice_digits(client_ice)
+    return {normalized} if normalized else set()
+
+
+def activate_client_ice_exclusions(client_ice: str):
+    return _excluded_client_ices.set(frozenset(build_excluded_ices(client_ice)))
+
+
+def deactivate_client_ice_exclusions(token) -> None:
+    _excluded_client_ices.reset(token)
+
+
+def get_excluded_client_ices() -> frozenset[str]:
+    return _excluded_client_ices.get()
+
+
+def is_excluded_ice(ice: str) -> bool:
+    normalized = normalize_ice_digits(ice)
+    return bool(normalized and normalized in get_excluded_client_ices())
 
 
 def folder_key(filename: str) -> str:
@@ -46,11 +74,12 @@ def normalize_ice_digits(value: str) -> str:
     return digits[-15:].zfill(15) if len(digits) >= 15 else digits.zfill(15)
 
 
-def pick_best_ice(candidates: list[str]) -> str:
+def pick_best_ice(candidates: list[str], excluded: frozenset[str] | None = None) -> str:
+    excluded = excluded if excluded is not None else get_excluded_client_ices()
     counts: dict[str, int] = {}
     for raw in candidates:
         ice = normalize_ice_digits(raw)
-        if len(ice) != 15 or set(ice) == {"0"}:
+        if len(ice) != 15 or set(ice) == {"0"} or ice in excluded:
             continue
         counts[ice] = counts.get(ice, 0) + 1
     if not counts:
@@ -127,7 +156,11 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
     return merged
 
 
-def normalize_extraction_results(results: list[ExtractionResult]) -> list[ExtractionResult]:
+def normalize_extraction_results(
+    results: list[ExtractionResult],
+    client_ice: str = "",
+) -> list[ExtractionResult]:
+    excluded = frozenset(build_excluded_ices(client_ice))
     normalized: list[ExtractionResult] = []
     for result in results:
         item = apply_avoir_signs(result.model_copy(deep=True))
@@ -150,7 +183,7 @@ def normalize_extraction_results(results: list[ExtractionResult]) -> list[Extrac
 
     for group_key, bucket in groups.items():
         path_hint = supplier_hint_from_path(bucket["filenames"][0] if bucket["filenames"] else "")
-        best_ice = (path_hint or {}).get("ice_frs") or pick_best_ice(bucket["ices"])
+        best_ice = (path_hint or {}).get("ice_frs") or pick_best_ice(bucket["ices"], excluded)
         best_if = (path_hint or {}).get("if_fournisseur") or pick_most_common(bucket["ifs"])
         best_name = (path_hint or {}).get("lib_frss") or pick_most_common(
             [line.lib_frss for line in bucket["lines"]]
@@ -159,7 +192,7 @@ def normalize_extraction_results(results: list[ExtractionResult]) -> list[Extrac
         for line in bucket["lines"]:
             if best_name:
                 line.lib_frss = best_name
-            if best_ice:
+            if best_ice and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
                 line.ice_frs = best_ice
             if best_if:
                 line.if_fournisseur = best_if

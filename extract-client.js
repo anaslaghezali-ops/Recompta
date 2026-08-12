@@ -18,6 +18,19 @@ const ZIP_SKIP_NAMES = /^(?:\._.*|\.DS_Store|Thumbs\.db|desktop\.ini)$/i;
 const MIN_FILE_BYTES = 400;
 const MAX_OCR_PAGES = 3;
 
+let excludedClientIces = new Set();
+
+export function setExtractionContext({ clientIce } = {}) {
+  excludedClientIces = new Set();
+  const normalized = normalizeIceDigits(clientIce || "");
+  if (normalized) excludedClientIces.add(normalized);
+}
+
+function isExcludedIce(ice) {
+  const normalized = normalizeIceDigits(ice || "");
+  return Boolean(normalized && excludedClientIces.has(normalized));
+}
+
 const ICE_PATTERN = /\bI\.?C\.?E\.?\s*[:\s]*(\d{15})\b/i;
 const IF_PATTERN = /\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*[:\s-]*([0-9A-Za-z]+)/i;
 const IF_FOOTER_PATTERN = /\bF\s+(\d{6,9})\b/;
@@ -338,7 +351,7 @@ function pickBestIce(candidates) {
   const counts = new Map();
   for (const raw of candidates) {
     const ice = normalizeIceDigits(raw);
-    if (ice.length !== 15 || /^0+$/.test(ice)) continue;
+    if (ice.length !== 15 || /^0+$/.test(ice) || isExcludedIce(ice)) continue;
     counts.set(ice, (counts.get(ice) || 0) + 1);
   }
   if (!counts.size) return "";
@@ -441,7 +454,7 @@ export function normalizeExtractionResults(results) {
 
     for (const line of group.lines) {
       if (bestName) line.lib_frss = bestName;
-      if (bestIce) line.ice_frs = bestIce;
+      if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) line.ice_frs = bestIce;
       if (bestIf) line.if = bestIf;
     }
   }
@@ -490,11 +503,13 @@ function extractSupplierName(text, filename = "") {
 
 function extractSupplierIce(text, filename = "") {
   const pathHint = supplierHintFromPath(filename);
-  if (pathHint?.ice) return pathHint.ice;
+  if (pathHint?.ice && !isExcludedIce(pathHint.ice)) return pathHint.ice;
 
   const candidates = [...text.matchAll(new RegExp(ICE_PATTERN.source, "gi"))].map((m) => m[1]);
   const plain = [...text.matchAll(/\b(\d{15})\b/g)].map((m) => m[1]);
-  const all = [...candidates, ...plain].map(normalizeIceDigits).filter((ice) => ice.length === 15);
+  const all = [...candidates, ...plain]
+    .map(normalizeIceDigits)
+    .filter((ice) => ice.length === 15 && !isExcludedIce(ice));
   if (!all.length) return "";
 
   const counts = new Map();
