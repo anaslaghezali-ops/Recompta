@@ -88,6 +88,7 @@ def extract_text_from_pdf(content: bytes) -> str:
 KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {
     "000229475000050": ("ACHIBEST", "1102277"),
     "000161664000072": ("MOSE Food", "14427958"),
+    "002540001000040": ("EATMEAT", "45978904"),
 }
 
 
@@ -252,6 +253,14 @@ def _extract_supplier_name(text: str) -> str:
 
 
 def _extract_supplier_ice(text: str) -> str:
+    footer_match = re.search(
+        r"(?:SARL|Capital|RC\s*:).*?ICE\s*[:\s]*(\d{15})",
+        text,
+        re.I | re.S,
+    )
+    if footer_match:
+        return footer_match.group(1)
+
     matches = ICE_PATTERN.findall(text)
     if matches:
         return matches[-1]
@@ -514,9 +523,12 @@ AI_EXTRACTION_PROMPT = """Tu es un expert comptable marocain. Analyse cette fact
 Extrais les informations pour la déclaration TVA (format DED TVA marocain).
 
 Règles importantes :
-- ICE fournisseur = 15 chiffres (en pied de page, PAS l'ICE du client)
+- ICE fournisseur = 15 chiffres (en pied de page légal SARL/RC/IF, PAS l'ICE du client en haut de facture)
+- EATMEAT : ICE = 002540001000040, IF = 45978904
+- ACHIBEST : ICE = 000229475000050, IF = 1102277
 - IF = identifiant fiscal du fournisseur
 - Si plusieurs taux TVA (10% et 20%), crée UNE entrée par taux avec les montants HT/TVA/TTC correspondants
+- Sinon, UNE seule ligne avec les totaux HT/TVA/TTC de la facture (ne pas dupliquer par produit)
 - designation : MATIERES CONSOMMABLES (achats), PRESTATIONS (services), TELEPHONIE, FRAIS BANCAIRE
 - id_paie : 1 (paiement comptant) ou 4 (virement/crédit) — utilise 4 par défaut
 - Pour un AVOIR (montants négatifs), utilise des montants positifs et ajoute un warning

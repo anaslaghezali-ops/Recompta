@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from pathlib import PurePosixPath
+
+from models import ExtractionResult, InvoiceLine
+
+FOLDER_SUPPLIERS: dict[str, dict[str, str]] = {
+    "achibest": {
+        "lib_frss": "ACHIBEST",
+        "ice_frs": "000229475000050",
+        "if_fournisseur": "1102277",
+    },
+    "eatmeat": {
+        "lib_frss": "EATMEAT",
+        "ice_frs": "002540001000040",
+        "if_fournisseur": "45978904",
+    },
+    "mose": {"lib_frss": "MOSE Food"},
+    "mose food": {"lib_frss": "MOSE Food"},
+}
+
+
+def folder_key(filename: str) -> str:
+    parts = PurePosixPath(filename).as_posix().split("/")
+    return parts[0].lower().strip() if len(parts) > 1 else ""
+
+
+def supplier_hint_from_path(filename: str) -> dict[str, str] | None:
+    key = folder_key(filename)
+    if not key:
+        return None
+    if key in FOLDER_SUPPLIERS:
+        return FOLDER_SUPPLIERS[key]
+    for pattern, hint in FOLDER_SUPPLIERS.items():
+        if pattern in key:
+            return hint
+    return None
+
+
+def normalize_ice_digits(value: str) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) < 10:
+        return ""
+    return digits[-15:].zfill(15) if len(digits) >= 15 else digits.zfill(15)
+
+
+def pick_best_ice(candidates: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for raw in candidates:
+        ice = normalize_ice_digits(raw)
+        if len(ice) != 15 or set(ice) == {"0"}:
+            continue
+        counts[ice] = counts.get(ice, 0) + 1
+    if not counts:
+        return ""
+    return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+
+
+def pick_most_common(values: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for raw in values:
+        value = (raw or "").strip()
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return ""
+    return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+
+
+def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
+    if len(lines) <= 1:
+        return lines
+
+    groups: dict[tuple[str, float], list[InvoiceLine]] = defaultdict(list)
+    for line in lines:
+        groups[(line.fact_num or "", round(line.taux, 2))].append(line)
+
+    merged: list[InvoiceLine] = []
+    for (fact_num, taux), group in groups.items():
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+
+        total_ht = round(sum(line.m_ht for line in group), 2)
+        total_tva = round(sum(line.tva for line in group), 2)
+        total_ttc = round(sum(line.m_ttc for line in group), 2)
+
+        if total_ht > 0:
+            expected_tva = round(total_ht * taux, 2)
+            if total_tva <= 0 or any(line.tva == 0 for line in group):
+                total_tva = expected_tva
+            if total_ttc <= total_ht or any(line.m_ttc <= line.m_ht for line in group):
+                total_ttc = round(total_ht + total_tva, 2)
+
+        base = group[0].model_copy(deep=True)
+        base.m_ht = total_ht
+        base.tva = total_tva
+        base.m_ttc = total_ttc
+        merged.append(base)
+
+    return merged
+
+
+def normalize_extraction_results(results: list[ExtractionResult]) -> list[ExtractionResult]:
+    normalized: list[ExtractionResult] = []
+    for result in results:
+        item = result.model_copy(deep=True)
+        item.lines = consolidate_lines(item.lines)
+        normalized.append(item)
+
+    groups: dict[str, dict] = defaultdict(lambda: {"filenames": [], "lines": [], "ices": [], "ifs": []})
+    for result in normalized:
+        group_key = folder_key(result.filename) or (
+            (result.lines[0].lib_frss if result.lines else "") or "unknown"
+        ).upper()
+        bucket = groups[group_key]
+        bucket["filenames"].append(result.filename)
+        for line in result.lines:
+            bucket["lines"].append(line)
+            if line.ice_frs:
+                bucket["ices"].append(line.ice_frs)
+            if line.if_fournisseur:
+                bucket["ifs"].append(line.if_fournisseur)
+
+    for group_key, bucket in groups.items():
+        path_hint = supplier_hint_from_path(bucket["filenames"][0] if bucket["filenames"] else "")
+        best_ice = (path_hint or {}).get("ice_frs") or pick_best_ice(bucket["ices"])
+        best_if = (path_hint or {}).get("if_fournisseur") or pick_most_common(bucket["ifs"])
+        best_name = (path_hint or {}).get("lib_frss") or pick_most_common(
+            [line.lib_frss for line in bucket["lines"]]
+        )
+
+        for line in bucket["lines"]:
+            if best_name:
+                line.lib_frss = best_name
+            if best_ice:
+                line.ice_frs = best_ice
+            if best_if:
+                line.if_fournisseur = best_if
+
+    return normalized

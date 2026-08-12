@@ -288,7 +288,7 @@ function folderKey(filename) {
 
 const FOLDER_SUPPLIERS = {
   achibest: { lib_frss: "ACHIBEST", ice: "000229475000050", if: "1102277" },
-  eatmeat: { lib_frss: "EATMEAT" },
+  eatmeat: { lib_frss: "EATMEAT", ice: "002540001000040", if: "45978904" },
   mose: { lib_frss: "MOSE Food" },
   "mose food": { lib_frss: "MOSE Food" },
 };
@@ -351,10 +351,57 @@ function applySupplierPathHints(filename, line) {
   if (hint.if) line.if = hint.if;
 }
 
-function normalizeExtractionResults(results) {
-  const groups = new Map();
+function consolidateLines(lines) {
+  if (lines.length <= 1) return lines;
 
-  for (const result of results) {
+  const groups = new Map();
+  for (const line of lines) {
+    const key = `${line.fact_num || ""}|${Number(line.taux)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(line);
+  }
+
+  const merged = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+
+    const taux = Number(group[0].taux);
+    let totalHt = Math.round(group.reduce((sum, line) => sum + Number(line.m_ht || 0), 0) * 100) / 100;
+    let totalTva = Math.round(group.reduce((sum, line) => sum + Number(line.tva || 0), 0) * 100) / 100;
+    let totalTtc = Math.round(group.reduce((sum, line) => sum + Number(line.m_ttc || 0), 0) * 100) / 100;
+
+    if (totalHt > 0) {
+      const expectedTva = Math.round(totalHt * taux * 100) / 100;
+      if (totalTva <= 0 || group.some((line) => Number(line.tva) === 0)) {
+        totalTva = expectedTva;
+      }
+      if (totalTtc <= totalHt || group.some((line) => Number(line.m_ttc) <= Number(line.m_ht))) {
+        totalTtc = Math.round((totalHt + totalTva) * 100) / 100;
+      }
+    }
+
+    merged.push({
+      ...group[0],
+      m_ht: totalHt,
+      tva: totalTva,
+      m_ttc: totalTtc,
+    });
+  }
+
+  return merged;
+}
+
+export function normalizeExtractionResults(results) {
+  const normalized = results.map((result) => ({
+    ...result,
+    lines: consolidateLines(result.lines || []),
+  }));
+
+  const groups = new Map();
+  for (const result of normalized) {
     const groupKey = folderKey(result.filename) || (result.lines[0]?.lib_frss || "unknown").toUpperCase();
     if (!groups.has(groupKey)) {
       groups.set(groupKey, { filenames: [], lines: [], ices: [], ifs: [] });
@@ -368,7 +415,7 @@ function normalizeExtractionResults(results) {
     }
   }
 
-  for (const [groupKey, group] of groups) {
+  for (const [, group] of groups) {
     const pathHint = supplierHintFromPath(group.filenames[0] || "");
     const bestIce = pathHint?.ice || pickBestIce(group.ices);
     const bestIf = pathHint?.if || pickMostCommon(group.ifs);
@@ -381,7 +428,7 @@ function normalizeExtractionResults(results) {
     }
   }
 
-  return results;
+  return normalized;
 }
 
 function guessTaux(ht, tva) {

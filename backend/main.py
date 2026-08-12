@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from excel_export import export_filename, export_to_bytes
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
+from normalize_results import normalize_extraction_results
 from zip_utils import iter_invoice_files
 
 app = FastAPI(title="Recompta API", version="0.2.0")
@@ -121,7 +122,7 @@ async def extract_files(files: Annotated[list[UploadFile], File(...)]) -> list[E
                 result.filename = display_name
             results.append(result)
 
-    return results
+    return normalize_extraction_results(results)
 
 
 @app.post("/api/export")

@@ -1,4 +1,4 @@
-import { extractAllFiles } from "./extract-client.js";
+import { extractAllFiles, normalizeExtractionResults } from "./extract-client.js";
 import { exportDedTvaExcel } from "./export-client.js";
 import {
   extractViaServer,
@@ -412,7 +412,7 @@ async function extractFiles() {
   const filesToProcess = [...state.files];
 
   try {
-    const results = await runExtraction(filesToProcess);
+    const results = normalizeExtractionResults(await runExtraction(filesToProcess));
 
     let newLines = 0;
     let okFiles = 0;
