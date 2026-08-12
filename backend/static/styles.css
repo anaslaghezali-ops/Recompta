@@ -177,17 +177,30 @@ input[readonly] {
   font-weight: 600;
 }
 
-.engine-badge.ai {
-  background: #e6f4ea;
-  color: #0d652d;
-}
-
 .engine-badge.tesseract {
   background: #fef7e0;
   color: #9a6700;
 }
 
-.hint.subtle, .subtle { opacity: 0.75; font-size: 0.82rem; }
+.engine-badge.ai {
+  background: #e6f4ea;
+  color: #0d652d;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.checkbox-row input {
+  width: auto;
+  margin: 0;
+}
 
 .upload-zone {
   border: 2px dashed #9ec0e8;
@@ -322,6 +335,17 @@ button.loading .btn-label { opacity: 0.8; }
 .status.success { color: var(--success); }
 .status.warn { color: var(--warn); }
 .status.error { color: var(--danger); }
+
+.warning-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  color: var(--warn);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.warning-list li { margin: 0.25rem 0; }
 
 .badge {
   background: #e8f2fc;

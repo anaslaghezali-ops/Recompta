@@ -57,7 +57,15 @@ https://random-words.trycloudflare.com
 
 ---
 
-## Option 3 — Hugging Face Spaces (gratuit, lien permanent)
+## Option 3 — GitHub Codespaces (recommandé si vous avez GitHub)
+
+Pas de Render, environnement déjà configuré dans le repo.
+
+→ Voir **[CODESPACE.md](CODESPACE.md)** pour le guide pas à pas.
+
+---
+
+## Option 4 — Hugging Face Spaces (gratuit, lien permanent)
 
 1. Compte gratuit sur https://huggingface.co
 2. **New Space** → SDK **Docker** → repo Recompta

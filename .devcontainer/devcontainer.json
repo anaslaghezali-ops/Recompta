@@ -1,7 +1,7 @@
 {
   "name": "Recompta",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng && pip install -r backend/requirements.txt && echo 'Setup terminé. Lancez: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload'",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng && pip install -r backend/requirements.txt && cp -f index.html app.js extract-client.js export-client.js api-client.js styles.css backend/static/ 2>/dev/null || true && echo '✓ Setup terminé. Voir CODESPACE.md — Lancez: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000'",
   "forwardPorts": [8000],
   "portsAttributes": {
     "8000": {

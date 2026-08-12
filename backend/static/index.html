@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Déclaration TVA</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="hero">
@@ -12,11 +12,11 @@
       <p class="eyebrow">Recompta</p>
       <h1>Déclaration TVA automatisée</h1>
       <p class="subtitle">
-        Déposez vos dossiers ZIP ou factures scannées. Recompta extrait les données,
-        vous les vérifiez sur cette page, puis vous téléchargez le fichier Excel DED TVA.
+        Importez vos ZIP ou factures scannées, vérifiez les lignes, téléchargez le Excel DED TVA.
+        Fonctionne directement dans le navigateur — aucune installation.
       </p>
     </div>
-    <div class="steps" aria-label="Étapes du processus">
+    <div class="steps" aria-label="Étapes">
       <div class="step active" data-step="1"><span>1</span> Paramètres</div>
       <div class="step" data-step="2"><span>2</span> Import</div>
       <div class="step" data-step="3"><span>3</span> Vérification</div>
@@ -25,38 +25,40 @@
   </header>
 
   <main class="container">
-    <section class="card" id="section-params">
+    <section class="card">
       <h2>Paramètres du client</h2>
       <div class="grid two">
-        <label>
-          Nom du client
-          <input id="clientName" type="text" value="Aichoum" placeholder="Ex: Aichoum" />
-        </label>
-        <label>
-          Période (MMAAAA)
-          <input id="period" type="text" value="062026" maxlength="6" pattern="\d{6}" />
-        </label>
+        <label>Nom du client <input id="clientName" type="text" value="Aichoum" /></label>
+        <label>Période (MMAAAA) <input id="period" type="text" value="062026" maxlength="6" /></label>
       </div>
       <p class="hint" id="filenamePreview">Fichier généré : Aichoum_DED_TVA_062026.xlsx</p>
-      <p class="engine-badge" id="engineBadge" hidden></p>
+      <p class="engine-badge tesseract" id="engineBadge">OCR dans le navigateur (Tesseract)</p>
     </section>
 
-    <section class="card" id="section-import">
+    <section class="card">
+      <h2>Extraction IA</h2>
+      <label class="checkbox-row">
+        <input id="useAiServer" type="checkbox" checked />
+        Utiliser l'IA Vision pour les scans et photos
+      </label>
+      <label>URL du serveur Recompta
+        <input id="apiServerUrl" type="url" placeholder="https://recompta.onrender.com" />
+      </label>
+      <p class="hint">Votre clé OpenAI reste sur le serveur (jamais dans le navigateur). Déploiement gratuit sur Render — voir DEPLOY.md.</p>
+    </section>
+
+    <section class="card">
       <div class="section-header">
         <h2>Importer les factures</h2>
         <button id="clearBtn" class="secondary small" type="button" hidden>Tout effacer</button>
       </div>
-
       <div class="upload-zone" id="dropZone">
         <input id="fileInput" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.zip" />
         <div class="upload-icon">📁</div>
         <p class="upload-title">Glissez vos fichiers ici</p>
-        <p class="upload-hint">ZIP, PDF ou images scannées (JPG, PNG)</p>
-        <p class="upload-hint subtle">Ex : achibest.zip, mose_food.zip, factures PDF…</p>
+        <p class="upload-hint">ZIP, PDF ou images scannées</p>
       </div>
-
       <div id="fileList" class="file-list" hidden></div>
-
       <div class="actions">
         <button id="extractBtn" class="primary" disabled>
           <span class="btn-label">Extraire les factures</span>
@@ -64,10 +66,11 @@
         </button>
         <button id="addLineBtn" class="secondary" type="button">+ Ligne manuelle</button>
       </div>
-      <div id="extractionStatus" class="status" role="status"></div>
+      <div id="extractionStatus" class="status"></div>
+      <ul id="warningList" class="warning-list" hidden></ul>
     </section>
 
-    <section class="card" id="section-review">
+    <section class="card">
       <div class="section-header">
         <h2>Lignes extraites</h2>
         <div class="badges">
@@ -75,30 +78,16 @@
           <span id="fileCount" class="badge muted">0 fichier(s)</span>
         </div>
       </div>
-
       <div id="emptyState" class="empty-state">
         <p>Aucune ligne pour l'instant.</p>
-        <p class="subtle">Importez un dossier ZIP ou des factures pour commencer.</p>
       </div>
-
       <div class="table-wrap" id="tableWrap" hidden>
         <table id="linesTable">
           <thead>
             <tr>
-              <th>Fichier source</th>
-              <th>N° facture</th>
-              <th>Fournisseur</th>
-              <th>ICE</th>
-              <th>IF</th>
-              <th>Désignation</th>
-              <th>HT</th>
-              <th>TVA</th>
-              <th>TTC</th>
-              <th>Taux</th>
-              <th>Date fact.</th>
-              <th>Date paie</th>
-              <th>Paie</th>
-              <th></th>
+              <th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
+              <th>Désignation</th><th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
+              <th>Date fact.</th><th>Date paie</th><th>Paie</th><th></th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -106,19 +95,20 @@
       </div>
     </section>
 
-    <section class="card export-card" id="section-export">
+    <section class="card export-card">
       <div class="export-inner">
         <div>
           <h2>Exporter le fichier DED TVA</h2>
-          <p class="hint">Le fichier Excel sera généré au format attendu par la déclaration TVA.</p>
+          <p class="hint">Format Excel prêt pour la déclaration TVA marocaine.</p>
         </div>
-        <button id="exportBtn" class="primary large" disabled>
-          Télécharger Excel
-        </button>
+        <button id="exportBtn" class="primary large" disabled>Télécharger Excel</button>
       </div>
     </section>
   </main>
 
-  <script src="/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,7 +1,17 @@
+import { extractAllFiles } from "./extract-client.js";
+import { exportDedTvaExcel } from "./export-client.js";
+import {
+  extractViaServer,
+  fetchServerHealth,
+  getApiUrl,
+  mergeWithAiRetry,
+  needsAiRetry,
+  saveApiUrl,
+} from "./api-client.js";
+
 const state = {
   files: [],
   lines: [],
-  processedFiles: new Set(),
 };
 
 const DESIGNATIONS = [
@@ -16,6 +26,8 @@ const els = {
   period: document.getElementById("period"),
   filenamePreview: document.getElementById("filenamePreview"),
   engineBadge: document.getElementById("engineBadge"),
+  useAiServer: document.getElementById("useAiServer"),
+  apiServerUrl: document.getElementById("apiServerUrl"),
   dropZone: document.getElementById("dropZone"),
   fileInput: document.getElementById("fileInput"),
   fileList: document.getElementById("fileList"),
@@ -24,6 +36,7 @@ const els = {
   clearBtn: document.getElementById("clearBtn"),
   exportBtn: document.getElementById("exportBtn"),
   extractionStatus: document.getElementById("extractionStatus"),
+  warningList: document.getElementById("warningList"),
   linesTableBody: document.querySelector("#linesTable tbody"),
   lineCount: document.getElementById("lineCount"),
   fileCount: document.getElementById("fileCount"),
@@ -68,6 +81,7 @@ function updateButtons() {
   const extracting = els.extractBtn.classList.contains("loading");
   els.extractBtn.disabled = state.files.length === 0 || extracting;
   els.exportBtn.disabled = state.lines.length === 0;
+
   els.clearBtn.hidden = state.files.length === 0 && state.lines.length === 0;
 
   const uniqueFiles = new Set(state.lines.map((l) => l.source_file).filter(Boolean));
@@ -158,7 +172,8 @@ function renderTable() {
         input.type = field.type;
         if (field.step) input.step = field.step;
         if (field.readonly) input.readOnly = true;
-        const display = field.key === "source_file" ? shortFilename(line[field.key]) : (line[field.key] ?? "");
+        const display =
+          field.key === "source_file" ? shortFilename(line[field.key]) : (line[field.key] ?? "");
         input.value = display;
         if (field.title && line[field.key]) input.title = line[field.key];
       }
@@ -215,8 +230,22 @@ function addFiles(fileList) {
   updateButtons();
   if (state.files.length > 0) {
     els.extractionStatus.textContent = `${state.files.length} fichier(s) prêt(s) à extraire.`;
-    els.extractionStatus.classList.remove("error", "success");
+    els.extractionStatus.classList.remove("error", "success", "warn");
   }
+}
+
+function renderWarnings(warnings) {
+  if (!warnings.length) {
+    els.warningList.hidden = true;
+    els.warningList.innerHTML = "";
+    return;
+  }
+  els.warningList.hidden = false;
+  els.warningList.innerHTML = warnings.map((w) => `<li>${w}</li>`).join("");
+}
+
+function clearWarnings() {
+  renderWarnings([]);
 }
 
 function setLoading(loading) {
@@ -228,25 +257,6 @@ function setLoading(loading) {
   updateButtons();
 }
 
-async function loadEngineInfo() {
-  try {
-    const res = await fetch("/api/health");
-    const data = await res.json();
-    if (data.ai_configured) {
-      els.engineBadge.hidden = false;
-      els.engineBadge.className = "engine-badge ai";
-      els.engineBadge.textContent = "✓ Extraction IA activée (OpenAI Vision)";
-    } else {
-      els.engineBadge.hidden = false;
-      els.engineBadge.className = "engine-badge tesseract";
-      els.engineBadge.textContent =
-        "OCR local (Tesseract) — ajoutez OPENAI_API_KEY côté serveur pour l'IA";
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 function engineLabel(engine) {
   if (engine === "ai") return "IA";
   if (engine === "tesseract") return "OCR";
@@ -254,21 +264,106 @@ function engineLabel(engine) {
   return "";
 }
 
+function resolvedApiUrl() {
+  const typed = els.apiServerUrl.value.trim().replace(/\/$/, "");
+  if (typed) return typed;
+  return getApiUrl();
+}
+
+function loadApiSettings() {
+  const saved = localStorage.getItem("recompta_api_url") || "";
+  els.apiServerUrl.value = saved;
+  els.useAiServer.checked = localStorage.getItem("recompta_use_ai") !== "false";
+}
+
+function persistApiSettings() {
+  saveApiUrl(els.apiServerUrl.value);
+  localStorage.setItem("recompta_use_ai", els.useAiServer.checked ? "true" : "false");
+  refreshEngineBadge();
+}
+
+async function refreshEngineBadge() {
+  const apiUrl = resolvedApiUrl();
+  const wantAi = els.useAiServer.checked;
+
+  if (wantAi && apiUrl) {
+    try {
+      const health = await fetchServerHealth(apiUrl);
+      if (health.ai_configured) {
+        els.engineBadge.className = "engine-badge ai";
+        els.engineBadge.textContent = "✓ Extraction IA activée (serveur sécurisé)";
+        return;
+      }
+      els.engineBadge.className = "engine-badge tesseract";
+      els.engineBadge.textContent = "Serveur OK mais OPENAI_API_KEY manquante";
+      return;
+    } catch {
+      els.engineBadge.className = "engine-badge tesseract";
+      els.engineBadge.textContent = "Serveur IA injoignable — OCR local en secours";
+      return;
+    }
+  }
+
+  els.engineBadge.className = "engine-badge tesseract";
+  els.engineBadge.textContent = "OCR navigateur (Tesseract)";
+}
+
+async function runExtraction(files) {
+  const apiUrl = resolvedApiUrl();
+  const wantAi = els.useAiServer.checked;
+
+  if (wantAi && !apiUrl) {
+    throw new Error("Indiquez l'URL du serveur Recompta (ex. https://recompta.onrender.com).");
+  }
+
+  if (wantAi && apiUrl) {
+    try {
+      const health = await fetchServerHealth(apiUrl);
+      if (health.ai_configured) {
+        els.extractionStatus.textContent = "Extraction IA en cours (serveur)…";
+        return extractViaServer(files, apiUrl, (_c, _t, label) => {
+          els.extractionStatus.textContent = label;
+        });
+      }
+    } catch (error) {
+      els.extractionStatus.textContent = `Serveur IA indisponible (${error.message}) — repli OCR local…`;
+    }
+  }
+
+  const localResults = await extractAllFiles(files, (current, total, name, ocrDetail) => {
+    const label = shortFilename(name);
+    els.extractionStatus.textContent = ocrDetail
+      ? `Fichier ${current}/${total} — ${label} (${ocrDetail})…`
+      : `Fichier ${current}/${total} — ${label}…`;
+  });
+
+  if (!wantAi || !apiUrl) return localResults;
+
+  const incomplete = localResults.filter(needsAiRetry);
+  if (!incomplete.length) return localResults;
+
+  try {
+    els.extractionStatus.textContent = `Relance IA pour ${incomplete.length} fichier(s) incomplet(s)…`;
+    const aiResults = await extractViaServer(files, apiUrl);
+    return mergeWithAiRetry(localResults, aiResults);
+  } catch {
+    return localResults;
+  }
+}
+
 async function extractFiles() {
   if (!state.files.length) return;
 
   setLoading(true);
-  els.extractionStatus.textContent = "Extraction OCR en cours, cela peut prendre 1 à 2 minutes…";
-  els.extractionStatus.classList.remove("error", "success");
+  clearWarnings();
+  els.extractionStatus.textContent = "Extraction en cours…";
+  els.extractionStatus.classList.remove("error", "success", "warn");
 
-  const formData = new FormData();
-  state.files.forEach((file) => formData.append("files", file));
+  const filesToProcess = [...state.files];
 
   try {
-    const response = await fetch("/api/extract", { method: "POST", body: formData });
-    if (!response.ok) throw new Error(await response.text());
+    const results = await runExtraction(filesToProcess);
 
-    const results = await response.json();
     let newLines = 0;
     let okFiles = 0;
     let warnFiles = 0;
@@ -282,9 +377,8 @@ async function extractFiles() {
             ...emptyLine(result.filename),
             ...line,
             source_file: result.filename,
-            _engine: result.engine,
-            date_fac: line.date_fac ? line.date_fac.slice(0, 10) : "",
-            date_paie: line.date_paie ? line.date_paie.slice(0, 10) : "",
+            date_fac: line.date_fac ? String(line.date_fac).slice(0, 10) : "",
+            date_paie: line.date_paie ? String(line.date_paie).slice(0, 10) : "",
           });
           newLines += 1;
         });
@@ -305,11 +399,12 @@ async function extractFiles() {
 
     let msg = `${newLines} ligne(s) extraite(s) depuis ${okFiles} facture(s).`;
     if (warnFiles) msg += ` ${warnFiles} fichier(s) sans résultat.`;
-    if (warnings.length) msg += ` Vérifiez les montants signalés.`;
 
     els.extractionStatus.textContent = msg;
-    els.extractionStatus.classList.add(warnings.length ? "" : "success");
-    if (warnings.length) els.extractionStatus.classList.add("warn");
+    els.extractionStatus.classList.remove("error", "success", "warn");
+    renderWarnings(warnings);
+    if (warnings.length || warnFiles) els.extractionStatus.classList.add("warn");
+    else if (newLines > 0) els.extractionStatus.classList.add("success");
   } catch (error) {
     els.extractionStatus.textContent = `Erreur : ${error.message}`;
     els.extractionStatus.classList.add("error");
@@ -318,44 +413,24 @@ async function extractFiles() {
   }
 }
 
-async function exportExcel() {
+function exportExcel() {
   setStep(4);
-  const payload = {
-    client_name: els.clientName.value.trim() || "CLIENT",
-    period: els.period.value.trim(),
-    lines: state.lines.map(({ source_file, ...line }) => ({
-      ...line,
-      taux: Number(line.taux),
-      id_paie: Number(line.id_paie),
-      date_fac: line.date_fac || null,
-      date_paie: line.date_paie || null,
-    })),
-  };
-
   els.exportBtn.disabled = true;
   els.exportBtn.textContent = "Génération…";
 
   try {
-    const response = await fetch("/api/export", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    const filename = exportDedTvaExcel({
+      clientName: els.clientName.value.trim() || "CLIENT",
+      period: els.period.value.trim(),
+      lines: state.lines.map(({ source_file, ...line }) => ({
+        ...line,
+        taux: Number(line.taux),
+        id_paie: Number(line.id_paie),
+      })),
     });
 
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message);
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${payload.client_name}_DED_TVA_${payload.period}.xlsx`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-
-    els.extractionStatus.textContent = `Fichier ${anchor.download} téléchargé avec succès.`;
+    els.extractionStatus.textContent = `Fichier ${filename} téléchargé avec succès.`;
+    els.extractionStatus.classList.remove("error", "warn");
     els.extractionStatus.classList.add("success");
   } catch (error) {
     alert(`Export impossible : ${error.message}`);
@@ -372,6 +447,7 @@ function clearAll() {
   renderTable();
   els.extractionStatus.textContent = "";
   els.extractionStatus.className = "status";
+  clearWarnings();
   els.fileInput.value = "";
   updateButtons();
   setStep(1);
@@ -379,6 +455,9 @@ function clearAll() {
 
 els.clientName.addEventListener("input", updateFilenamePreview);
 els.period.addEventListener("input", updateFilenamePreview);
+els.apiServerUrl.addEventListener("change", persistApiSettings);
+els.apiServerUrl.addEventListener("blur", persistApiSettings);
+els.useAiServer.addEventListener("change", persistApiSettings);
 els.fileInput.addEventListener("change", (e) => addFiles(e.target.files));
 els.extractBtn.addEventListener("click", extractFiles);
 els.addLineBtn.addEventListener("click", () => {
@@ -404,7 +483,8 @@ els.clearBtn.addEventListener("click", clearAll);
   });
 });
 
+loadApiSettings();
 updateFilenamePreview();
 updateButtons();
 setStep(1);
-loadEngineInfo();
+refreshEngineBadge();
