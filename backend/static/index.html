@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recompta — Déclaration TVA</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Recompta</p>
+      <h1>Automatisation DED TVA</h1>
+      <p class="subtitle">
+        Importez vos factures fournisseurs scannées, vérifiez les lignes extraites,
+        puis générez le fichier Excel prêt pour la déclaration TVA.
+      </p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>1. Paramètres d'export</h2>
+      <div class="grid two">
+        <label>
+          Nom du client
+          <input id="clientName" type="text" value="Aichoum" placeholder="Ex: Aichoum" />
+        </label>
+        <label>
+          Période (MMAAAA)
+          <input id="period" type="text" value="062026" maxlength="6" pattern="\d{6}" />
+        </label>
+      </div>
+      <p class="hint" id="filenamePreview">Fichier: Aichoum_DED_TVA_062026.xlsx</p>
+    </section>
+
+    <section class="card">
+      <h2>2. Importer les factures</h2>
+      <div class="upload-zone" id="dropZone">
+        <input id="fileInput" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff" />
+        <p>Glissez vos PDF / images ici ou cliquez pour sélectionner</p>
+      </div>
+      <div class="actions">
+        <button id="extractBtn" class="primary" disabled>Extraire les données</button>
+        <button id="addLineBtn" class="secondary">Ajouter une ligne manuelle</button>
+      </div>
+      <div id="extractionStatus" class="status"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-header">
+        <h2>3. Vérifier et corriger</h2>
+        <span id="lineCount" class="badge">0 ligne(s)</span>
+      </div>
+      <div class="table-wrap">
+        <table id="linesTable">
+          <thead>
+            <tr>
+              <th>Facture</th>
+              <th>Fournisseur</th>
+              <th>ICE</th>
+              <th>IF</th>
+              <th>Désignation</th>
+              <th>HT</th>
+              <th>TVA</th>
+              <th>TTC</th>
+              <th>Taux</th>
+              <th>Date fact.</th>
+              <th>Date paie</th>
+              <th>ID paie</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Exporter</h2>
+      <button id="exportBtn" class="primary large" disabled>Télécharger le fichier Excel DED TVA</button>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
