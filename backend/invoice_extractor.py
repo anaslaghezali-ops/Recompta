@@ -562,7 +562,7 @@ Règles importantes :
 - Si plusieurs taux TVA (10% et 20%), crée UNE entrée par taux avec les montants HT/TVA/TTC correspondants
 - Si le tableau de ventilation TVA a plusieurs lignes au même taux (ex. deux lignes à 10%), crée une entrée DISTINCTE par ligne (ne pas fusionner)
 - Sinon, UNE seule ligne avec les totaux HT/TVA/TTC de la facture (ne pas dupliquer par produit)
-- designation : MATIERES CONSOMMABLES (achats), PRESTATIONS (services), TELEPHONIE, FRAIS BANCAIRE
+- designation : utilise EXACTEMENT une de ces valeurs : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
 - id_paie : 1 (paiement comptant) ou 4 (virement/crédit) — utilise 4 par défaut
 - Pour un AVOIR : tous les montants HT, TVA et TTC doivent être NÉGATIFS
 - Dates au format YYYY-MM-DD

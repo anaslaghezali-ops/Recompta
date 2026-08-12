@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from enum import Enum
 from typing import Optional
@@ -12,6 +13,37 @@ class Designation(str, Enum):
     PRESTATIONS = "PRESTATIONS"
     TELEPHONIE = "TELEPHONIE"
     FRAIS_BANCAIRE = "FRAIS BANCAIRE"
+
+
+def normalize_designation_label(value: object) -> Designation:
+    if isinstance(value, Designation):
+        return value
+
+    text = re.sub(r"\s+", " ", str(value or "").upper().strip())
+    if not text:
+        return Designation.MATIERES_CONSOMMABLES
+
+    for designation in Designation:
+        if text == designation.value:
+            return designation
+
+    compact = text.replace("MATIERE ", "MATIERES ").replace("CONSOMABLE", "CONSOMMABLES")
+    compact = compact.replace("CONSOMABLES", "CONSOMMABLES")
+    compact = re.sub(r"\s+", " ", compact).strip()
+    for designation in Designation:
+        if compact == designation.value:
+            return designation
+
+    if any(word in text for word in ("TELEPHON", "ORANGE", "INWI", "IAM")):
+        return Designation.TELEPHONIE
+    if any(word in text for word in ("BANCAIRE", "BANQUE", "COMMISSION")):
+        return Designation.FRAIS_BANCAIRE
+    if any(word in text for word in ("PRESTATION", "SERVICE", "HONORAIRE")):
+        return Designation.PRESTATIONS
+    if any(word in text for word in ("MATIERE", "CONSOM", "ACHAT", "FOURNITURE")):
+        return Designation.MATIERES_CONSOMMABLES
+
+    return Designation.MATIERES_CONSOMMABLES
 
 
 # Mapping observé dans les fichiers DED TVA marocains
@@ -45,6 +77,11 @@ class InvoiceLine(BaseModel):
     or_value: Optional[str] = Field(None, alias="or")
 
     model_config = {"populate_by_name": True}
+
+    @field_validator("designation", mode="before")
+    @classmethod
+    def normalize_designation(cls, value: object) -> Designation:
+        return normalize_designation_label(value)
 
     @field_validator("taux")
     @classmethod

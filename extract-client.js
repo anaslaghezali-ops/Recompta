@@ -233,6 +233,24 @@ async function ocrPdfFromDocument(pdf, onPage) {
   return chunks.join("\n");
 }
 
+function normalizeDesignation(value) {
+  const text = String(value || "")
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, " ");
+  if (text === "MATIERES CONSOMMABLES" || text === "PRESTATIONS" || text === "TELEPHONIE" || text === "FRAIS BANCAIRE") {
+    return text;
+  }
+  const compact = text
+    .replace(/MATIERE /g, "MATIERES ")
+    .replace(/CONSOMABLES/g, "CONSOMMABLES")
+    .replace(/CONSOMABLE/g, "CONSOMMABLES");
+  if (compact === "MATIERES CONSOMMABLES" || compact === "PRESTATIONS" || compact === "TELEPHONIE" || compact === "FRAIS BANCAIRE") {
+    return compact;
+  }
+  return guessDesignation(text);
+}
+
 function guessDesignation(text) {
   const lowered = text.toLowerCase();
   if (/(orange|inwi|iam|téléphon|telephon)/.test(lowered)) return "TELEPHONIE";
@@ -459,6 +477,7 @@ export function normalizeExtractionResults(results) {
     const bestName = pathHint?.lib_frss || pickMostCommon(group.lines.map((l) => l.lib_frss));
 
     for (const line of group.lines) {
+      line.designation = normalizeDesignation(line.designation);
       if (bestName) line.lib_frss = bestName;
       if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) line.ice_frs = bestIce;
       if (bestIf) line.if = bestIf;
