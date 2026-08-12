@@ -4,14 +4,15 @@ from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from excel_export import export_filename, export_to_bytes
-from invoice_extractor import extract_invoice, merge_extractions
-from models import ExportRequest, ExtractionResult, InvoiceLine
+from invoice_extractor import extract_invoice
+from models import ExportRequest, ExtractionResult
+from zip_utils import iter_invoice_files
 
-app = FastAPI(title="Recompta API", version="0.1.0")
+app = FastAPI(title="Recompta API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,14 +21,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-ALLOWED_MIME = {
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/tiff",
-}
 
 
 @app.get("/api/health")
@@ -69,6 +62,7 @@ async def reference() -> dict:
             "TELEPHONIE @ 20%": 140,
             "FRAIS BANCAIRE @ 10%": 142,
         },
+        "accepted_uploads": [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".zip"],
     }
 
 
@@ -78,20 +72,31 @@ async def extract_files(files: Annotated[list[UploadFile], File(...)]) -> list[E
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
     results: list[ExtractionResult] = []
+
     for upload in files:
         content = await upload.read()
+        upload_name = upload.filename or "inconnu"
         mime_type = upload.content_type or "application/octet-stream"
-        if mime_type not in ALLOWED_MIME:
+        invoice_files = iter_invoice_files(upload_name, content, mime_type)
+
+        if not invoice_files:
             results.append(
                 ExtractionResult(
-                    filename=upload.filename or "inconnu",
+                    filename=upload_name,
                     lines=[],
-                    warnings=[f"Type de fichier non supporté: {mime_type}"],
+                    warnings=[
+                        "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
+                    ],
                 )
             )
             continue
-        result = await extract_invoice(upload.filename or "facture", content, mime_type)
-        results.append(result)
+
+        for relative_name, file_content, file_mime in invoice_files:
+            display_name = relative_name if relative_name != upload_name else upload_name
+            result = await extract_invoice(display_name, file_content, file_mime)
+            if len(invoice_files) > 1 or relative_name != upload_name:
+                result.filename = display_name
+            results.append(result)
 
     return results
 
