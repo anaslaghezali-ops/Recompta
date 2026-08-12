@@ -2,6 +2,33 @@
 
 Automatisation de la saisie des factures fournisseurs pour la déclaration TVA marocaine (fichier Excel DED TVA).
 
+## Tester maintenant (mode solo — sans compte)
+
+Pas de Stripe, pas de connexion cabinet : ouvrez l'app web et testez directement.
+
+### Sur GitHub Codespace
+
+```bash
+cd backend
+pip install -r requirements.txt
+sudo apt-get install -y tesseract-ocr tesseract-ocr-fra   # OCR scans
+cp .env.example .env
+nano .env    # ajoutez OPENAI_API_KEY=sk-... (recommandé pour les scans)
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Puis **Ports** → **8000** → **Open in Browser**.
+
+### Utilisation
+
+1. Nom client + période (ex. Aichoum / 062026)
+2. Glissez vos **ZIP** ou PDF/images scannées
+3. **Extraire les factures** (1–2 min)
+4. Vérifiez le tableau, corrigez si besoin
+5. **Télécharger Excel**
+
+> Les comptes cabinets, Supabase et paiements viendront **plus tard**, une fois le cœur métier validé.
+
 ## Problème
 
 Les cabinets comptables reçoivent de nombreuses factures fournisseurs scannées (PDF, images). Pour la déclaration TVA, ils doivent saisir manuellement chaque facture dans un fichier Excel structuré (ex. `Aichoum_DED_TVA_062026.xlsx`).
