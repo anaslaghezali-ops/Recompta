@@ -10,6 +10,5 @@ backend/scripts/output_real_invoices.xlsx
 backend/scripts/extraction_report.json
 backend/invoices/upload/*
 !backend/invoices/upload/README.md
-!backend/invoices/upload/**/*
 .DS_Store
 node_modules/

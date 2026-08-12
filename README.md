@@ -85,7 +85,8 @@ Ouvrir http://localhost:8000
 ## Extraction automatique
 
 - **PDF avec texte** : extraction heuristique (regex) sans clé API
-- **Images scannées** : configurez `OPENAI_API_KEY` pour l'extraction par vision IA
+- **PDF scannés / images** : OCR local (Tesseract) automatique
+- **Images scannées (haute précision)** : `OPENAI_API_KEY` pour la vision IA (optionnel)
 
 ```bash
 export OPENAI_API_KEY=sk-...
