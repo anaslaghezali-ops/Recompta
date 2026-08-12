@@ -175,6 +175,11 @@ function renderTable() {
         input.type = field.type;
         if (field.step) input.step = field.step;
         if (field.readonly) input.readOnly = true;
+        if (field.key === "ice_frs") {
+          input.maxLength = 15;
+          input.inputMode = "numeric";
+          input.placeholder = "15 chiffres";
+        }
         const display =
           field.key === "source_file" ? shortFilename(line[field.key]) : (line[field.key] ?? "");
         input.value = display;
@@ -187,6 +192,10 @@ function renderTable() {
             line[field.key] = Number(input.value) || 0;
           } else if (field.key === "taux" || field.key === "id_paie") {
             line[field.key] = Number(input.value);
+          } else if (field.key === "ice_frs") {
+            const digits = input.value.replace(/\D/g, "").slice(0, 15);
+            line.ice_frs = digits.length === 15 ? digits : "";
+            input.value = line.ice_frs;
           } else {
             line[field.key] = input.value;
           }
@@ -280,15 +289,15 @@ function loadClientSettings() {
 }
 
 function persistClientIce() {
-  const ice = els.clientIce.value.trim().replace(/\D/g, "");
-  if (ice) localStorage.setItem("recompta_client_ice", ice);
+  const ice = els.clientIce.value.trim().replace(/\D/g, "").slice(0, 15);
+  els.clientIce.value = ice;
+  if (ice.length === 15) localStorage.setItem("recompta_client_ice", ice);
   else localStorage.removeItem("recompta_client_ice");
 }
 
 function currentClientIce() {
   const digits = els.clientIce.value.trim().replace(/\D/g, "");
-  if (digits.length < 10) return "";
-  return digits.slice(-15).padStart(15, "0");
+  return digits.length === 15 ? digits : "";
 }
 
 function applyExtractionContext() {
@@ -533,6 +542,9 @@ function clearAll() {
 }
 
 els.clientName.addEventListener("input", updateFilenamePreview);
+els.clientIce.addEventListener("input", () => {
+  els.clientIce.value = els.clientIce.value.replace(/\D/g, "").slice(0, 15);
+});
 els.clientIce.addEventListener("change", persistClientIce);
 els.clientIce.addEventListener("blur", persistClientIce);
 els.period.addEventListener("input", updateFilenamePreview);

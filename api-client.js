@@ -25,8 +25,8 @@ export async function extractViaServer(files, apiUrl, { onProgress, clientIce } 
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
   const normalizedIce = (clientIce || "").replace(/\D/g, "");
-  if (normalizedIce.length >= 10) {
-    formData.append("client_ice", normalizedIce.slice(-15).padStart(15, "0"));
+  if (normalizedIce.length === 15) {
+    formData.append("client_ice", normalizedIce);
   }
 
   if (onProgress) onProgress(0, files.length, "Envoi au serveur IA…");

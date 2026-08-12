@@ -332,8 +332,7 @@ function supplierHintFromPath(filename) {
 
 function normalizeIceDigits(value) {
   const digits = String(value || "").replace(/\D/g, "");
-  if (digits.length < 10) return "";
-  return digits.length >= 15 ? digits.slice(-15) : digits.padStart(15, "0");
+  return digits.length === 15 ? digits : "";
 }
 
 function pickMostCommon(values) {

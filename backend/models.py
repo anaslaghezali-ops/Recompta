@@ -57,7 +57,11 @@ class InvoiceLine(BaseModel):
     @classmethod
     def normalize_ice(cls, value: str) -> str:
         digits = "".join(ch for ch in value if ch.isdigit())
-        return digits.zfill(15) if digits else value
+        if not digits:
+            return ""
+        if len(digits) != 15:
+            return ""
+        return digits
 
     def resolved_code_tva(self) -> int:
         if self.code_tva is not None:

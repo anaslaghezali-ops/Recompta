@@ -69,9 +69,7 @@ def supplier_hint_from_path(filename: str) -> dict[str, str] | None:
 
 def normalize_ice_digits(value: str) -> str:
     digits = re.sub(r"\D", "", value or "")
-    if len(digits) < 10:
-        return ""
-    return digits[-15:].zfill(15) if len(digits) >= 15 else digits.zfill(15)
+    return digits if len(digits) == 15 else ""
 
 
 def pick_best_ice(candidates: list[str], excluded: frozenset[str] | None = None) -> str:

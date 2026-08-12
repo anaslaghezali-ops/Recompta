@@ -29,7 +29,7 @@ function inferCodeTva(designation, taux) {
 
 function normalizeIce(value) {
   const digits = String(value || "").replace(/\D/g, "");
-  return digits ? digits.padStart(15, "0") : "";
+  return digits.length === 15 ? digits : "";
 }
 
 function excelDate(value) {

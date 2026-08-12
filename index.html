@@ -32,9 +32,9 @@
         <label>Période (MMAAAA) <input id="period" type="text" value="062026" maxlength="6" /></label>
       </div>
       <label>ICE de votre société (client)
-        <input id="clientIce" type="text" value="003641228000030" maxlength="15" inputmode="numeric" placeholder="15 chiffres" />
+        <input id="clientIce" type="text" value="003641228000030" minlength="15" maxlength="15" inputmode="numeric" pattern="[0-9]{15}" placeholder="15 chiffres exactement" />
       </label>
-      <p class="hint">Cet ICE ne sera jamais utilisé comme ICE fournisseur lors de l'extraction.</p>
+      <p class="hint">15 chiffres exactement. Cet ICE ne sera jamais utilisé comme ICE fournisseur.</p>
       <p class="hint" id="filenamePreview">Fichier généré : Aichoum_DED_TVA_062026.xlsx</p>
       <p class="engine-badge tesseract" id="engineBadge">OCR dans le navigateur (Tesseract)</p>
     </section>
