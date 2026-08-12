@@ -1,8 +1,10 @@
 # Mettre Recompta en ligne (lien web)
 
-GitHub Pages **ne fonctionne pas** pour Recompta : c'est une application Python (OCR, IA, Excel), pas une simple page HTML.
+> **Render demande une carte ?** Utilisez plutôt **[SANS-RENDER.md](SANS-RENDER.md)** — backend local + tunnel gratuit, ou Hugging Face. Votre clé OpenAI suffit.
 
-Voici comment obtenir un **lien du type** `https://recompta.onrender.com` **gratuitement** avec Render.
+GitHub Pages **seul** ne suffit pas pour l'IA (clé API côté serveur). Voir [SANS-RENDER.md](SANS-RENDER.md) pour les options gratuites sans Render.
+
+## Render (optionnel — si vous acceptez la carte bancaire)
 
 ## Deux façons d'utiliser Recompta sur le web
 
