@@ -4,7 +4,27 @@ GitHub Pages **ne fonctionne pas** pour Recompta : c'est une application Python 
 
 Voici comment obtenir un **lien du type** `https://recompta.onrender.com` **gratuitement** avec Render.
 
-## Étapes (15 minutes, une seule fois)
+## Deux façons d'utiliser Recompta sur le web
+
+### Option A — Tout-en-un avec IA (recommandé)
+
+Déployez le backend sur **Render** (gratuit) : vous obtenez **une seule URL** qui sert l'interface + l'IA.
+
+1. Suivez les étapes ci-dessous (Blueprint Render + `OPENAI_API_KEY`)
+2. Ouvrez votre lien `https://recompta-xxxx.onrender.com`
+3. Le badge vert **« Extraction IA activée »** confirme que tout fonctionne
+
+### Option B — GitHub Pages + serveur IA
+
+- Interface : https://anaslaghezali-ops.github.io/Recompta/
+- Dans **Extraction IA**, cochez l'option et collez l'URL Render (ex. `https://recompta-xxxx.onrender.com`)
+- L'interface reste sur GitHub ; l'extraction passe par votre serveur (clé OpenAI sécurisée)
+
+> OpenAI bloque les appels directs depuis le navigateur (CORS). La clé API doit rester sur le serveur Render.
+
+---
+
+## Étapes Render (15 minutes, une seule fois)
 
 ### 1. Créer un compte Render
 

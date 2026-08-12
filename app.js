@@ -1,5 +1,13 @@
 import { extractAllFiles } from "./extract-client.js";
 import { exportDedTvaExcel } from "./export-client.js";
+import {
+  extractViaServer,
+  fetchServerHealth,
+  getApiUrl,
+  mergeWithAiRetry,
+  needsAiRetry,
+  saveApiUrl,
+} from "./api-client.js";
 
 const state = {
   files: [],
@@ -17,6 +25,9 @@ const els = {
   clientName: document.getElementById("clientName"),
   period: document.getElementById("period"),
   filenamePreview: document.getElementById("filenamePreview"),
+  engineBadge: document.getElementById("engineBadge"),
+  useAiServer: document.getElementById("useAiServer"),
+  apiServerUrl: document.getElementById("apiServerUrl"),
   dropZone: document.getElementById("dropZone"),
   fileInput: document.getElementById("fileInput"),
   fileList: document.getElementById("fileList"),
@@ -247,9 +258,97 @@ function setLoading(loading) {
 }
 
 function engineLabel(engine) {
+  if (engine === "ai") return "IA";
   if (engine === "tesseract") return "OCR";
   if (engine === "text") return "PDF";
   return "";
+}
+
+function resolvedApiUrl() {
+  const typed = els.apiServerUrl.value.trim().replace(/\/$/, "");
+  if (typed) return typed;
+  return getApiUrl();
+}
+
+function loadApiSettings() {
+  const saved = localStorage.getItem("recompta_api_url") || "";
+  els.apiServerUrl.value = saved;
+  els.useAiServer.checked = localStorage.getItem("recompta_use_ai") !== "false";
+}
+
+function persistApiSettings() {
+  saveApiUrl(els.apiServerUrl.value);
+  localStorage.setItem("recompta_use_ai", els.useAiServer.checked ? "true" : "false");
+  refreshEngineBadge();
+}
+
+async function refreshEngineBadge() {
+  const apiUrl = resolvedApiUrl();
+  const wantAi = els.useAiServer.checked;
+
+  if (wantAi && apiUrl) {
+    try {
+      const health = await fetchServerHealth(apiUrl);
+      if (health.ai_configured) {
+        els.engineBadge.className = "engine-badge ai";
+        els.engineBadge.textContent = "✓ Extraction IA activée (serveur sécurisé)";
+        return;
+      }
+      els.engineBadge.className = "engine-badge tesseract";
+      els.engineBadge.textContent = "Serveur OK mais OPENAI_API_KEY manquante";
+      return;
+    } catch {
+      els.engineBadge.className = "engine-badge tesseract";
+      els.engineBadge.textContent = "Serveur IA injoignable — OCR local en secours";
+      return;
+    }
+  }
+
+  els.engineBadge.className = "engine-badge tesseract";
+  els.engineBadge.textContent = "OCR navigateur (Tesseract)";
+}
+
+async function runExtraction(files) {
+  const apiUrl = resolvedApiUrl();
+  const wantAi = els.useAiServer.checked;
+
+  if (wantAi && !apiUrl) {
+    throw new Error("Indiquez l'URL du serveur Recompta (ex. https://recompta.onrender.com).");
+  }
+
+  if (wantAi && apiUrl) {
+    try {
+      const health = await fetchServerHealth(apiUrl);
+      if (health.ai_configured) {
+        els.extractionStatus.textContent = "Extraction IA en cours (serveur)…";
+        return extractViaServer(files, apiUrl, (_c, _t, label) => {
+          els.extractionStatus.textContent = label;
+        });
+      }
+    } catch (error) {
+      els.extractionStatus.textContent = `Serveur IA indisponible (${error.message}) — repli OCR local…`;
+    }
+  }
+
+  const localResults = await extractAllFiles(files, (current, total, name, ocrDetail) => {
+    const label = shortFilename(name);
+    els.extractionStatus.textContent = ocrDetail
+      ? `Fichier ${current}/${total} — ${label} (${ocrDetail})…`
+      : `Fichier ${current}/${total} — ${label}…`;
+  });
+
+  if (!wantAi || !apiUrl) return localResults;
+
+  const incomplete = localResults.filter(needsAiRetry);
+  if (!incomplete.length) return localResults;
+
+  try {
+    els.extractionStatus.textContent = `Relance IA pour ${incomplete.length} fichier(s) incomplet(s)…`;
+    const aiResults = await extractViaServer(files, apiUrl);
+    return mergeWithAiRetry(localResults, aiResults);
+  } catch {
+    return localResults;
+  }
 }
 
 async function extractFiles() {
@@ -257,16 +356,13 @@ async function extractFiles() {
 
   setLoading(true);
   clearWarnings();
-  els.extractionStatus.textContent = "Extraction en cours (OCR navigateur, ~1 min par scan)…";
+  els.extractionStatus.textContent = "Extraction en cours…";
   els.extractionStatus.classList.remove("error", "success", "warn");
 
+  const filesToProcess = [...state.files];
+
   try {
-    const results = await extractAllFiles(state.files, (current, total, name, ocrDetail) => {
-      const label = shortFilename(name);
-      els.extractionStatus.textContent = ocrDetail
-        ? `Fichier ${current}/${total} — ${label} (${ocrDetail})…`
-        : `Fichier ${current}/${total} — ${label}…`;
-    });
+    const results = await runExtraction(filesToProcess);
 
     let newLines = 0;
     let okFiles = 0;
@@ -359,6 +455,9 @@ function clearAll() {
 
 els.clientName.addEventListener("input", updateFilenamePreview);
 els.period.addEventListener("input", updateFilenamePreview);
+els.apiServerUrl.addEventListener("change", persistApiSettings);
+els.apiServerUrl.addEventListener("blur", persistApiSettings);
+els.useAiServer.addEventListener("change", persistApiSettings);
 els.fileInput.addEventListener("change", (e) => addFiles(e.target.files));
 els.extractBtn.addEventListener("click", extractFiles);
 els.addLineBtn.addEventListener("click", () => {
@@ -384,6 +483,8 @@ els.clearBtn.addEventListener("click", clearAll);
   });
 });
 
+loadApiSettings();
 updateFilenamePreview();
 updateButtons();
 setStep(1);
+refreshEngineBadge();

@@ -36,6 +36,18 @@
     </section>
 
     <section class="card">
+      <h2>Extraction IA</h2>
+      <label class="checkbox-row">
+        <input id="useAiServer" type="checkbox" checked />
+        Utiliser l'IA Vision pour les scans et photos
+      </label>
+      <label>URL du serveur Recompta
+        <input id="apiServerUrl" type="url" placeholder="https://recompta.onrender.com" />
+      </label>
+      <p class="hint">Votre clé OpenAI reste sur le serveur (jamais dans le navigateur). Déploiement gratuit sur Render — voir DEPLOY.md.</p>
+    </section>
+
+    <section class="card">
       <div class="section-header">
         <h2>Importer les factures</h2>
         <button id="clearBtn" class="secondary small" type="button" hidden>Tout effacer</button>

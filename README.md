@@ -10,13 +10,9 @@ Pas de Stripe, pas de connexion cabinet : ouvrez l'app web et testez directement
 
 **https://anaslaghezali-ops.github.io/Recompta/**
 
-L'application tourne entièrement dans votre navigateur (OCR Tesseract.js, export Excel). Aucune installation, aucun compte.
+Interface dans le navigateur (import, tableau, export Excel). Pour l'**IA sur les scans**, configurez l'URL de votre serveur Render dans la section **Extraction IA** (voir [DEPLOY.md](DEPLOY.md)).
 
-> Après chaque mise à jour sur `main`, le déploiement GitHub Pages prend 1–2 minutes.
-
-### Version serveur (optionnelle — Codespace / Render)
-
-Pour l'extraction IA (OpenAI Vision) ou un OCR serveur plus rapide :
+### Version serveur avec IA intégrée (recommandé pour les scans)
 
 ```bash
 cd backend

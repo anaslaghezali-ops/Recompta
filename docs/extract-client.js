@@ -69,7 +69,7 @@ async function getOcrWorker() {
 }
 
 function prepareCanvasForOcr(source) {
-  const minWidth = 1800;
+  const minWidth = 2400;
   const scale = source.width < minWidth ? minWidth / source.width : 1;
   const width = Math.round(source.width * scale);
   const height = Math.round(source.height * scale);
@@ -194,6 +194,14 @@ async function pdfPageToCanvas(pdf, pageNumber, scale = 2.5) {
 async function ocrCanvas(canvas) {
   const worker = await getOcrWorker();
   const prepared = prepareCanvasForOcr(canvas);
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: "6",
+      preserve_interword_spaces: "1",
+    });
+  } catch {
+    /* ignore unsupported params */
+  }
   const { data } = await worker.recognize(prepared);
   return data.text || "";
 }
