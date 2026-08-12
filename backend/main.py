@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from dotenv import load_dotenv
 
-load_dotenv()  # charge backend/.env ou .env à la racine
+load_dotenv()
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
+from auth import AuthUser, get_current_user, supabase_configured
 from excel_export import export_filename, export_to_bytes
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
+from saas import OnboardRequest, create_cabinet_for_user, get_user_cabinet
 from zip_utils import iter_invoice_files
 
-app = FastAPI(title="Recompta API", version="0.2.0")
+app = FastAPI(title="Recompta API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,7 +38,38 @@ async def health() -> dict:
         "status": "ok",
         "extraction_engine": preferred_engine(),
         "ai_configured": ai_available(),
+        "saas_enabled": supabase_configured(),
     }
+
+
+@app.get("/api/config")
+async def public_config() -> dict:
+    return {
+        "supabase_url": os.getenv("SUPABASE_URL", ""),
+        "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY", ""),
+        "saas_enabled": supabase_configured(),
+    }
+
+
+@app.get("/api/me")
+async def me(user: Annotated[AuthUser, Depends(get_current_user)]) -> dict:
+    cabinet = await get_user_cabinet(user.id)
+    return {"user": {"id": user.id, "email": user.email}, "cabinet": cabinet}
+
+
+@app.post("/api/onboard")
+async def onboard(
+    body: OnboardRequest,
+    user: Annotated[AuthUser, Depends(get_current_user)],
+) -> dict:
+    existing = await get_user_cabinet(user.id)
+    if existing:
+        raise HTTPException(status_code=400, detail="Vous avez déjà un cabinet")
+    try:
+        cabinet = await create_cabinet_for_user(user.id, body.cabinet_name, body.display_name)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"cabinet": cabinet}
 
 
 @app.get("/api/reference")

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connexion — Recompta</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .auth-page { max-width: 420px; margin: 4rem auto; padding: 0 1rem; }
+    .auth-card { padding: 2rem; }
+    .auth-card h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+    .auth-card form { display: grid; gap: 1rem; margin-top: 1.5rem; }
+    .auth-link { text-align: center; margin-top: 1rem; font-size: 0.9rem; color: var(--muted); }
+    .auth-link a { color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="auth-page">
+    <div class="card auth-card">
+      <p class="eyebrow">Recompta</p>
+      <h1>Connexion</h1>
+      <p class="hint">Accédez à votre espace cabinet comptable</p>
+      <form id="loginForm">
+        <label>Email <input type="email" id="email" required autocomplete="email" /></label>
+        <label>Mot de passe <input type="password" id="password" required autocomplete="current-password" /></label>
+        <button type="submit" class="primary large">Se connecter</button>
+      </form>
+      <p id="error" class="status error" hidden></p>
+      <p class="auth-link">Pas encore de compte ? <a href="/register.html">Créer un cabinet</a></p>
+    </div>
+  </div>
+  <script type="module">
+    import { getSupabase } from "/auth.js";
+
+    const sb = await getSupabase();
+    if (!sb) {
+      document.getElementById("error").hidden = false;
+      document.getElementById("error").textContent =
+        "Mode SaaS non configuré. Ajoutez SUPABASE_URL dans backend/.env ou utilisez l'app directement.";
+    } else {
+      const { data } = await sb.auth.getSession();
+      if (data.session) window.location.href = "/dashboard.html";
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = document.getElementById("error");
+      err.hidden = true;
+      const { error } = await sb.auth.signInWithPassword({
+        email: document.getElementById("email").value,
+        password: document.getElementById("password").value,
+      });
+      if (error) {
+        err.hidden = false;
+        err.textContent = error.message;
+        return;
+      }
+      window.location.href = "/dashboard.html";
+    });
+  </script>
+</body>
+</html>

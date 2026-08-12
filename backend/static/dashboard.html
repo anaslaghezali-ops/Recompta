@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tableau de bord — Recompta</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="hero" style="padding-bottom:1rem">
+    <div class="hero-content" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem">
+      <div>
+        <p class="eyebrow">Recompta</p>
+        <h1 id="cabinetName">Mon cabinet</h1>
+        <p class="subtitle" id="userEmail"></p>
+      </div>
+      <div class="actions" style="margin:0">
+        <button id="logoutBtn" class="secondary">Déconnexion</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <div class="section-header">
+        <h2>Mes clients</h2>
+        <button id="newDeclBtn" class="primary">+ Nouvelle déclaration TVA</button>
+      </div>
+      <p class="hint">Sélectionnez un client ou créez une déclaration pour importer des factures.</p>
+      <div id="clientList" class="file-list" style="margin-top:1rem"></div>
+      <p id="emptyClients" class="empty-state subtle">Aucun client pour l'instant. Lancez une déclaration TVA pour commencer.</p>
+    </section>
+
+    <section class="card export-card">
+      <div class="export-inner">
+        <div>
+          <h2>Déclaration TVA</h2>
+          <p class="hint">Importez vos factures scannées (ZIP ou PDF) et générez le fichier Excel DED TVA.</p>
+        </div>
+        <a href="/index.html" class="primary large" style="text-decoration:none;text-align:center">Ouvrir l'outil d'import</a>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { authHeaders, requireAuth, signOut } from "/auth.js";
+
+    if (!(await requireAuth())) throw new Error("redirect");
+
+    const me = await fetch("/api/me", { headers: await authHeaders() });
+    if (me.status === 401) {
+      await signOut();
+    } else if (me.ok) {
+      const data = await me.json();
+      document.getElementById("userEmail").textContent = data.user.email || "";
+      if (data.cabinet) {
+        document.getElementById("cabinetName").textContent = data.cabinet.name;
+        document.getElementById("emptyClients").hidden = true;
+      } else {
+        window.location.href = "/register.html";
+      }
+    }
+
+    document.getElementById("logoutBtn").addEventListener("click", signOut);
+    document.getElementById("newDeclBtn").addEventListener("click", () => {
+      window.location.href = "/index.html";
+    });
+  </script>
+</body>
+</html>

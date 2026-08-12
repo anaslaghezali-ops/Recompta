@@ -82,6 +82,19 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 Ouvrir http://localhost:8000
 
+## Vendre à des cabinets comptables (SaaS)
+
+Guide complet : **[docs/SAAS.md](docs/SAAS.md)**
+
+- Comptes cabinet avec **Supabase Auth**
+- Multi-tenant : chaque cabinet voit uniquement ses clients
+- Pages : `/login.html` → `/register.html` → `/dashboard.html` → import TVA
+
+**Setup Supabase** (projet dédié `recompta`) :
+1. Créer un projet sur https://supabase.com
+2. SQL Editor → coller `supabase/migrations/001_recompta_saas.sql`
+3. Copier URL + clés dans `backend/.env`
+
 ## Mettre en ligne (lien web pour le cabinet)
 
 **GitHub Pages ne suffit pas** — il faut un hébergeur qui exécute Python.

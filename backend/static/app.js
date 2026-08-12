@@ -408,3 +408,9 @@ updateFilenamePreview();
 updateButtons();
 setStep(1);
 loadEngineInfo();
+
+// Redirection login si mode SaaS activé
+import("/auth.js").then(async ({ getSupabase, requireAuth }) => {
+  const sb = await getSupabase();
+  if (sb) await requireAuth("/login.html");
+}).catch(() => {});
