@@ -277,8 +277,22 @@ function isEatMeatDocument(text, filename) {
   return /eatmeat/i.test(`${filename}\n${text}`);
 }
 
-function isAvoirDocument(text, filename) {
-  return /avoir/i.test(`${filename}\n${text}`);
+function isAvoirDocument(text, filename, factNum = "") {
+  return /avoir/i.test(`${filename}\n${text}\n${factNum}`);
+}
+
+function applyAvoirSigns(result) {
+  const isAvoir =
+    isAvoirDocument(result.raw_text || "", result.filename) ||
+    (result.lines || []).some((line) => isAvoirDocument("", "", line.fact_num));
+  if (!isAvoir) return result;
+
+  for (const line of result.lines || []) {
+    if (Number(line.m_ht) > 0) line.m_ht = -Math.abs(Number(line.m_ht));
+    if (Number(line.tva) > 0) line.tva = -Math.abs(Number(line.tva));
+    if (Number(line.m_ttc) > 0) line.m_ttc = -Math.abs(Number(line.m_ttc));
+  }
+  return result;
 }
 
 function folderKey(filename) {
@@ -372,13 +386,15 @@ function consolidateLines(lines) {
     let totalHt = Math.round(group.reduce((sum, line) => sum + Number(line.m_ht || 0), 0) * 100) / 100;
     let totalTva = Math.round(group.reduce((sum, line) => sum + Number(line.tva || 0), 0) * 100) / 100;
     let totalTtc = Math.round(group.reduce((sum, line) => sum + Number(line.m_ttc || 0), 0) * 100) / 100;
+    const sign = totalHt < 0 || group.some((line) => Number(line.m_ht) < 0) ? -1 : 1;
+    const absHt = Math.abs(totalHt);
 
-    if (totalHt > 0) {
-      const expectedTva = Math.round(totalHt * taux * 100) / 100;
-      if (totalTva <= 0 || group.some((line) => Number(line.tva) === 0)) {
+    if (absHt > 0) {
+      const expectedTva = Math.round(absHt * taux * 100) / 100 * sign;
+      if (Math.abs(totalTva) < 1e-9 || group.some((line) => Number(line.tva) === 0)) {
         totalTva = expectedTva;
       }
-      if (totalTtc <= totalHt || group.some((line) => Number(line.m_ttc) <= Number(line.m_ht))) {
+      if (Math.abs(totalTtc) <= absHt || group.some((line) => Math.abs(Number(line.m_ttc)) <= Math.abs(Number(line.m_ht)))) {
         totalTtc = Math.round((totalHt + totalTva) * 100) / 100;
       }
     }
@@ -395,10 +411,12 @@ function consolidateLines(lines) {
 }
 
 export function normalizeExtractionResults(results) {
-  const normalized = results.map((result) => ({
-    ...result,
-    lines: consolidateLines(result.lines || []),
-  }));
+  const normalized = results.map((result) =>
+    applyAvoirSigns({
+      ...result,
+      lines: consolidateLines(result.lines || []),
+    }),
+  );
 
   const groups = new Map();
   for (const result of normalized) {
@@ -432,8 +450,8 @@ export function normalizeExtractionResults(results) {
 }
 
 function guessTaux(ht, tva) {
-  if (ht && tva && ht > 0) {
-    const ratio = Math.round((tva / ht) * 100) / 100;
+  if (ht && tva && Math.abs(ht) > 0) {
+    const ratio = Math.round((Math.abs(tva) / Math.abs(ht)) * 100) / 100;
     if (ratio === 0.1 || ratio === 0.2) return ratio;
     if (ratio >= 0.08 && ratio <= 0.12) return 0.1;
     if (ratio >= 0.18 && ratio <= 0.22) return 0.2;
@@ -704,11 +722,17 @@ function heuristicExtract(filename, text) {
       ttc = ttc ?? mad.ttc;
     }
     if (ht === null || ttc === null) warnings.push("Montants HT/TTC non détectés automatiquement.");
-    if (isAvoirDocument(text, filename)) warnings.push("Document AVOIR détecté — vérifiez les montants (saisis en positif).");
+    if (isAvoirDocument(text, filename)) warnings.push("Document AVOIR détecté — montants en négatif.");
 
     const taux = guessTaux(ht, tva);
     if (tva === null && ht !== null) tva = Math.round(ht * taux * 100) / 100;
     if (ttc === null && ht !== null && tva !== null) ttc = Math.round((ht + tva) * 100) / 100;
+
+    if (isAvoirDocument(text, filename)) {
+      if (ht > 0) ht = -Math.abs(ht);
+      if (tva > 0) tva = -Math.abs(tva);
+      if (ttc > 0) ttc = -Math.abs(ttc);
+    }
 
     lines.push(
       makeLine({

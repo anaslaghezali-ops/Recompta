@@ -43,7 +43,9 @@ export async function extractViaServer(files, apiUrl, onProgress) {
 
 export function needsAiRetry(result) {
   if (!result.lines?.length) return true;
-  return result.lines.every((line) => !(Number(line.m_ht) > 0) && !(Number(line.m_ttc) > 0));
+  return result.lines.every(
+    (line) => !(Math.abs(Number(line.m_ht)) > 0) && !(Math.abs(Number(line.m_ttc)) > 0),
+  );
 }
 
 export function mergeWithAiRetry(localResults, aiResults) {

@@ -51,10 +51,11 @@ def _parse_amount(raw: str) -> float | None:
         return None
 
 
-def _positive_amount(value: float | None) -> float | None:
+def _as_avoir_amount(value: float | None) -> float | None:
     if value is None:
         return None
-    return abs(value)
+    amount = abs(value)
+    return -amount if amount else 0.0
 
 
 def _parse_date(raw: str) -> date | None:
@@ -161,7 +162,7 @@ def _extract_amounts(text: str) -> tuple[float | None, float | None, float | Non
     if ttc is None and ht is not None and tva is not None:
         ttc = round(ht + tva, 2)
 
-    ht, tva, ttc = (_positive_amount(v) for v in (ht, tva, ttc))
+    ht, tva, ttc = (v if v is None else abs(v) for v in (ht, tva, ttc))
     return ht, tva, ttc
 
 
@@ -175,8 +176,8 @@ def _extract_avoir_totals(text: str) -> tuple[float | None, float | None, float 
         re.I | re.S,
     )
     if ventilation:
-        tva = _positive_amount(_parse_amount(ventilation.group(1)))
-        ht = _positive_amount(_parse_amount(ventilation.group(2)))
+        tva = _as_avoir_amount(_parse_amount(ventilation.group(1)))
+        ht = _as_avoir_amount(_parse_amount(ventilation.group(2)))
         if ht and tva:
             return ht, tva, round(ht + tva, 2)
 
@@ -184,13 +185,13 @@ def _extract_avoir_totals(text: str) -> tuple[float | None, float | None, float 
     if block:
         amounts: list[float] = []
         for match in re.finditer(r"(-?[\d]{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)\s*(?:DH)?", block.group(1)):
-            value = _positive_amount(_parse_amount(match.group(1)))
-            if value and value > 0:
-                amounts.append(value)
+            value = _parse_amount(match.group(1))
+            if value is not None and value != 0:
+                amounts.append(abs(value))
         unique = sorted(set(amounts))
         if len(unique) >= 3:
             tva, ht, ttc = unique[0], unique[1], unique[2]
-            return ht, tva, ttc
+            return _as_avoir_amount(ht), _as_avoir_amount(tva), _as_avoir_amount(ttc)
 
     return None, None, None
 
@@ -206,12 +207,12 @@ def _resolve_supplier_from_ice(text: str, supplier: str, ice: str) -> tuple[str,
 def _needs_ai_upgrade(result: ExtractionResult) -> bool:
     if not result.lines:
         return True
-    return all(line.m_ht <= 0 and line.m_ttc <= 0 for line in result.lines)
+    return all(abs(line.m_ht) < 1e-9 and abs(line.m_ttc) < 1e-9 for line in result.lines)
 
 
 def _guess_taux(ht: float | None, tva: float | None) -> float:
-    if ht and tva and ht > 0:
-        ratio = round(tva / ht, 2)
+    if ht and tva and abs(ht) > 0:
+        ratio = round(abs(tva) / abs(ht), 2)
         if ratio in (0.1, 0.2):
             return ratio
         if 0.08 <= ratio <= 0.12:
@@ -477,7 +478,7 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
         if ht is None or ttc is None:
             warnings.append("Montants HT/TTC non détectés automatiquement.")
         elif re.search(r"\bAVOIR\b", text, re.I):
-            warnings.append("Document AVOIR détecté — montants saisis en positif.")
+            warnings.append("Document AVOIR détecté — montants en négatif.")
 
         taux = _guess_taux(ht, tva)
         if tva is None and ht is not None:
@@ -531,7 +532,7 @@ Règles importantes :
 - Sinon, UNE seule ligne avec les totaux HT/TVA/TTC de la facture (ne pas dupliquer par produit)
 - designation : MATIERES CONSOMMABLES (achats), PRESTATIONS (services), TELEPHONIE, FRAIS BANCAIRE
 - id_paie : 1 (paiement comptant) ou 4 (virement/crédit) — utilise 4 par défaut
-- Pour un AVOIR (montants négatifs), utilise des montants positifs et ajoute un warning
+- Pour un AVOIR : tous les montants HT, TVA et TTC doivent être NÉGATIFS
 - Dates au format YYYY-MM-DD
 
 Retourne UNIQUEMENT un JSON valide :

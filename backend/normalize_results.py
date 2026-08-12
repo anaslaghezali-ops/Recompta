@@ -70,6 +70,27 @@ def pick_most_common(values: list[str]) -> str:
     return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
 
 
+def is_avoir_document(filename: str, text: str = "", fact_num: str = "") -> bool:
+    return "avoir" in f"{filename}\n{text}\n{fact_num}".lower()
+
+
+def apply_avoir_signs(result: ExtractionResult) -> ExtractionResult:
+    is_avoir = is_avoir_document(result.filename, result.raw_text)
+    if not is_avoir and result.lines:
+        is_avoir = any(is_avoir_document("", "", line.fact_num) for line in result.lines)
+    if not is_avoir:
+        return result
+
+    for line in result.lines:
+        if line.m_ht > 0:
+            line.m_ht = -abs(line.m_ht)
+        if line.tva > 0:
+            line.tva = -abs(line.tva)
+        if line.m_ttc > 0:
+            line.m_ttc = -abs(line.m_ttc)
+    return result
+
+
 def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
     if len(lines) <= 1:
         return lines
@@ -87,12 +108,14 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
         total_ht = round(sum(line.m_ht for line in group), 2)
         total_tva = round(sum(line.tva for line in group), 2)
         total_ttc = round(sum(line.m_ttc for line in group), 2)
+        sign = -1 if total_ht < 0 or any(line.m_ht < 0 for line in group) else 1
+        abs_ht = abs(total_ht)
 
-        if total_ht > 0:
-            expected_tva = round(total_ht * taux, 2)
-            if total_tva <= 0 or any(line.tva == 0 for line in group):
+        if abs_ht > 0:
+            expected_tva = round(abs_ht * taux, 2) * sign
+            if abs(total_tva) < 1e-9 or any(line.tva == 0 for line in group):
                 total_tva = expected_tva
-            if total_ttc <= total_ht or any(line.m_ttc <= line.m_ht for line in group):
+            if abs(total_ttc) <= abs_ht or any(abs(line.m_ttc) <= abs(line.m_ht) for line in group):
                 total_ttc = round(total_ht + total_tva, 2)
 
         base = group[0].model_copy(deep=True)
@@ -107,7 +130,7 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
 def normalize_extraction_results(results: list[ExtractionResult]) -> list[ExtractionResult]:
     normalized: list[ExtractionResult] = []
     for result in results:
-        item = result.model_copy(deep=True)
+        item = apply_avoir_signs(result.model_copy(deep=True))
         item.lines = consolidate_lines(item.lines)
         normalized.append(item)
 

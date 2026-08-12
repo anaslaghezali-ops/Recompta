@@ -31,9 +31,9 @@ def infer_code_tva(designation: Designation, taux: float) -> Optional[int]:
 class InvoiceLine(BaseModel):
     fact_num: str = Field(..., description="Numéro de facture")
     designation: Designation = Designation.MATIERES_CONSOMMABLES
-    m_ht: float = Field(..., ge=0, description="Montant HT")
-    tva: float = Field(..., ge=0, description="Montant TVA")
-    m_ttc: float = Field(..., ge=0, description="Montant TTC")
+    m_ht: float = Field(..., description="Montant HT (négatif pour un avoir)")
+    tva: float = Field(..., description="Montant TVA (négatif pour un avoir)")
+    m_ttc: float = Field(..., description="Montant TTC (négatif pour un avoir)")
     if_fournisseur: str = Field("", alias="if", description="Identifiant fiscal fournisseur")
     lib_frss: str = Field("", description="Nom du fournisseur")
     ice_frs: str = Field("", description="ICE fournisseur (15 chiffres)")
