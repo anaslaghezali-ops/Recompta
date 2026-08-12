@@ -95,7 +95,6 @@ function prepareCanvasForOcr(source) {
 function parseAmount(raw) {
   let cleaned = raw.replace(/\u00a0/g, "").replace(/ /g, "").trim();
   if (!cleaned || cleaned === "-" || cleaned === "--") return null;
-  const negative = cleaned.startsWith("-") || cleaned.startsWith("(");
   cleaned = cleaned.replace(/^\(|\)$/g, "").replace(/^-/, "");
   if (cleaned.includes(",") && cleaned.includes(".")) {
     if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
@@ -266,8 +265,115 @@ function isAchibestDocument(text, filename) {
   return haystack.includes("achibest") || haystack.includes("partenaire des tables gourmandes");
 }
 
+function isEatMeatDocument(text, filename) {
+  return /eatmeat/i.test(`${filename}\n${text}`);
+}
+
 function isAvoirDocument(text, filename) {
   return /avoir/i.test(`${filename}\n${text}`);
+}
+
+function folderKey(filename) {
+  const parts = filename.replace(/\\/g, "/").split("/");
+  return parts.length > 1 ? parts[0].toLowerCase().trim() : "";
+}
+
+const FOLDER_SUPPLIERS = {
+  achibest: { lib_frss: "ACHIBEST", ice: "000229475000050", if: "1102277" },
+  eatmeat: { lib_frss: "EATMEAT" },
+  mose: { lib_frss: "MOSE Food" },
+  "mose food": { lib_frss: "MOSE Food" },
+};
+
+function supplierHintFromPath(filename) {
+  const key = folderKey(filename);
+  if (!key) return null;
+  if (FOLDER_SUPPLIERS[key]) return FOLDER_SUPPLIERS[key];
+  for (const [pattern, hint] of Object.entries(FOLDER_SUPPLIERS)) {
+    if (key.includes(pattern)) return hint;
+  }
+  return null;
+}
+
+function normalizeIceDigits(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  return digits.length >= 15 ? digits.slice(-15) : digits.padStart(15, "0");
+}
+
+function pickMostCommon(values) {
+  const counts = new Map();
+  for (const raw of values) {
+    const value = String(raw || "").trim();
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  if (!counts.size) return "";
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function pickBestIce(candidates) {
+  const counts = new Map();
+  for (const raw of candidates) {
+    const ice = normalizeIceDigits(raw);
+    if (ice.length !== 15 || /^0+$/.test(ice)) continue;
+    counts.set(ice, (counts.get(ice) || 0) + 1);
+  }
+  if (!counts.size) return "";
+
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]));
+  const [bestIce, bestCount] = sorted[0];
+
+  for (const [ice, count] of sorted.slice(1)) {
+    if (count < bestCount) break;
+    let diff = 0;
+    for (let i = 0; i < 15; i += 1) {
+      if (ice[i] !== bestIce[i]) diff += 1;
+    }
+    if (diff <= 2 && count >= bestCount - 1) return bestIce;
+  }
+  return bestIce;
+}
+
+function applySupplierPathHints(filename, line) {
+  const hint = supplierHintFromPath(filename);
+  if (!hint) return;
+  if (hint.lib_frss) line.lib_frss = hint.lib_frss;
+  if (hint.ice) line.ice_frs = hint.ice;
+  if (hint.if) line.if = hint.if;
+}
+
+function normalizeExtractionResults(results) {
+  const groups = new Map();
+
+  for (const result of results) {
+    const groupKey = folderKey(result.filename) || (result.lines[0]?.lib_frss || "unknown").toUpperCase();
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, { filenames: [], lines: [], ices: [], ifs: [] });
+    }
+    const group = groups.get(groupKey);
+    group.filenames.push(result.filename);
+    for (const line of result.lines) {
+      group.lines.push(line);
+      if (line.ice_frs) group.ices.push(line.ice_frs);
+      if (line.if) group.ifs.push(line.if);
+    }
+  }
+
+  for (const [groupKey, group] of groups) {
+    const pathHint = supplierHintFromPath(group.filenames[0] || "");
+    const bestIce = pathHint?.ice || pickBestIce(group.ices);
+    const bestIf = pathHint?.if || pickMostCommon(group.ifs);
+    const bestName = pathHint?.lib_frss || pickMostCommon(group.lines.map((l) => l.lib_frss));
+
+    for (const line of group.lines) {
+      if (bestName) line.lib_frss = bestName;
+      if (bestIce) line.ice_frs = bestIce;
+      if (bestIf) line.if = bestIf;
+    }
+  }
+
+  return results;
 }
 
 function guessTaux(ht, tva) {
@@ -282,7 +388,10 @@ function guessTaux(ht, tva) {
 
 function extractSupplierName(text, filename = "") {
   const haystack = `${filename}\n${text}`;
+  const pathHint = supplierHintFromPath(filename);
+  if (pathHint?.lib_frss) return pathHint.lib_frss;
   if (isAchibestDocument(text, filename)) return "ACHIBEST";
+  if (isEatMeatDocument(text, filename)) return "EATMEAT";
 
   const branded = haystack.match(/\b(ACHIBEST|EATMEAT|MOSE\s*Food|ORANGE|GLOVO|CARREFOUR)\b/i);
   if (branded) {
@@ -306,11 +415,18 @@ function extractSupplierName(text, filename = "") {
   return "";
 }
 
-function extractSupplierIce(text) {
-  const matches = [...text.matchAll(new RegExp(ICE_PATTERN.source, "gi"))].map((m) => m[1]);
-  if (matches.length) return matches[matches.length - 1];
+function extractSupplierIce(text, filename = "") {
+  const pathHint = supplierHintFromPath(filename);
+  if (pathHint?.ice) return pathHint.ice;
+
+  const candidates = [...text.matchAll(new RegExp(ICE_PATTERN.source, "gi"))].map((m) => m[1]);
   const plain = [...text.matchAll(/\b(\d{15})\b/g)].map((m) => m[1]);
-  return plain.length ? plain[plain.length - 1] : "";
+  const all = [...candidates, ...plain].map(normalizeIceDigits).filter((ice) => ice.length === 15);
+  if (!all.length) return "";
+
+  const counts = new Map();
+  for (const ice of all) counts.set(ice, (counts.get(ice) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
 function extractSupplierIf(text) {
@@ -408,16 +524,49 @@ function extractTvaVentilation(text) {
   return items;
 }
 
-function extractMadAmounts(text) {
-  const amounts = [...text.matchAll(/([\d .,\u00a0]+)\s*MAD/gi)]
-    .map((m) => parseAmount(m[1]))
-    .filter((a) => a !== null && a > 0);
-  if (amounts.length >= 3) {
-    amounts.sort((a, b) => a - b);
-    let [tva, ht, ttc] = amounts;
-    if (ttc < ht) [ht, ttc] = [ttc, ht];
-    return { ht, tva, ttc };
+function extractAllDecimalAmounts(text) {
+  const matches = [
+    ...text.matchAll(/([\d .,\u00a0]{2,})\s*(?:MAD|DH|Dhs?)\b/gi),
+    ...text.matchAll(/\b(\d{1,3}(?:[ \u00a0.,]\d{3})*[.,]\d{2})\b/g),
+  ];
+  const amounts = [];
+  for (const match of matches) {
+    const value = parseAmount(match[1]);
+    if (value !== null && value >= 1 && value < 5000000) amounts.push(value);
   }
+  return amounts;
+}
+
+function findAmountTriplet(amounts) {
+  const uniq = [...new Set(amounts)].sort((a, b) => a - b);
+  for (const ttc of uniq) {
+    for (const tva of uniq) {
+      for (const ht of uniq) {
+        if (ht <= 0 || tva <= 0 || ttc <= 0) continue;
+        if (ht >= ttc) continue;
+        if (Math.abs(ht + tva - ttc) <= Math.max(0.05, ttc * 0.01)) {
+          return { ht, tva, ttc };
+        }
+      }
+    }
+  }
+  if (uniq.length >= 3) {
+    const slice = uniq.slice(-3);
+    const [tva, ht, ttc] = slice;
+    if (ttc >= ht) return { ht, tva, ttc };
+  }
+  return null;
+}
+
+function extractMadAmounts(text) {
+  const amounts = extractAllDecimalAmounts(text);
+  const triplet = findAmountTriplet(amounts);
+  if (triplet) return triplet;
+
+  const tail = text.slice(Math.max(0, text.length - 1200));
+  const tailTriplet = findAmountTriplet(extractAllDecimalAmounts(tail));
+  if (tailTriplet) return tailTriplet;
+
   return { ht: null, tva: null, ttc: null };
 }
 
@@ -425,7 +574,7 @@ function heuristicExtract(filename, text) {
   const warnings = [];
   if (!text.trim()) warnings.push("Aucun texte extrait du document. Saisie manuelle requise.");
 
-  const ice = extractSupplierIce(text);
+  const ice = extractSupplierIce(text, filename);
   const ifFiscal = extractSupplierIf(text);
   const factNum = extractInvoiceNumber(text, filename);
   const supplier = extractSupplierName(text, filename);
@@ -516,6 +665,10 @@ function heuristicExtract(filename, text) {
     );
   }
 
+  for (const line of lines) {
+    applySupplierPathHints(filename, line);
+  }
+
   return {
     filename,
     lines,
@@ -542,7 +695,12 @@ async function extractWithOcr(filename, textOrCanvas, options = {}) {
   if (options.pageInfo) {
     result.warnings.unshift(`OCR ${options.pageInfo} page(s) dans le navigateur.`);
   }
-  result.warnings.push("Vérifiez les montants extraits.");
+  const hasAmounts = result.lines.some((line) => (line.m_ht || 0) > 0 && (line.m_ttc || 0) > 0);
+  if (!hasAmounts) {
+    result.warnings.push("Montants HT/TTC non détectés — saisie manuelle probable.");
+  } else if (result.warnings.some((w) => w.includes("non détectés"))) {
+    result.warnings = result.warnings.filter((w) => !w.includes("non détectés"));
+  }
   return result;
 }
 
@@ -689,5 +847,5 @@ export async function extractAllFiles(files, onProgress) {
     results.push(result);
   }
 
-  return results;
+  return normalizeExtractionResults(results);
 }
