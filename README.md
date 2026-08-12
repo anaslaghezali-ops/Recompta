@@ -82,6 +82,17 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 Ouvrir http://localhost:8000
 
+## Mettre en ligne (lien web pour le cabinet)
+
+**GitHub Pages ne suffit pas** — il faut un hébergeur qui exécute Python.
+
+Guide détaillé : **[DEPLOY.md](DEPLOY.md)**
+
+En bref avec [Render](https://render.com) (gratuit) :
+1. Connexion GitHub → repo Recompta → **Blueprint** (fichier `render.yaml` inclus)
+2. Variable d'environnement `OPENAI_API_KEY` dans le dashboard Render
+3. Vous obtenez un lien du type `https://recompta.onrender.com`
+
 ## Extraction automatique
 
 | Type de document | Moteur | Précision |
