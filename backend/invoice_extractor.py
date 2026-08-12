@@ -549,6 +549,40 @@ def ai_available() -> bool:
     return bool(os.getenv("OPENAI_API_KEY", "").strip().startswith("sk-"))
 
 
+async def verify_openai_key() -> tuple[bool, str]:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key.startswith("sk-"):
+        return False, "OPENAI_API_KEY manquante dans backend/.env"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        if response.status_code == 401:
+            return False, "Clé OpenAI refusée (401) — créez une nouvelle clé sur platform.openai.com"
+        if response.status_code >= 400:
+            return False, f"OpenAI injoignable ({response.status_code})"
+        return True, "Clé OpenAI valide"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"Impossible de joindre OpenAI : {exc}"
+
+
+def format_openai_error(exc: Exception) -> str:
+    message = str(exc)
+    if "401" in message or "Unauthorized" in message:
+        return (
+            "Clé OpenAI invalide (401). Éditez backend/.env avec une clé sk-... valide, "
+            "puis redémarrez uvicorn (Ctrl+C puis relancez)."
+        )
+    if "502" in message or "Bad Gateway" in message:
+        return "OpenAI temporairement indisponible (502). Réessayez dans quelques minutes."
+    if "429" in message:
+        return "Quota OpenAI dépassé (429). Vérifiez votre compte OpenAI."
+    return message
+
+
 def tesseract_available() -> bool:
     import shutil
 
@@ -637,7 +671,7 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                 try:
                     return await _extract_pdf_with_ai(filename, content)
                 except Exception as exc:  # noqa: BLE001
-                    result.warnings.append(f"Extraction IA échouée ({exc}) — résultat texte conservé.")
+                    result.warnings.append(f"Extraction IA échouée ({format_openai_error(exc)}) — résultat texte conservé.")
             return result
 
         if ai_available():
@@ -649,7 +683,7 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                     lines=[],
                     confidence="low",
                     engine="ai",
-                    warnings=[f"Extraction IA échouée: {exc}"],
+                    warnings=[f"Extraction IA échouée: {format_openai_error(exc)}"],
                 )
 
         if not tesseract_available():
@@ -688,26 +722,13 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
             try:
                 return await _extract_with_openai(filename, content, mime_type)
             except Exception as exc:  # noqa: BLE001
-                if not tesseract_available():
-                    return ExtractionResult(
-                        filename=filename,
-                        lines=[],
-                        confidence="low",
-                        engine="ai",
-                        warnings=[f"Extraction IA échouée: {exc}"],
-                    )
-                try:
-                    result = await _extract_with_ocr(filename, content)
-                    result.warnings.insert(0, f"IA indisponible ({exc}), repli sur Tesseract.")
-                    return result
-                except Exception as ocr_exc:  # noqa: BLE001
-                    return ExtractionResult(
-                        filename=filename,
-                        lines=[],
-                        confidence="low",
-                        engine="ai",
-                        warnings=[f"Extraction IA échouée: {exc}", f"OCR échoué: {ocr_exc}"],
-                    )
+                return ExtractionResult(
+                    filename=filename,
+                    lines=[],
+                    confidence="low",
+                    engine="ai",
+                    warnings=[f"Extraction IA échouée: {format_openai_error(exc)}"],
+                )
         return ExtractionResult(
             filename=filename,
             lines=[],

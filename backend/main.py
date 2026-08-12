@@ -33,12 +33,20 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict:
-    from invoice_extractor import ai_available, preferred_engine, tesseract_available
+    from invoice_extractor import ai_available, preferred_engine, tesseract_available, verify_openai_key
+
+    configured = ai_available()
+    verified = False
+    ai_message = ""
+    if configured:
+        verified, ai_message = await verify_openai_key()
 
     return {
         "status": "ok",
         "extraction_engine": preferred_engine(),
-        "ai_configured": ai_available(),
+        "ai_configured": configured,
+        "ai_verified": verified,
+        "ai_message": ai_message,
         "tesseract_available": tesseract_available(),
     }
 

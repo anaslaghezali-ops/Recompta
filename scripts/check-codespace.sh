@@ -15,6 +15,17 @@ fi
 
 if [ -f .env ] && grep -qE '^OPENAI_API_KEY=sk-' .env 2>/dev/null; then
   echo "✓ OPENAI_API_KEY trouvée dans backend/.env"
+  python3 - <<'PY'
+import asyncio
+from invoice_extractor import verify_openai_key
+
+ok, message = asyncio.run(verify_openai_key())
+if ok:
+    print("✓ Clé OpenAI valide (test API réussi)")
+else:
+    print(f"✗ {message}")
+    raise SystemExit(1)
+PY
 else
   echo ""
   echo "✗ OPENAI_API_KEY manquante !"

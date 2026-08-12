@@ -54,7 +54,10 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 2. Section **Extraction IA (Codespace)**
 3. Collez l'URL du port 8000
 4. Cliquez **Tester la connexion**
-5. Le badge doit afficher **✓ Extraction IA activée**
+5. Le badge doit afficher **✓ Extraction IA activée (clé OpenAI valide)**
+
+> Si vous voyez **Clé OpenAI refusée (401)** : la clé dans `backend/.env` est invalide ou expirée.
+> Créez une nouvelle clé sur https://platform.openai.com/api-keys puis redémarrez uvicorn.
 
 C'est enregistré dans votre navigateur — vous n'avez pas à refaire à chaque visite (tant que l'URL Codespace ne change pas).
 

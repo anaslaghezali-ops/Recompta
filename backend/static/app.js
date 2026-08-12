@@ -296,10 +296,16 @@ async function testServerConnection() {
   els.testServerBtn.textContent = "Test…";
   try {
     const health = await fetchServerHealth(apiUrl);
-    if (health.ai_configured) {
-      els.apiSetupHint.textContent = "Connexion OK — IA prête. Utilisez cette page GitHub normalement.";
+    if (health.ai_verified) {
+      els.apiSetupHint.textContent = "Connexion OK — clé OpenAI valide. Utilisez cette page normalement.";
       els.apiSetupHint.classList.remove("warn");
       persistApiSettings();
+      await refreshEngineBadge();
+    } else if (health.ai_configured) {
+      els.apiSetupHint.textContent =
+        health.ai_message ||
+        "Clé OpenAI présente mais refusée. Éditez backend/.env dans le Codespace puis redémarrez uvicorn.";
+      els.apiSetupHint.classList.add("warn");
       await refreshEngineBadge();
     } else {
       els.apiSetupHint.textContent = "Serveur joignable mais OPENAI_API_KEY manquante dans backend/.env du Codespace.";
@@ -321,9 +327,14 @@ async function refreshEngineBadge() {
   if (wantAi && apiUrl) {
     try {
       const health = await fetchServerHealth(apiUrl);
-      if (health.ai_configured) {
+      if (health.ai_verified) {
         els.engineBadge.className = "engine-badge ai";
-        els.engineBadge.textContent = "✓ Extraction IA activée (serveur sécurisé)";
+        els.engineBadge.textContent = "✓ Extraction IA activée (clé OpenAI valide)";
+        return;
+      }
+      if (health.ai_configured) {
+        els.engineBadge.className = "engine-badge tesseract";
+        els.engineBadge.textContent = health.ai_message || "Clé OpenAI invalide — éditez backend/.env";
         return;
       }
       els.engineBadge.className = "engine-badge tesseract";
@@ -351,13 +362,20 @@ async function runExtraction(files) {
   if (wantAi && apiUrl) {
     try {
       const health = await fetchServerHealth(apiUrl);
-      if (health.ai_configured) {
+      if (health.ai_verified) {
         els.extractionStatus.textContent = "Extraction IA en cours (serveur)…";
         return extractViaServer(files, apiUrl, (_c, _t, label) => {
           els.extractionStatus.textContent = label;
         });
       }
+      if (health.ai_configured) {
+        throw new Error(
+          health.ai_message ||
+            "Clé OpenAI invalide. Éditez backend/.env dans le Codespace puis redémarrez uvicorn."
+        );
+      }
     } catch (error) {
+      if (error.message.includes("Clé OpenAI")) throw error;
       els.extractionStatus.textContent = `Serveur IA indisponible (${error.message}) — repli OCR local…`;
     }
   }
@@ -430,6 +448,8 @@ async function extractFiles() {
     setStep(3);
 
     let msg = `${newLines} ligne(s) extraite(s) depuis ${okFiles} facture(s).`;
+    const aiFiles = results.filter((result) => result.engine === "ai").length;
+    if (aiFiles) msg += ` ${aiFiles} via IA.`;
     if (warnFiles) msg += ` ${warnFiles} fichier(s) sans résultat.`;
 
     els.extractionStatus.textContent = msg;
