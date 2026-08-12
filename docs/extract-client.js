@@ -95,6 +95,8 @@ function prepareCanvasForOcr(source) {
 function parseAmount(raw) {
   let cleaned = raw.replace(/\u00a0/g, "").replace(/ /g, "").trim();
   if (!cleaned || cleaned === "-" || cleaned === "--") return null;
+  const negative = cleaned.startsWith("-") || cleaned.startsWith("(");
+  cleaned = cleaned.replace(/^\(|\)$/g, "").replace(/^-/, "");
   if (cleaned.includes(",") && cleaned.includes(".")) {
     if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
       cleaned = cleaned.replace(/\./g, "").replace(",", ".");
@@ -105,7 +107,8 @@ function parseAmount(raw) {
     cleaned = cleaned.replace(/,/g, ".");
   }
   const value = Number(cleaned);
-  return Number.isFinite(value) ? value : null;
+  if (!Number.isFinite(value)) return null;
+  return Math.abs(value);
 }
 
 function parseDate(raw) {
@@ -151,12 +154,21 @@ function isMeaningfulPdfText(text) {
   );
 }
 
-async function loadPdf(content) {
-  return pdfjsLib.getDocument({ data: content }).promise;
+function pdfBytes(content) {
+  if (content instanceof ArrayBuffer) {
+    return new Uint8Array(content.slice(0));
+  }
+  if (ArrayBuffer.isView(content)) {
+    return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
+  }
+  return content;
 }
 
-async function extractTextFromPdf(content) {
-  const pdf = await loadPdf(content);
+async function openPdf(content) {
+  return pdfjsLib.getDocument({ data: pdfBytes(content) }).promise;
+}
+
+async function extractTextFromPdfDocument(pdf) {
   const chunks = [];
   for (let i = 1; i <= pdf.numPages; i += 1) {
     const page = await pdf.getPage(i);
@@ -187,8 +199,7 @@ async function ocrCanvas(canvas) {
   return data.text || "";
 }
 
-async function ocrPdfPages(content, onPage) {
-  const pdf = await loadPdf(content);
+async function ocrPdfFromDocument(pdf, onPage) {
   const pages = Math.min(pdf.numPages, MAX_OCR_PAGES);
   const chunks = [];
 
@@ -211,19 +222,36 @@ function guessDesignation(text) {
 }
 
 function extractAmounts(text) {
-  const labels = {
-    ht: /Total\s+H\.?T\.?\s*(?:Net)?\s*[;:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?/i,
-    ttc: /Total\s+T\.?T\.?C\.?\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?/i,
-    tva: /Total\s+T\.?V\.?A\.?\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?/i,
+  const patterns = {
+    ht: [
+      /Total\s+H\.?T\.?\s*(?:Net)?\s*[;:\s]*\n?\s*(-?[\d .,\u00a0]+)\s*(?:DH|MAD)?/i,
+      /Montant\s+H\.?T\.?\s*[:\s]+(-?[\d .,\u00a0]+)/i,
+      /Base\s+H\.?T\.?\s*[:\s]+(-?[\d .,\u00a0]+)/i,
+    ],
+    ttc: [
+      /Total\s+T\.?T\.?C\.?\s*[:\s]*\n?\s*(-?[\d .,\u00a0]+)\s*(?:DH|MAD)?/i,
+      /Net\s+[àa]\s+payer\s*[:\s]+(-?[\d .,\u00a0]+)/i,
+      /Montant\s+total\s*[:\s]+(-?[\d .,\u00a0]+)/i,
+    ],
+    tva: [
+      /Total\s+T\.?V\.?A\.?\s*[:\s]*\n?\s*(-?[\d .,\u00a0]+)\s*(?:DH|MAD)?/i,
+      /Montant\s+T\.?V\.?A\.?\s*[:\s]+(-?[\d .,\u00a0]+)/i,
+    ],
   };
+
   const found = {};
-  for (const [key, pattern] of Object.entries(labels)) {
-    const match = text.match(pattern);
-    if (match) {
+  for (const [key, list] of Object.entries(patterns)) {
+    for (const pattern of list) {
+      const match = text.match(pattern);
+      if (!match) continue;
       const amount = parseAmount(match[1]);
-      if (amount !== null) found[key] = amount;
+      if (amount !== null) {
+        found[key] = amount;
+        break;
+      }
     }
   }
+
   let ht = found.ht ?? null;
   let ttc = found.ttc ?? null;
   let tva = found.tva ?? null;
@@ -231,6 +259,15 @@ function extractAmounts(text) {
   if (tva === null && ht !== null && ttc !== null) tva = Math.round((ttc - ht) * 100) / 100;
   if (ttc === null && ht !== null && tva !== null) ttc = Math.round((ht + tva) * 100) / 100;
   return { ht, tva, ttc };
+}
+
+function isAchibestDocument(text, filename) {
+  const haystack = `${filename}\n${text}`.toLowerCase();
+  return haystack.includes("achibest") || haystack.includes("partenaire des tables gourmandes");
+}
+
+function isAvoirDocument(text, filename) {
+  return /avoir/i.test(`${filename}\n${text}`);
 }
 
 function guessTaux(ht, tva) {
@@ -243,8 +280,11 @@ function guessTaux(ht, tva) {
   return 0.2;
 }
 
-function extractSupplierName(text) {
-  const branded = text.match(/\b(ACHIBEST|EATMEAT|MOSE\s*Food|ORANGE|GLOVO|CARREFOUR)\b/i);
+function extractSupplierName(text, filename = "") {
+  const haystack = `${filename}\n${text}`;
+  if (isAchibestDocument(text, filename)) return "ACHIBEST";
+
+  const branded = haystack.match(/\b(ACHIBEST|EATMEAT|MOSE\s*Food|ORANGE|GLOVO|CARREFOUR)\b/i);
   if (branded) {
     const name = branded[1].toUpperCase().replace(/  /g, " ");
     if (name.includes("MOSE")) return "MOSE Food";
@@ -354,7 +394,7 @@ function extractAchibestTvaTable(text) {
 
 function extractTvaVentilation(text) {
   const items = [];
-  const pattern = /(\d+[,..\s]+)\s*TTC\s+(\d+[,.]\d+)\s*%\s+([\d.,]+)/gi;
+  const pattern = /(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%\s+([\d.,]+)/gi;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     const ttc = parseAmount(match[1]);
@@ -388,7 +428,7 @@ function heuristicExtract(filename, text) {
   const ice = extractSupplierIce(text);
   const ifFiscal = extractSupplierIf(text);
   const factNum = extractInvoiceNumber(text, filename);
-  const supplier = extractSupplierName(text);
+  const supplier = extractSupplierName(text, filename);
 
   const dateCandidates = [];
   for (const pattern of [/(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/g, /(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})/g]) {
@@ -400,10 +440,7 @@ function heuristicExtract(filename, text) {
   const invoiceDate = dateCandidates[0] || "";
 
   const lineItems = extractLineItems(text);
-  const achibestLines =
-    supplier.toUpperCase().includes("ACHIBEST") || text.toLowerCase().includes("partenaire des tables gourmandes")
-      ? extractAchibestTvaTable(text)
-      : [];
+  const achibestLines = isAchibestDocument(text, filename) ? extractAchibestTvaTable(text) : [];
   const ventilation = extractTvaVentilation(text);
 
   let source = [];
@@ -463,6 +500,7 @@ function heuristicExtract(filename, text) {
       ttc = ttc ?? mad.ttc;
     }
     if (ht === null || ttc === null) warnings.push("Montants HT/TTC non détectés automatiquement.");
+    if (isAvoirDocument(text, filename)) warnings.push("Document AVOIR détecté — vérifiez les montants (saisis en positif).");
 
     const taux = guessTaux(ht, tva);
     if (tva === null && ht !== null) tva = Math.round(ht * taux * 100) / 100;
@@ -530,9 +568,9 @@ async function imageToCanvas(content, mime) {
 
 export async function extractInvoice(filename, content, mimeType, onOcrPage) {
   if (mimeType === "application/pdf") {
-    let text = "";
+    let pdf;
     try {
-      text = await extractTextFromPdf(content);
+      pdf = await openPdf(content);
     } catch (err) {
       return {
         filename,
@@ -542,15 +580,25 @@ export async function extractInvoice(filename, content, mimeType, onOcrPage) {
       };
     }
 
+    let text = "";
+    try {
+      text = await extractTextFromPdfDocument(pdf);
+    } catch {
+      text = "";
+    }
+
     if (isMeaningfulPdfText(text)) {
-      return heuristicExtract(filename, text);
+      const result = heuristicExtract(filename, text);
+      result.engine = "text";
+      return result;
     }
 
     try {
-      const ocrText = await ocrPdfPages(content, (page, total) => {
+      const ocrText = await ocrPdfFromDocument(pdf, (page, total) => {
         if (onOcrPage) onOcrPage(page, total);
       });
-      return extractWithOcr(filename, ocrText, { pageInfo: `PDF scanné (${MAX_OCR_PAGES} max)` });
+      const combined = [text, ocrText].filter(Boolean).join("\n");
+      return extractWithOcr(filename, combined, { pageInfo: `PDF scanné (${MAX_OCR_PAGES} max)` });
     } catch (err) {
       return {
         filename,
