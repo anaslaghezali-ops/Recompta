@@ -6,7 +6,17 @@ Automatisation de la saisie des factures fournisseurs pour la déclaration TVA m
 
 Pas de Stripe, pas de connexion cabinet : ouvrez l'app web et testez directement.
 
-### Sur GitHub Codespace
+### Lien web (GitHub Pages)
+
+**https://anaslaghezali-ops.github.io/Recompta/**
+
+L'application tourne entièrement dans votre navigateur (OCR Tesseract.js, export Excel). Aucune installation, aucun compte.
+
+> Après chaque mise à jour sur `main`, le déploiement GitHub Pages prend 1–2 minutes.
+
+### Version serveur (optionnelle — Codespace / Render)
+
+Pour l'extraction IA (OpenAI Vision) ou un OCR serveur plus rapide :
 
 ```bash
 cd backend
@@ -109,9 +119,15 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 Ouvrir http://localhost:8000
 
-## Mettre en ligne (lien web pour le cabinet)
+## Mettre en ligne
 
-**GitHub Pages ne suffit pas** — il faut un hébergeur qui exécute Python.
+### GitHub Pages (recommandé pour tester)
+
+L'app est déployée automatiquement depuis le dossier `docs/` :
+
+**https://anaslaghezali-ops.github.io/Recompta/**
+
+### Serveur Python (IA + OCR serveur)
 
 Guide détaillé : **[DEPLOY.md](DEPLOY.md)**
 
