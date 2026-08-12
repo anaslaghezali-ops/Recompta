@@ -1,4 +1,8 @@
 -- Recompta SaaS schema
+--
+-- ⚠️  NE PAS exécuter sur un Supabase existant (autre app) !
+--     Créez un NOUVEAU projet Supabase dédié uniquement à Recompta.
+--
 -- Run on a DEDICATED Supabase project (not shared with other apps)
 
 -- Cabinets comptables (tenants)
