@@ -24,8 +24,14 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict:
+    from invoice_extractor import ai_available, preferred_engine
+
+    return {
+        "status": "ok",
+        "extraction_engine": preferred_engine(),
+        "ai_configured": ai_available(),
+    }
 
 
 @app.get("/api/reference")

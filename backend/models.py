@@ -82,4 +82,5 @@ class ExtractionResult(BaseModel):
     lines: list[InvoiceLine]
     raw_text: str = ""
     confidence: str = "manual"
+    engine: str = "manual"  # ai | text | tesseract
     warnings: list[str] = Field(default_factory=list)

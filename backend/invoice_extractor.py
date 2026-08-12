@@ -427,6 +427,7 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
         lines=invoice_lines,
         raw_text=text[:4000],
         confidence="low" if warnings else "medium",
+        engine="text",
         warnings=warnings,
     )
 
@@ -435,34 +436,48 @@ def _image_to_base64(content: bytes, mime_type: str) -> str:
     return f"data:{mime_type};base64,{base64.b64encode(content).decode()}"
 
 
-async def _extract_with_openai(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY non configurée")
+AI_EXTRACTION_PROMPT = """Tu es un expert comptable marocain. Analyse cette facture fournisseur (scan ou photo).
 
-    prompt = """Tu es un assistant comptable marocain. Analyse cette facture fournisseur scannée.
-Retourne UNIQUEMENT un JSON valide avec cette structure:
+Extrais les informations pour la déclaration TVA (format DED TVA marocain).
+
+Règles importantes :
+- ICE fournisseur = 15 chiffres (en pied de page, PAS l'ICE du client)
+- IF = identifiant fiscal du fournisseur
+- Si plusieurs taux TVA (10% et 20%), crée UNE entrée par taux avec les montants HT/TVA/TTC correspondants
+- designation : MATIERES CONSOMMABLES (achats), PRESTATIONS (services), TELEPHONIE, FRAIS BANCAIRE
+- id_paie : 1 (paiement comptant) ou 4 (virement/crédit) — utilise 4 par défaut
+- Pour un AVOIR (montants négatifs), utilise des montants positifs et ajoute un warning
+- Dates au format YYYY-MM-DD
+
+Retourne UNIQUEMENT un JSON valide :
 {
   "lines": [
     {
-      "fact_num": "numéro facture",
-      "designation": "MATIERES CONSOMMABLES | PRESTATIONS | TELEPHONIE | FRAIS BANCAIRE",
+      "fact_num": "FV26-023806",
+      "designation": "MATIERES CONSOMMABLES",
       "m_ht": 0.0,
       "tva": 0.0,
       "m_ttc": 0.0,
-      "if": "identifiant fiscal fournisseur",
-      "lib_frss": "nom fournisseur",
-      "ice_frs": "ICE 15 chiffres",
-      "taux": 0.1 ou 0.2,
-      "id_paie": 1 ou 4,
-      "date_paie": "YYYY-MM-DD",
-      "date_fac": "YYYY-MM-DD"
+      "if": "1102277",
+      "lib_frss": "ACHIBEST",
+      "ice_frs": "000229475000050",
+      "taux": 0.2,
+      "id_paie": 4,
+      "date_paie": "2026-06-04",
+      "date_fac": "2026-06-04"
     }
   ],
-  "warnings": ["..."]
+  "warnings": []
 }
-Si la facture contient plusieurs lignes avec des taux TVA différents, crée une entrée par ligne.
 """
+
+
+def ai_available() -> bool:
+    return bool(os.getenv("OPENAI_API_KEY"))
+
+
+def preferred_engine() -> str:
+    return "ai" if ai_available() else "tesseract"
 
     payload = {
         "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
@@ -496,6 +511,7 @@ Si la facture contient plusieurs lignes avec des taux TVA différents, crée une
         filename=filename,
         lines=lines,
         confidence="high",
+        engine="ai",
         warnings=content_json.get("warnings", []),
     )
 
@@ -511,7 +527,8 @@ async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResu
         )
     result = _heuristic_extract(filename, text)
     result.confidence = "medium"
-    result.warnings.append("Extraction via OCR — vérifiez les montants et dates.")
+    result.engine = "tesseract"
+    result.warnings.append("Extraction Tesseract (OCR local) — vérifiez les montants.")
     return result
 
 
@@ -521,24 +538,31 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
         if text.strip():
             return _heuristic_extract(filename, text)
 
-        # PDF scanné : OpenAI Vision si disponible, sinon OCR local
-        if os.getenv("OPENAI_API_KEY"):
+        # PDF scanné : IA en priorité, Tesseract en secours
+        warnings_ai = ""
+        if ai_available():
             try:
                 png_bytes = pdf_first_page_to_png(content)
                 if png_bytes:
                     return await _extract_with_openai(filename, png_bytes, "image/png")
             except Exception as exc:  # noqa: BLE001
-                pass  # fallback OCR
+                warnings_ai = f"IA indisponible ({exc}), repli sur Tesseract."
+        else:
+            warnings_ai = "Configurez OPENAI_API_KEY pour une extraction IA plus précise."
 
         try:
             png_bytes = pdf_first_page_to_png(content)
             if png_bytes:
-                return await _extract_with_ocr(filename, png_bytes)
+                result = await _extract_with_ocr(filename, png_bytes)
+                if warnings_ai:
+                    result.warnings.insert(0, warnings_ai)
+                return result
         except Exception as exc:  # noqa: BLE001
             return ExtractionResult(
                 filename=filename,
                 lines=[],
                 confidence="low",
+                engine="tesseract",
                 warnings=[f"OCR échoué: {exc}"],
             )
 
@@ -550,18 +574,34 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
         )
 
     if mime_type.startswith("image/"):
-        if os.getenv("OPENAI_API_KEY"):
+        if ai_available():
             try:
                 return await _extract_with_openai(filename, content, mime_type)
             except Exception as exc:  # noqa: BLE001
-                pass
+                try:
+                    result = await _extract_with_ocr(filename, content)
+                    result.warnings.insert(0, f"IA indisponible ({exc}), repli sur Tesseract.")
+                    return result
+                except Exception as ocr_exc:  # noqa: BLE001
+                    return ExtractionResult(
+                        filename=filename,
+                        lines=[],
+                        confidence="low",
+                        engine="tesseract",
+                        warnings=[f"Extraction échouée: {ocr_exc}"],
+                    )
         try:
-            return await _extract_with_ocr(filename, content)
+            result = await _extract_with_ocr(filename, content)
+            result.warnings.insert(
+                0, "OCR local (Tesseract). Ajoutez OPENAI_API_KEY pour une meilleure précision."
+            )
+            return result
         except Exception as exc:  # noqa: BLE001
             return ExtractionResult(
                 filename=filename,
                 lines=[],
                 confidence="low",
+                engine="tesseract",
                 warnings=[f"OCR échoué: {exc}"],
             )
 

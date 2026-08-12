@@ -168,6 +168,25 @@ input[readonly] {
   font-size: 0.85rem;
 }
 
+.engine-badge {
+  display: inline-block;
+  margin-top: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.engine-badge.ai {
+  background: #e6f4ea;
+  color: #0d652d;
+}
+
+.engine-badge.tesseract {
+  background: #fef7e0;
+  color: #9a6700;
+}
+
 .hint.subtle, .subtle { opacity: 0.75; font-size: 0.82rem; }
 
 .upload-zone {

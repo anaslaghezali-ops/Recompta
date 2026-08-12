@@ -15,6 +15,7 @@ const els = {
   clientName: document.getElementById("clientName"),
   period: document.getElementById("period"),
   filenamePreview: document.getElementById("filenamePreview"),
+  engineBadge: document.getElementById("engineBadge"),
   dropZone: document.getElementById("dropZone"),
   fileInput: document.getElementById("fileInput"),
   fileList: document.getElementById("fileList"),
@@ -227,6 +228,32 @@ function setLoading(loading) {
   updateButtons();
 }
 
+async function loadEngineInfo() {
+  try {
+    const res = await fetch("/api/health");
+    const data = await res.json();
+    if (data.ai_configured) {
+      els.engineBadge.hidden = false;
+      els.engineBadge.className = "engine-badge ai";
+      els.engineBadge.textContent = "✓ Extraction IA activée (OpenAI Vision)";
+    } else {
+      els.engineBadge.hidden = false;
+      els.engineBadge.className = "engine-badge tesseract";
+      els.engineBadge.textContent =
+        "OCR local (Tesseract) — ajoutez OPENAI_API_KEY côté serveur pour l'IA";
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function engineLabel(engine) {
+  if (engine === "ai") return "IA";
+  if (engine === "tesseract") return "OCR";
+  if (engine === "text") return "PDF";
+  return "";
+}
+
 async function extractFiles() {
   if (!state.files.length) return;
 
@@ -255,6 +282,7 @@ async function extractFiles() {
             ...emptyLine(result.filename),
             ...line,
             source_file: result.filename,
+            _engine: result.engine,
             date_fac: line.date_fac ? line.date_fac.slice(0, 10) : "",
             date_paie: line.date_paie ? line.date_paie.slice(0, 10) : "",
           });
@@ -264,7 +292,8 @@ async function extractFiles() {
         warnFiles += 1;
       }
       if (result.warnings?.length) {
-        warnings.push(`${shortFilename(result.filename)}: ${result.warnings.join(", ")}`);
+        const eng = engineLabel(result.engine);
+        warnings.push(`[${eng}] ${shortFilename(result.filename)}: ${result.warnings.join(", ")}`);
       }
     });
 
@@ -378,3 +407,4 @@ els.clearBtn.addEventListener("click", clearAll);
 updateFilenamePreview();
 updateButtons();
 setStep(1);
+loadEngineInfo();
