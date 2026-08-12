@@ -479,13 +479,19 @@ def ai_available() -> bool:
 def preferred_engine() -> str:
     return "ai" if ai_available() else "tesseract"
 
+
+async def _extract_with_openai(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY non configurée")
+
     payload = {
         "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": AI_EXTRACTION_PROMPT},
                     {
                         "type": "image_url",
                         "image_url": {"url": _image_to_base64(content, mime_type)},
