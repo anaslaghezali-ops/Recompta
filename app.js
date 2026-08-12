@@ -25,6 +25,7 @@ const els = {
   clearBtn: document.getElementById("clearBtn"),
   exportBtn: document.getElementById("exportBtn"),
   extractionStatus: document.getElementById("extractionStatus"),
+  warningList: document.getElementById("warningList"),
   linesTableBody: document.querySelector("#linesTable tbody"),
   lineCount: document.getElementById("lineCount"),
   fileCount: document.getElementById("fileCount"),
@@ -222,7 +223,19 @@ function addFiles(fileList) {
   }
 }
 
-function setLoading(loading) {
+function renderWarnings(warnings) {
+  if (!warnings.length) {
+    els.warningList.hidden = true;
+    els.warningList.innerHTML = "";
+    return;
+  }
+  els.warningList.hidden = false;
+  els.warningList.innerHTML = warnings.map((w) => `<li>${w}</li>`).join("");
+}
+
+function clearWarnings() {
+  renderWarnings([]);
+}
   els.extractBtn.classList.toggle("loading", loading);
   els.extractBtn.querySelector(".btn-label").textContent = loading
     ? "Extraction en cours…"
@@ -241,12 +254,16 @@ async function extractFiles() {
   if (!state.files.length) return;
 
   setLoading(true);
-  els.extractionStatus.textContent = "Extraction en cours (OCR navigateur, 1–2 min par scan)…";
+  clearWarnings();
+  els.extractionStatus.textContent = "Extraction en cours (OCR navigateur, ~1 min par scan)…";
   els.extractionStatus.classList.remove("error", "success", "warn");
 
   try {
-    const results = await extractAllFiles(state.files, (current, total, name) => {
-      els.extractionStatus.textContent = `Traitement ${current}/${total} : ${shortFilename(name)}…`;
+    const results = await extractAllFiles(state.files, (current, total, name, ocrDetail) => {
+      const label = shortFilename(name);
+      els.extractionStatus.textContent = ocrDetail
+        ? `Fichier ${current}/${total} — ${label} (${ocrDetail})…`
+        : `Fichier ${current}/${total} — ${label}…`;
     });
 
     let newLines = 0;
@@ -284,11 +301,11 @@ async function extractFiles() {
 
     let msg = `${newLines} ligne(s) extraite(s) depuis ${okFiles} facture(s).`;
     if (warnFiles) msg += ` ${warnFiles} fichier(s) sans résultat.`;
-    if (warnings.length) msg += " Vérifiez les montants signalés.";
 
     els.extractionStatus.textContent = msg;
     els.extractionStatus.classList.remove("error", "success", "warn");
-    if (warnings.length) els.extractionStatus.classList.add("warn");
+    renderWarnings(warnings);
+    if (warnings.length || warnFiles) els.extractionStatus.classList.add("warn");
     else if (newLines > 0) els.extractionStatus.classList.add("success");
   } catch (error) {
     els.extractionStatus.textContent = `Erreur : ${error.message}`;
@@ -332,6 +349,7 @@ function clearAll() {
   renderTable();
   els.extractionStatus.textContent = "";
   els.extractionStatus.className = "status";
+  clearWarnings();
   els.fileInput.value = "";
   updateButtons();
   setStep(1);

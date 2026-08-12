@@ -316,6 +316,17 @@ button.loading .btn-label { opacity: 0.8; }
 .status.warn { color: var(--warn); }
 .status.error { color: var(--danger); }
 
+.warning-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  color: var(--warn);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.warning-list li { margin: 0.25rem 0; }
+
 .badge {
   background: #e8f2fc;
   color: var(--primary-dark);

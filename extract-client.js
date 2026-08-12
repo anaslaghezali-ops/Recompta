@@ -14,6 +14,10 @@ const EXTENSION_MIME = {
   ".tif": "image/tiff",
 };
 
+const ZIP_SKIP_NAMES = /^(?:\._.*|\.DS_Store|Thumbs\.db|desktop\.ini)$/i;
+const MIN_FILE_BYTES = 400;
+const MAX_OCR_PAGES = 3;
+
 const ICE_PATTERN = /\bI\.?C\.?E\.?\s*[:\s]*(\d{15})\b/i;
 const IF_PATTERN = /\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*[:\s-]*([0-9A-Za-z]+)/i;
 const IF_FOOTER_PATTERN = /\bF\s+(\d{6,9})\b/;
@@ -22,9 +26,16 @@ const INVOICE_NUM_PATTERN =
 const SUPPLIER_SKIP = /^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)/i;
 const AMOUNT_LINE = /^\d[\d., ]+$/;
 
+let ocrWorkerPromise = null;
+
 function extOf(filename) {
   const idx = filename.lastIndexOf(".");
   return idx >= 0 ? filename.slice(idx).toLowerCase() : "";
+}
+
+function basename(filename) {
+  const parts = filename.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || filename;
 }
 
 export function mimeForFilename(filename) {
@@ -37,6 +48,48 @@ export function isInvoiceFile(filename) {
 
 export function isZipFile(filename) {
   return extOf(filename) === ".zip";
+}
+
+function shouldSkipArchiveEntry(name, byteLength) {
+  const base = basename(name);
+  if (!base || base.startsWith(".")) return true;
+  if (ZIP_SKIP_NAMES.test(base)) return true;
+  if (name.startsWith("__MACOSX/") || name.includes("/.")) return true;
+  if (byteLength < MIN_FILE_BYTES) return true;
+  return !isInvoiceFile(name);
+}
+
+async function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = Tesseract.createWorker("fra+eng", 1, {
+      logger: () => {},
+    });
+  }
+  return ocrWorkerPromise;
+}
+
+function prepareCanvasForOcr(source) {
+  const minWidth = 1800;
+  const scale = source.width < minWidth ? minWidth / source.width : 1;
+  const width = Math.round(source.width * scale);
+  const height = Math.round(source.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(source, 0, 0, width, height);
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const { data } = imageData;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const boosted = gray < 140 ? Math.max(0, gray * 0.8) : Math.min(255, gray * 1.08);
+    data[i] = data[i + 1] = data[i + 2] = boosted;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
 }
 
 function parseAmount(raw) {
@@ -87,8 +140,23 @@ function formatIsoDate(d) {
   return `${y}-${m}-${day}`;
 }
 
+function isMeaningfulPdfText(text) {
+  const compact = text.replace(/\s+/g, "");
+  if (compact.length < 60) return false;
+  return (
+    /\d{15}/.test(text) ||
+    /total\s+(?:ht|ttc|tva)/i.test(text) ||
+    /facture/i.test(text) ||
+    /\bICE\b/i.test(text)
+  );
+}
+
+async function loadPdf(content) {
+  return pdfjsLib.getDocument({ data: content }).promise;
+}
+
 async function extractTextFromPdf(content) {
-  const pdf = await pdfjsLib.getDocument({ data: content }).promise;
+  const pdf = await loadPdf(content);
   const chunks = [];
   for (let i = 1; i <= pdf.numPages; i += 1) {
     const page = await pdf.getPage(i);
@@ -99,24 +167,39 @@ async function extractTextFromPdf(content) {
   return chunks.join("\n");
 }
 
-async function pdfFirstPageToCanvas(content) {
-  const pdf = await pdfjsLib.getDocument({ data: content }).promise;
-  if (pdf.numPages === 0) return null;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 2 });
+async function pdfPageToCanvas(pdf, pageNumber, scale = 2.5) {
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, viewport }).promise;
   return canvas;
 }
 
 async function ocrCanvas(canvas) {
-  const { data } = await Tesseract.recognize(canvas, "fra+eng", {
-    logger: () => {},
-  });
+  const worker = await getOcrWorker();
+  const prepared = prepareCanvasForOcr(canvas);
+  const { data } = await worker.recognize(prepared);
   return data.text || "";
+}
+
+async function ocrPdfPages(content, onPage) {
+  const pdf = await loadPdf(content);
+  const pages = Math.min(pdf.numPages, MAX_OCR_PAGES);
+  const chunks = [];
+
+  for (let i = 1; i <= pages; i += 1) {
+    if (onPage) onPage(i, pages);
+    const canvas = await pdfPageToCanvas(pdf, i);
+    const text = await ocrCanvas(canvas);
+    if (text.trim()) chunks.push(text);
+  }
+
+  return chunks.join("\n");
 }
 
 function guessDesignation(text) {
@@ -204,12 +287,14 @@ function extractInvoiceNumber(text, filename) {
     /(?:Facture|FACTURE)\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i,
     /AVOIR\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i,
     /FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)/i,
+    /\b([A-Z]{1,3}\d{2,}[-/]\d{3,})\b/,
+    /\b(V\d{5,})\b/,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) return match[1].trim();
   }
-  const base = filename.split("/").pop() || filename;
+  const base = basename(filename);
   const dot = base.lastIndexOf(".");
   return dot >= 0 ? base.slice(0, dot) : base;
 }
@@ -401,19 +486,25 @@ function heuristicExtract(filename, text) {
   };
 }
 
-async function extractWithOcr(filename, imageSource) {
-  const text = await ocrCanvas(imageSource);
+async function extractWithOcr(filename, textOrCanvas, options = {}) {
+  const text =
+    typeof textOrCanvas === "string" ? textOrCanvas : await ocrCanvas(textOrCanvas);
+
   if (!text.trim()) {
     return {
       filename,
       lines: [],
       engine: "tesseract",
-      warnings: ["OCR n'a extrait aucun texte de l'image."],
+      warnings: ["OCR n'a extrait aucun texte — scan illisible ou fichier corrompu."],
     };
   }
+
   const result = heuristicExtract(filename, text);
   result.engine = "tesseract";
-  result.warnings.push("Extraction Tesseract (navigateur) — vérifiez les montants.");
+  if (options.pageInfo) {
+    result.warnings.unshift(`OCR ${options.pageInfo} page(s) dans le navigateur.`);
+  }
+  result.warnings.push("Vérifiez les montants extraits.");
   return result;
 }
 
@@ -437,18 +528,29 @@ async function imageToCanvas(content, mime) {
   }
 }
 
-export async function extractInvoice(filename, content, mimeType) {
+export async function extractInvoice(filename, content, mimeType, onOcrPage) {
   if (mimeType === "application/pdf") {
-    const text = await extractTextFromPdf(content);
-    if (text.trim()) return heuristicExtract(filename, text);
+    let text = "";
+    try {
+      text = await extractTextFromPdf(content);
+    } catch (err) {
+      return {
+        filename,
+        lines: [],
+        engine: "tesseract",
+        warnings: [`PDF illisible: ${err.message}`],
+      };
+    }
+
+    if (isMeaningfulPdfText(text)) {
+      return heuristicExtract(filename, text);
+    }
 
     try {
-      const canvas = await pdfFirstPageToCanvas(content);
-      if (canvas) {
-        const result = await extractWithOcr(filename, canvas);
-        result.warnings.unshift("PDF scanné — OCR dans le navigateur (1–2 min par page).");
-        return result;
-      }
+      const ocrText = await ocrPdfPages(content, (page, total) => {
+        if (onOcrPage) onOcrPage(page, total);
+      });
+      return extractWithOcr(filename, ocrText, { pageInfo: `PDF scanné (${MAX_OCR_PAGES} max)` });
     } catch (err) {
       return {
         filename,
@@ -457,13 +559,6 @@ export async function extractInvoice(filename, content, mimeType) {
         warnings: [`OCR échoué: ${err.message}`],
       };
     }
-
-    return {
-      filename,
-      lines: [],
-      engine: "tesseract",
-      warnings: ["PDF scanné : impossible d'extraire le texte."],
-    };
   }
 
   if (mimeType.startsWith("image/")) {
@@ -475,7 +570,7 @@ export async function extractInvoice(filename, content, mimeType) {
         filename,
         lines: [],
         engine: "tesseract",
-        warnings: [`OCR échoué: ${err.message}`],
+        warnings: [`Image illisible: ${err.message}`],
       };
     }
   }
@@ -484,7 +579,7 @@ export async function extractInvoice(filename, content, mimeType) {
     filename,
     lines: [],
     engine: "manual",
-    warnings: [`Type de fichier non supporté: ${mimeType}`],
+    warnings: [`Type non supporté (${mimeType}) — utilisez PDF, JPG ou PNG.`],
   };
 }
 
@@ -498,18 +593,20 @@ export async function expandUploadedFiles(files) {
       for (const entry of entries) {
         if (entry.dir) continue;
         const name = entry.name.replace(/\\/g, "/");
-        if (name.startsWith("__MACOSX/") || name.includes("/.")) continue;
-        if (!isInvoiceFile(name)) continue;
+        const content = await entry.async("arraybuffer");
+        if (shouldSkipArchiveEntry(name, content.byteLength)) continue;
         expanded.push({
           filename: name,
-          content: await entry.async("arraybuffer"),
+          content,
           mime: mimeForFilename(name),
         });
       }
     } else if (isInvoiceFile(file.name)) {
+      const content = await file.arrayBuffer();
+      if (shouldSkipArchiveEntry(file.name, content.byteLength)) continue;
       expanded.push({
         filename: file.name,
-        content: await file.arrayBuffer(),
+        content,
         mime: file.type || mimeForFilename(file.name),
       });
     }
@@ -522,10 +619,25 @@ export async function extractAllFiles(files, onProgress) {
   const expanded = await expandUploadedFiles(files);
   const results = [];
 
+  if (!expanded.length) {
+    return [
+      {
+        filename: "(import)",
+        lines: [],
+        engine: "manual",
+        warnings: ["Aucun PDF ou image valide trouvé dans la sélection."],
+      },
+    ];
+  }
+
   for (let i = 0; i < expanded.length; i += 1) {
     const item = expanded[i];
-    if (onProgress) onProgress(i + 1, expanded.length, item.filename);
-    const result = await extractInvoice(item.filename, item.content, item.mime);
+    if (onProgress) onProgress(i + 1, expanded.length, item.filename, null);
+    const result = await extractInvoice(item.filename, item.content, item.mime, (page, total) => {
+      if (onProgress) {
+        onProgress(i + 1, expanded.length, item.filename, `OCR page ${page}/${total}`);
+      }
+    });
     results.push(result);
   }
 
