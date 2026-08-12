@@ -46,7 +46,31 @@ Colonnes exportées (feuille `EDIMMYY` ou `EDIMMAAAA`) :
 | TELEPHONIE | 20% | 140 |
 | FRAIS BANCAIRE | 10% | 142 |
 
-## Démarrage rapide
+## Tester avec des factures
+
+### Factures PDF de démonstration (basées sur vos données réelles)
+
+```bash
+cd backend
+python scripts/generate_sample_invoices.py   # génère 5 PDF dans scripts/invoices/
+python scripts/test_extraction.py            # vérifie l'extraction (5/5)
+python scripts/test_e2e_export.py            # export Excel complet (6 lignes)
+```
+
+### Vos propres factures scannées
+
+1. Déposez vos PDF ou images dans `backend/invoices/upload/`
+2. Lancez le test :
+
+```bash
+python scripts/test_upload_folder.py
+```
+
+3. Ou utilisez l'interface web : http://localhost:8000
+
+**Images scannées (JPG/PNG)** : configurez `OPENAI_API_KEY` pour l'extraction par vision IA.
+Les PDF avec texte sélectionnable fonctionnent sans clé API.
+
 
 ```bash
 cd backend

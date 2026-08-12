@@ -23,9 +23,11 @@ ICE_PATTERN = re.compile(r"\b(\d{15})\b")
 IF_PATTERN = re.compile(r"\b(?:IF|I\.F\.|Identifiant\s+fiscal)\s*[:\s]*([0-9A-Za-z]+)", re.I)
 AMOUNT_PATTERN = re.compile(r"(\d{1,3}(?:[ \u00a0.,]\d{3})*(?:[.,]\d{2})?)")
 INVOICE_NUM_PATTERN = re.compile(
-    r"(?:facture|invoice|n[°o]|ref(?:erence)?)\s*[:\s#-]*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})",
+    r"FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)",
     re.I,
 )
+SUPPLIER_SKIP = re.compile(r"^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)", re.I)
+AMOUNT_LINE = re.compile(r"^\d[\d., ]+$")
 
 
 def _parse_amount(raw: str) -> float:
@@ -81,9 +83,9 @@ def _guess_designation(text: str) -> Designation:
 
 def _extract_amounts(text: str) -> tuple[float | None, float | None, float | None]:
     labels = {
-        "ht": re.compile(r"(?:total\s*)?h\.?t\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
-        "ttc": re.compile(r"(?:total\s*)?t\.?t\.?c\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
-        "tva": re.compile(r"(?:montant\s*)?t\.?v\.?a\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
+        "ht": re.compile(r"TOTAL\s+H\.?T\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
+        "ttc": re.compile(r"TOTAL\s+T\.?T\.?C\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
+        "tva": re.compile(r"TOTAL\s+T\.?V\.?A\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
     }
     found: dict[str, float] = {}
     for key, pattern in labels.items():
@@ -117,6 +119,54 @@ def _guess_taux(ht: float | None, tva: float | None) -> float:
     return 0.2
 
 
+def _extract_supplier_name(text: str) -> str:
+    for line in text.splitlines():
+        candidate = line.strip()
+        if not candidate or SUPPLIER_SKIP.match(candidate):
+            continue
+        if ICE_PATTERN.search(candidate) or IF_PATTERN.search(candidate):
+            continue
+        return candidate
+    return ""
+
+
+def _extract_invoice_number(text: str, filename: str) -> str:
+    match = INVOICE_NUM_PATTERN.search(text)
+    if match:
+        return match.group(1).strip()
+    return Path(filename).stem
+
+
+def _extract_line_items(text: str) -> list[dict[str, float | str]]:
+    total_idx = text.upper().find("TOTAL HT")
+    section = text[:total_idx] if total_idx != -1 else text
+    lines = [line.strip() for line in section.splitlines() if line.strip()]
+
+    # Ignore table header block
+    start = 0
+    for idx, line in enumerate(lines):
+        if line.upper() in {"HT", "TVA", "TTC"} or "désignation" in line.lower():
+            start = idx + 1
+    lines = lines[start:]
+
+    items: list[dict[str, float | str]] = []
+    i = 0
+    while i < len(lines):
+        if i + 3 < len(lines) and AMOUNT_LINE.match(lines[i + 1]) and AMOUNT_LINE.match(lines[i + 2]) and AMOUNT_LINE.match(lines[i + 3]):
+            items.append(
+                {
+                    "label": lines[i],
+                    "m_ht": _parse_amount(lines[i + 1]),
+                    "tva": _parse_amount(lines[i + 2]),
+                    "m_ttc": _parse_amount(lines[i + 3]),
+                }
+            )
+            i += 4
+            continue
+        i += 1
+    return items
+
+
 def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
     warnings: list[str] = []
     if not text.strip():
@@ -124,7 +174,8 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
 
     ice_match = ICE_PATTERN.search(text)
     if_match = IF_PATTERN.search(text)
-    invoice_match = INVOICE_NUM_PATTERN.search(text)
+    fact_num = _extract_invoice_number(text, filename)
+    supplier = _extract_supplier_name(text)
 
     date_candidates = []
     for pattern in MOROCCAN_DATE_PATTERNS:
@@ -134,36 +185,67 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
                 date_candidates.append(parsed)
     invoice_date = date_candidates[0] if date_candidates else None
 
-    ht, tva, ttc = _extract_amounts(text)
-    if ht is None or ttc is None:
-        warnings.append("Montants HT/TTC non détectés automatiquement.")
+    line_items = _extract_line_items(text)
+    invoice_lines: list[InvoiceLine] = []
 
-    taux = _guess_taux(ht, tva)
-    if tva is None and ht is not None:
-        tva = round(ht * taux, 2)
-    if ttc is None and ht is not None and tva is not None:
-        ttc = round(ht + tva, 2)
+    if line_items:
+        for item in line_items:
+            ht = float(item["m_ht"])
+            tva = float(item["tva"])
+            ttc = float(item["m_ttc"])
+            label = str(item["label"])
+            taux = _guess_taux(ht, tva)
+            invoice_lines.append(
+                InvoiceLine(
+                    fact_num=fact_num,
+                    designation=_guess_designation(f"{text}\n{label}"),
+                    m_ht=ht,
+                    tva=tva,
+                    m_ttc=ttc,
+                    **{
+                        "if": if_match.group(1).strip() if if_match else "",
+                        "lib_frss": supplier,
+                        "ice_frs": ice_match.group(1) if ice_match else "",
+                        "taux": taux,
+                        "id_paie": 4,
+                        "date_paie": invoice_date,
+                        "date_fac": invoice_date,
+                    },
+                )
+            )
+    else:
+        ht, tva, ttc = _extract_amounts(text)
+        if ht is None or ttc is None:
+            warnings.append("Montants HT/TTC non détectés automatiquement.")
 
-    line = InvoiceLine(
-        fact_num=(invoice_match.group(1).strip() if invoice_match else Path(filename).stem),
-        designation=_guess_designation(text),
-        m_ht=ht or 0.0,
-        tva=tva or 0.0,
-        m_ttc=ttc or 0.0,
-        **{
-            "if": if_match.group(1).strip() if if_match else "",
-            "lib_frss": "",
-            "ice_frs": ice_match.group(1) if ice_match else "",
-            "taux": taux,
-            "id_paie": 4,
-            "date_paie": invoice_date,
-            "date_fac": invoice_date,
-        },
-    )
+        taux = _guess_taux(ht, tva)
+        if tva is None and ht is not None:
+            tva = round(ht * taux, 2)
+        if ttc is None and ht is not None and tva is not None:
+            ttc = round(ht + tva, 2)
+
+        invoice_lines.append(
+            InvoiceLine(
+                fact_num=fact_num,
+                designation=_guess_designation(text),
+                m_ht=ht or 0.0,
+                tva=tva or 0.0,
+                m_ttc=ttc or 0.0,
+                **{
+                    "if": if_match.group(1).strip() if if_match else "",
+                    "lib_frss": supplier,
+                    "ice_frs": ice_match.group(1) if ice_match else "",
+                    "taux": taux,
+                    "id_paie": 4,
+                    "date_paie": invoice_date,
+                    "date_fac": invoice_date,
+                },
+            )
+        )
 
     return ExtractionResult(
         filename=filename,
-        lines=[line],
+        lines=invoice_lines,
         raw_text=text[:4000],
         confidence="low" if warnings else "medium",
         warnings=warnings,
