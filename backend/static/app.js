@@ -29,6 +29,7 @@ const els = {
   useAiServer: document.getElementById("useAiServer"),
   apiServerUrl: document.getElementById("apiServerUrl"),
   testServerBtn: document.getElementById("testServerBtn"),
+  connectionBadge: document.getElementById("connectionBadge"),
   apiSetupHint: document.getElementById("apiSetupHint"),
   dropZone: document.getElementById("dropZone"),
   fileInput: document.getElementById("fileInput"),
@@ -284,32 +285,51 @@ function persistApiSettings() {
   refreshEngineBadge();
 }
 
-async function testServerConnection() {
+function setConnectionBadge(state, text) {
+  if (!els.connectionBadge) return;
+  els.connectionBadge.className = `connection-badge ${state}`;
+  els.connectionBadge.textContent = text;
+}
+
+async function testServerConnection({ silent = false } = {}) {
   const apiUrl = resolvedApiUrl();
   if (!apiUrl) {
-    els.apiSetupHint.textContent = "Collez d'abord l'URL publique du Codespace (port 8000).";
-    els.apiSetupHint.classList.add("warn");
-    return;
+    setConnectionBadge("disconnected", "Non connecté");
+    if (!silent) {
+      els.apiSetupHint.textContent = "Collez d'abord l'URL publique du Codespace (port 8000).";
+      els.apiSetupHint.classList.add("warn");
+    }
+    return false;
   }
-  els.testServerBtn.disabled = true;
-  els.testServerBtn.textContent = "Test…";
+  if (els.testServerBtn) {
+    els.testServerBtn.disabled = true;
+    els.testServerBtn.textContent = "Test…";
+  }
+  setConnectionBadge("checking", "Vérification…");
   try {
     const health = await fetchServerHealth(apiUrl);
     if (health.ai_configured) {
+      setConnectionBadge("connected", "✓ Connecté — IA prête");
       els.apiSetupHint.textContent = "Connexion OK — IA prête. Utilisez cette page GitHub normalement.";
       els.apiSetupHint.classList.remove("warn");
       persistApiSettings();
       await refreshEngineBadge();
-    } else {
-      els.apiSetupHint.textContent = "Serveur joignable mais OPENAI_API_KEY manquante dans backend/.env du Codespace.";
-      els.apiSetupHint.classList.add("warn");
+      return true;
     }
+    setConnectionBadge("error", "Serveur OK — clé OpenAI manquante");
+    els.apiSetupHint.textContent = "Serveur joignable mais OPENAI_API_KEY manquante dans backend/.env du Codespace.";
+    els.apiSetupHint.classList.add("warn");
+    return false;
   } catch (error) {
+    setConnectionBadge("error", "Connexion impossible");
     els.apiSetupHint.textContent = `Connexion impossible : ${error.message}. Vérifiez que uvicorn tourne et que le port 8000 est Public.`;
     els.apiSetupHint.classList.add("warn");
+    return false;
   } finally {
-    els.testServerBtn.disabled = false;
-    els.testServerBtn.textContent = "Tester la connexion";
+    if (els.testServerBtn) {
+      els.testServerBtn.disabled = false;
+      els.testServerBtn.textContent = "Tester la connexion";
+    }
   }
 }
 
@@ -323,20 +343,24 @@ async function refreshEngineBadge() {
       if (health.ai_configured) {
         els.engineBadge.className = "engine-badge ai";
         els.engineBadge.textContent = "✓ Extraction IA activée (serveur sécurisé)";
+        setConnectionBadge("connected", "✓ Connecté — IA prête");
         return;
       }
       els.engineBadge.className = "engine-badge tesseract";
       els.engineBadge.textContent = "Serveur OK mais OPENAI_API_KEY manquante";
+      setConnectionBadge("error", "Serveur OK — clé OpenAI manquante");
       return;
     } catch {
       els.engineBadge.className = "engine-badge tesseract";
       els.engineBadge.textContent = "Serveur IA injoignable — OCR local en secours";
+      setConnectionBadge("error", "Connexion impossible");
       return;
     }
   }
 
   els.engineBadge.className = "engine-badge tesseract";
   els.engineBadge.textContent = "OCR navigateur (Tesseract)";
+  if (!apiUrl) setConnectionBadge("disconnected", "Non connecté");
 }
 
 async function runExtraction(files) {
@@ -489,7 +513,9 @@ els.period.addEventListener("input", updateFilenamePreview);
 els.apiServerUrl.addEventListener("change", persistApiSettings);
 els.apiServerUrl.addEventListener("blur", persistApiSettings);
 els.useAiServer.addEventListener("change", persistApiSettings);
-els.testServerBtn.addEventListener("click", testServerConnection);
+if (els.testServerBtn) {
+  els.testServerBtn.addEventListener("click", () => testServerConnection());
+}
 els.fileInput.addEventListener("change", (e) => addFiles(e.target.files));
 els.extractBtn.addEventListener("click", extractFiles);
 els.addLineBtn.addEventListener("click", () => {
@@ -520,3 +546,6 @@ updateFilenamePreview();
 updateButtons();
 setStep(1);
 refreshEngineBadge();
+if (resolvedApiUrl()) {
+  testServerConnection({ silent: true });
+}

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Déclaration TVA</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260813" />
 </head>
 <body>
   <header class="hero">
@@ -45,12 +45,13 @@
         <input id="useAiServer" type="checkbox" checked />
         Utiliser l'IA Vision pour les scans et photos
       </label>
-      <label>URL publique du Codespace (port 8000)
-        <input id="apiServerUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" />
-      </label>
-      <div class="actions">
-        <button id="testServerBtn" class="secondary small" type="button">Tester la connexion</button>
+      <div class="api-connect-row">
+        <label class="api-url-field">URL publique du Codespace (port 8000)
+          <input id="apiServerUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" />
+        </label>
+        <button id="testServerBtn" class="primary small" type="button">Tester la connexion</button>
       </div>
+      <p class="connection-badge disconnected" id="connectionBadge" aria-live="polite">Non connecté</p>
       <p class="hint" id="apiSetupHint">
         Dans le Codespace : lancez <code>uvicorn</code> → onglet Ports → 8000 → <strong>Public</strong> → copiez l'URL ici.
         Guide : <a href="https://github.com/anaslaghezali-ops/Recompta/blob/main/CODESPACE.md" target="_blank" rel="noopener">CODESPACE.md</a>
@@ -119,6 +120,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=20260813"></script>
 </body>
 </html>
