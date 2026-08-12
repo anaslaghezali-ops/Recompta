@@ -36,15 +36,25 @@
     </section>
 
     <section class="card">
-      <h2>Extraction IA</h2>
+      <h2>Extraction IA (Codespace)</h2>
+      <p class="hint">
+        Vous utilisez la page <strong>GitHub Pages</strong> — le Codespace sert uniquement de moteur IA en arrière-plan.
+        Vous n'avez pas besoin d'ouvrir le port 8000 dans le navigateur.
+      </p>
       <label class="checkbox-row">
         <input id="useAiServer" type="checkbox" checked />
         Utiliser l'IA Vision pour les scans et photos
       </label>
-      <label>URL du serveur Recompta
-        <input id="apiServerUrl" type="url" placeholder="https://recompta.onrender.com" />
+      <label>URL publique du Codespace (port 8000)
+        <input id="apiServerUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" />
       </label>
-      <p class="hint">Votre clé OpenAI reste sur le serveur (jamais dans le navigateur). Déploiement gratuit sur Render — voir DEPLOY.md.</p>
+      <div class="actions">
+        <button id="testServerBtn" class="secondary small" type="button">Tester la connexion</button>
+      </div>
+      <p class="hint" id="apiSetupHint">
+        Dans le Codespace : lancez <code>uvicorn</code> → onglet Ports → 8000 → <strong>Public</strong> → copiez l'URL ici.
+        Guide : <a href="https://github.com/anaslaghezali-ops/Recompta/blob/main/CODESPACE.md" target="_blank" rel="noopener">CODESPACE.md</a>
+      </p>
     </section>
 
     <section class="card">

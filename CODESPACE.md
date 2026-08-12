@@ -1,76 +1,67 @@
-# Recompta sur GitHub Codespaces (gratuit + IA)
+# Recompta : GitHub Pages + Codespace (IA)
 
-Oui — **Codespaces** convient très bien : pas de Render, pas de carte bancaire pour l'hébergement.
+**Vous travaillez sur la page GitHub** — pas dans le navigateur du Codespace.
 
-Le repo contient déjà `.devcontainer/devcontainer.json` (Python, Tesseract, port 8000).
+| Où | Rôle |
+|----|------|
+| https://anaslaghezali-ops.github.io/Recompta/ | **Votre interface** (import, tableau, Excel) |
+| Codespace port 8000 (URL publique) | **Moteur IA** invisible en arrière-plan |
 
 ---
 
-## Démarrage (5 minutes)
+## Configuration une seule fois
 
-### 1. Créer un Codespace
+### 1. Dans le Codespace (VS Code web)
 
-1. Allez sur https://github.com/anaslaghezali-ops/Recompta
-2. Bouton vert **Code** → onglet **Codespaces**
-3. **Create codespace on main**
-4. Attendez la fin de l'installation automatique (~2–3 min)
-
-### 2. Ajouter votre clé OpenAI
-
-Dans le terminal du Codespace :
+Terminal :
 
 ```bash
 cd backend
-cp .env.example .env
-nano .env   # ou éditez dans l'explorateur : OPENAI_API_KEY=sk-...
-```
-
-**Ou** (plus propre) : GitHub → **Settings** → **Secrets and variables** → **Codespaces** → New secret → `OPENAI_API_KEY`
-
-### 3. Lancer l'app
-
-```bash
-cd backend
+# Créez backend/.env avec OPENAI_API_KEY=sk-...
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 4. Ouvrir dans le navigateur
+**Ne cliquez pas** sur « Open in Browser » — ce n'est pas nécessaire.
 
-- Onglet **Ports** (en bas) → ligne **8000**
-- Clic droit → **Open in Browser**
+### 2. Rendre le port public
 
-Vous avez l'interface + **extraction IA** — comme un site web, sans Render.
+1. Panneau **Ports** (en bas)
+2. Ligne **8000**
+3. Clic droit → **Port Visibility** → **Public**
+4. Copiez l'URL affichée, par exemple :
+   ```
+   https://votre-codespace-8000.app.github.dev
+   ```
 
----
+### 3. Sur la page GitHub (votre vraie interface)
 
-## Utiliser avec GitHub Pages (optionnel)
+1. Ouvrez **https://anaslaghezali-ops.github.io/Recompta/**
+2. Section **Extraction IA (Codespace)**
+3. Collez l'URL du port 8000
+4. Cliquez **Tester la connexion**
+5. Le badge doit afficher **✓ Extraction IA activée**
 
-Si vous préférez l'interface sur `github.io` :
-
-1. Ports → **8000** → **Port visibility** → **Public**
-2. Copiez l'URL du type `https://xxxx-8000.app.github.dev`
-3. Collez-la dans **Extraction IA** sur https://anaslaghezali-ops.github.io/Recompta/
-
-> Le Codespace doit rester **allumé** et le serveur **lancé**.
-
----
-
-## Gratuit ?
-
-| | |
-|---|---|
-| **Codespaces** | ~**60 h/mois** gratuites (compte GitHub personnel) |
-| **OpenAI** | Payant à l'usage (votre clé) |
-| **Render** | Pas utilisé |
-
-Quand les heures gratuites sont épuisées, le Codespace s'arrête jusqu'au mois suivant — ou lancez en **local** (voir [SANS-RENDER.md](SANS-RENDER.md)).
+C'est enregistré dans votre navigateur — vous n'avez pas à refaire à chaque visite (tant que l'URL Codespace ne change pas).
 
 ---
 
-## Vérifier que l'IA est active
+## Utilisation quotidienne
 
-Sur http://localhost:8000 (ou l'URL Ports), le badge doit afficher :
+1. **Démarrer** le Codespace (GitHub → Code → Codespaces → reprendre)
+2. **Lancer** `uvicorn` dans le terminal (commande ci-dessus)
+3. **Vérifier** que le port 8000 est Public
+4. **Travailler** sur https://anaslaghezali-ops.github.io/Recompta/
 
-**« ✓ Extraction IA activée »**
+---
 
-Ou testez : `curl http://localhost:8000/api/health`
+## Si l'URL Codespace change
+
+À chaque **nouveau** Codespace, l'URL `*.app.github.dev` change → recopiez-la dans GitHub Pages et retestez.
+
+---
+
+## Coût
+
+- GitHub Pages : gratuit
+- Codespaces : ~60 h/mois gratuites
+- OpenAI : votre clé existante

@@ -28,6 +28,8 @@ const els = {
   engineBadge: document.getElementById("engineBadge"),
   useAiServer: document.getElementById("useAiServer"),
   apiServerUrl: document.getElementById("apiServerUrl"),
+  testServerBtn: document.getElementById("testServerBtn"),
+  apiSetupHint: document.getElementById("apiSetupHint"),
   dropZone: document.getElementById("dropZone"),
   fileInput: document.getElementById("fileInput"),
   fileList: document.getElementById("fileList"),
@@ -282,6 +284,35 @@ function persistApiSettings() {
   refreshEngineBadge();
 }
 
+async function testServerConnection() {
+  const apiUrl = resolvedApiUrl();
+  if (!apiUrl) {
+    els.apiSetupHint.textContent = "Collez d'abord l'URL publique du Codespace (port 8000).";
+    els.apiSetupHint.classList.add("warn");
+    return;
+  }
+  els.testServerBtn.disabled = true;
+  els.testServerBtn.textContent = "Test…";
+  try {
+    const health = await fetchServerHealth(apiUrl);
+    if (health.ai_configured) {
+      els.apiSetupHint.textContent = "Connexion OK — IA prête. Utilisez cette page GitHub normalement.";
+      els.apiSetupHint.classList.remove("warn");
+      persistApiSettings();
+      await refreshEngineBadge();
+    } else {
+      els.apiSetupHint.textContent = "Serveur joignable mais OPENAI_API_KEY manquante dans backend/.env du Codespace.";
+      els.apiSetupHint.classList.add("warn");
+    }
+  } catch (error) {
+    els.apiSetupHint.textContent = `Connexion impossible : ${error.message}. Vérifiez que uvicorn tourne et que le port 8000 est Public.`;
+    els.apiSetupHint.classList.add("warn");
+  } finally {
+    els.testServerBtn.disabled = false;
+    els.testServerBtn.textContent = "Tester la connexion";
+  }
+}
+
 async function refreshEngineBadge() {
   const apiUrl = resolvedApiUrl();
   const wantAi = els.useAiServer.checked;
@@ -458,6 +489,7 @@ els.period.addEventListener("input", updateFilenamePreview);
 els.apiServerUrl.addEventListener("change", persistApiSettings);
 els.apiServerUrl.addEventListener("blur", persistApiSettings);
 els.useAiServer.addEventListener("change", persistApiSettings);
+els.testServerBtn.addEventListener("click", testServerConnection);
 els.fileInput.addEventListener("change", (e) => addFiles(e.target.files));
 els.extractBtn.addEventListener("click", extractFiles);
 els.addLineBtn.addEventListener("click", () => {
