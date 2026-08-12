@@ -19,19 +19,22 @@ MOROCCAN_DATE_PATTERNS = [
     r"(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})",
 ]
 
-ICE_PATTERN = re.compile(r"\b(\d{15})\b")
-IF_PATTERN = re.compile(r"\b(?:IF|I\.F\.|Identifiant\s+fiscal)\s*[:\s]*([0-9A-Za-z]+)", re.I)
+ICE_PATTERN = re.compile(r"\bI\.?C\.?E\.?\s*[:\s]*(\d{15})\b", re.I)
+IF_PATTERN = re.compile(r"\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*[:\s-]*([0-9A-Za-z]+)", re.I)
+IF_FOOTER_PATTERN = re.compile(r"\bF\s+(\d{6,9})\b")
 AMOUNT_PATTERN = re.compile(r"(\d{1,3}(?:[ \u00a0.,]\d{3})*(?:[.,]\d{2})?)")
 INVOICE_NUM_PATTERN = re.compile(
-    r"FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)",
+    r"(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N[°o\.]?|:)?\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})",
     re.I,
 )
 SUPPLIER_SKIP = re.compile(r"^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)", re.I)
 AMOUNT_LINE = re.compile(r"^\d[\d., ]+$")
 
 
-def _parse_amount(raw: str) -> float:
-    cleaned = raw.replace("\u00a0", "").replace(" ", "")
+def _parse_amount(raw: str) -> float | None:
+    cleaned = raw.replace("\u00a0", "").replace(" ", "").strip()
+    if not cleaned or cleaned in {"-", "--"}:
+        return None
     if "," in cleaned and "." in cleaned:
         if cleaned.rfind(",") > cleaned.rfind("."):
             cleaned = cleaned.replace(".", "").replace(",", ".")
@@ -39,7 +42,10 @@ def _parse_amount(raw: str) -> float:
             cleaned = cleaned.replace(",", "")
     else:
         cleaned = cleaned.replace(",", ".")
-    return float(cleaned)
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
 
 def _parse_date(raw: str) -> date | None:
@@ -70,6 +76,25 @@ def extract_text_from_pdf(content: bytes) -> str:
     return "\n".join(chunks)
 
 
+def pdf_first_page_to_png(content: bytes, dpi: int = 200) -> bytes:
+    import pymupdf
+
+    doc = pymupdf.open(stream=content, filetype="pdf")
+    if doc.page_count == 0:
+        return b""
+    page = doc[0]
+    pix = page.get_pixmap(dpi=dpi)
+    return pix.tobytes("png")
+
+
+def ocr_image_bytes(content: bytes, lang: str = "fra+eng") -> str:
+    import pytesseract
+    from PIL import Image
+
+    image = Image.open(BytesIO(content))
+    return pytesseract.image_to_string(image, lang=lang)
+
+
 def _guess_designation(text: str) -> Designation:
     lowered = text.lower()
     if any(word in lowered for word in ("orange", "inwi", "iam", "téléphon", "telephon")):
@@ -83,15 +108,26 @@ def _guess_designation(text: str) -> Designation:
 
 def _extract_amounts(text: str) -> tuple[float | None, float | None, float | None]:
     labels = {
-        "ht": re.compile(r"TOTAL\s+H\.?T\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
-        "ttc": re.compile(r"TOTAL\s+T\.?T\.?C\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
-        "tva": re.compile(r"TOTAL\s+T\.?V\.?A\.?\s*[:\s]*([0-9 .,\u00a0]+)", re.I),
+        "ht": re.compile(
+            r"Total\s+H\.?T\.?\s*(?:Net)?\s*[;:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?",
+            re.I,
+        ),
+        "ttc": re.compile(
+            r"Total\s+T\.?T\.?C\.?\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?",
+            re.I,
+        ),
+        "tva": re.compile(
+            r"Total\s+T\.?V\.?A\.?\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?",
+            re.I,
+        ),
     }
     found: dict[str, float] = {}
     for key, pattern in labels.items():
         match = pattern.search(text)
         if match:
-            found[key] = _parse_amount(match.group(1))
+            amount = _parse_amount(match.group(1))
+            if amount is not None:
+                found[key] = amount
 
     ht = found.get("ht")
     ttc = found.get("ttc")
@@ -120,20 +156,64 @@ def _guess_taux(ht: float | None, tva: float | None) -> float:
 
 
 def _extract_supplier_name(text: str) -> str:
+    branded = re.search(
+        r"\b(ACHIBEST|EATMEAT|MOSE\s*Food|ORANGE|GLOVO|CARREFOUR)\b",
+        text,
+        re.I,
+    )
+    if branded:
+        name = branded.group(1).upper().replace("  ", " ")
+        if "MOSE" in name:
+            return "MOSE Food"
+        if "EATMEAT" in name:
+            return "EATMEAT"
+        return name.title() if name != "ACHIBEST" else "ACHIBEST"
+
+    if "partenaire des tables gourmandes" in text.lower():
+        return "ACHIBEST"
+
+    company_pattern = re.compile(r"\b(SARL|SA|STE|S\.A\.R\.L|S\.A\.R\.L\.A\.U)\b", re.I)
     for line in text.splitlines():
         candidate = line.strip()
-        if not candidate or SUPPLIER_SKIP.match(candidate):
+        if not candidate or len(candidate) < 3 or SUPPLIER_SKIP.match(candidate):
+            continue
+        if "AICHOUM" in candidate.upper():
             continue
         if ICE_PATTERN.search(candidate) or IF_PATTERN.search(candidate):
             continue
-        return candidate
+        if company_pattern.search(candidate) or re.match(r"^[A-Z][A-Za-z0-9 .&'-]{2,}$", candidate):
+            return candidate
+    return ""
+
+
+def _extract_supplier_ice(text: str) -> str:
+    matches = ICE_PATTERN.findall(text)
+    if matches:
+        return matches[-1]
+    plain = re.findall(r"\b(\d{15})\b", text)
+    return plain[-1] if plain else ""
+
+
+def _extract_supplier_if(text: str) -> str:
+    if_match = IF_PATTERN.search(text)
+    if if_match:
+        return if_match.group(1).strip()
+    footer = IF_FOOTER_PATTERN.search(text)
+    if footer:
+        return footer.group(1).strip()
     return ""
 
 
 def _extract_invoice_number(text: str, filename: str) -> str:
-    match = INVOICE_NUM_PATTERN.search(text)
-    if match:
-        return match.group(1).strip()
+    for pattern in (
+        INVOICE_NUM_PATTERN,
+        re.compile(r"(?:Facture|FACTURE)\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", re.I),
+        re.compile(r"AVOIR\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", re.I),
+        re.compile(r"FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)", re.I),
+    ):
+        match = pattern.search(text)
+        if match:
+            return match.group(1).strip()
     return Path(filename).stem
 
 
@@ -153,12 +233,18 @@ def _extract_line_items(text: str) -> list[dict[str, float | str]]:
     i = 0
     while i < len(lines):
         if i + 3 < len(lines) and AMOUNT_LINE.match(lines[i + 1]) and AMOUNT_LINE.match(lines[i + 2]) and AMOUNT_LINE.match(lines[i + 3]):
+            ht = _parse_amount(lines[i + 1])
+            tva = _parse_amount(lines[i + 2])
+            ttc = _parse_amount(lines[i + 3])
+            if ht is None or tva is None or ttc is None:
+                i += 1
+                continue
             items.append(
                 {
                     "label": lines[i],
-                    "m_ht": _parse_amount(lines[i + 1]),
-                    "tva": _parse_amount(lines[i + 2]),
-                    "m_ttc": _parse_amount(lines[i + 3]),
+                    "m_ht": ht,
+                    "tva": tva,
+                    "m_ttc": ttc,
                 }
             )
             i += 4
@@ -167,13 +253,72 @@ def _extract_line_items(text: str) -> list[dict[str, float | str]]:
     return items
 
 
+def _extract_achibest_tva_table(text: str) -> list[dict[str, float]]:
+    """Parse le tableau Taux / Montant HT / TVA des factures ACHIBEST."""
+    items: list[dict[str, float]] = []
+    pattern = re.compile(
+        r"(\d+[,.]\d+)\s*[.\s]+([\d .,\u00a0]+)\s+([\d .,\u00a0]+)",
+    )
+    for match in pattern.finditer(text):
+        taux = _parse_amount(match.group(1))
+        ht = _parse_amount(match.group(2))
+        tva = _parse_amount(match.group(3))
+        if taux is None or ht is None or tva is None or ht <= 0:
+            continue
+        taux_norm = taux / 100 if taux > 1 else taux
+        if taux_norm not in (0.1, 0.2):
+            continue
+        items.append(
+            {
+                "m_ht": ht,
+                "tva": tva,
+                "m_ttc": round(ht + tva, 2),
+                "taux": taux_norm,
+            }
+        )
+    return items
+
+
+def _extract_tva_ventilation(text: str) -> list[dict[str, float]]:
+    """Parse les lignes de ventilation TVA (format MOSE Food, etc.)."""
+    items: list[dict[str, float]] = []
+    pattern = re.compile(
+        r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%\s+([\d.,]+)",
+        re.I,
+    )
+    for match in pattern.finditer(text):
+        ttc = _parse_amount(match.group(1))
+        taux = _parse_amount(match.group(2))
+        tva = _parse_amount(match.group(3))
+        if ttc is None or taux is None or tva is None:
+            continue
+        taux_norm = taux / 100 if taux > 1 else taux
+        ht = round(ttc - tva, 2)
+        items.append({"m_ht": ht, "tva": tva, "m_ttc": ttc, "taux": taux_norm})
+    return items
+
+
+def _extract_mad_amounts(text: str) -> tuple[float | None, float | None, float | None]:
+    """Extrait HT/TVA/TTC depuis des lignes type 1870.00MAD (factures EatMeat)."""
+    amounts = [_parse_amount(m.group(1)) for m in re.finditer(r"([\d .,\u00a0]+)\s*MAD", text, re.I)]
+    amounts = [a for a in amounts if a is not None and a > 0]
+    if len(amounts) >= 3:
+        # Heuristique: TTC est le plus grand, TVA le plus petit des 3
+        amounts.sort()
+        tva, ht, ttc = amounts[0], amounts[1], amounts[2]
+        if ttc < ht:
+            ht, ttc = ttc, ht
+        return ht, tva, ttc
+    return None, None, None
+
+
 def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
     warnings: list[str] = []
     if not text.strip():
         warnings.append("Aucun texte extrait du document. Saisie manuelle requise.")
 
-    ice_match = ICE_PATTERN.search(text)
-    if_match = IF_PATTERN.search(text)
+    ice_match = _extract_supplier_ice(text)
+    if_fiscal = _extract_supplier_if(text)
     fact_num = _extract_invoice_number(text, filename)
     supplier = _extract_supplier_name(text)
 
@@ -186,9 +331,38 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
     invoice_date = date_candidates[0] if date_candidates else None
 
     line_items = _extract_line_items(text)
+    achibest_lines = _extract_achibest_tva_table(text) if "ACHIBEST" in supplier.upper() or "partenaire des tables gourmandes" in text.lower() else []
+    ventilation = _extract_tva_ventilation(text)
     invoice_lines: list[InvoiceLine] = []
 
-    if line_items:
+    if achibest_lines:
+        source = achibest_lines
+    elif ventilation:
+        source = ventilation
+    else:
+        source = []
+
+    if source:
+        for item in source:
+            invoice_lines.append(
+                InvoiceLine(
+                    fact_num=fact_num,
+                    designation=_guess_designation(text),
+                    m_ht=item["m_ht"],
+                    tva=item["tva"],
+                    m_ttc=item["m_ttc"],
+                    **{
+                        "if": if_fiscal,
+                        "lib_frss": supplier,
+                        "ice_frs": ice_match,
+                        "taux": item["taux"],
+                        "id_paie": 4,
+                        "date_paie": invoice_date,
+                        "date_fac": invoice_date,
+                    },
+                )
+            )
+    elif line_items:
         for item in line_items:
             ht = float(item["m_ht"])
             tva = float(item["tva"])
@@ -203,9 +377,9 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
                     tva=tva,
                     m_ttc=ttc,
                     **{
-                        "if": if_match.group(1).strip() if if_match else "",
+                        "if": if_fiscal,
                         "lib_frss": supplier,
-                        "ice_frs": ice_match.group(1) if ice_match else "",
+                        "ice_frs": ice_match,
                         "taux": taux,
                         "id_paie": 4,
                         "date_paie": invoice_date,
@@ -215,6 +389,11 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
             )
     else:
         ht, tva, ttc = _extract_amounts(text)
+        if ht is None or ttc is None:
+            ht2, tva2, ttc2 = _extract_mad_amounts(text)
+            ht = ht or ht2
+            tva = tva or tva2
+            ttc = ttc or ttc2
         if ht is None or ttc is None:
             warnings.append("Montants HT/TTC non détectés automatiquement.")
 
@@ -232,9 +411,9 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
                 tva=tva or 0.0,
                 m_ttc=ttc or 0.0,
                 **{
-                    "if": if_match.group(1).strip() if if_match else "",
+                    "if": if_fiscal,
                     "lib_frss": supplier,
-                    "ice_frs": ice_match.group(1) if ice_match else "",
+                    "ice_frs": ice_match,
                     "taux": taux,
                     "id_paie": 4,
                     "date_paie": invoice_date,
@@ -321,34 +500,76 @@ Si la facture contient plusieurs lignes avec des taux TVA différents, crée une
     )
 
 
+async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResult:
+    text = ocr_image_bytes(image_bytes)
+    if not text.strip():
+        return ExtractionResult(
+            filename=filename,
+            lines=[],
+            confidence="low",
+            warnings=["OCR n'a extrait aucun texte de l'image."],
+        )
+    result = _heuristic_extract(filename, text)
+    result.confidence = "medium"
+    result.warnings.append("Extraction via OCR — vérifiez les montants et dates.")
+    return result
+
+
 async def extract_invoice(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
     if mime_type == "application/pdf":
         text = extract_text_from_pdf(content)
         if text.strip():
             return _heuristic_extract(filename, text)
 
-    if mime_type.startswith("image/") and os.getenv("OPENAI_API_KEY"):
+        # PDF scanné : OpenAI Vision si disponible, sinon OCR local
+        if os.getenv("OPENAI_API_KEY"):
+            try:
+                png_bytes = pdf_first_page_to_png(content)
+                if png_bytes:
+                    return await _extract_with_openai(filename, png_bytes, "image/png")
+            except Exception as exc:  # noqa: BLE001
+                pass  # fallback OCR
+
         try:
-            return await _extract_with_openai(filename, content, mime_type)
+            png_bytes = pdf_first_page_to_png(content)
+            if png_bytes:
+                return await _extract_with_ocr(filename, png_bytes)
         except Exception as exc:  # noqa: BLE001
             return ExtractionResult(
                 filename=filename,
                 lines=[],
                 confidence="low",
-                warnings=[f"Extraction IA échouée: {exc}. Utilisez la saisie manuelle."],
+                warnings=[f"OCR échoué: {exc}"],
             )
 
-    if mime_type == "application/pdf":
-        return _heuristic_extract(filename, text)
+        return ExtractionResult(
+            filename=filename,
+            lines=[],
+            confidence="low",
+            warnings=["PDF scanné : impossible d'extraire le texte."],
+        )
+
+    if mime_type.startswith("image/"):
+        if os.getenv("OPENAI_API_KEY"):
+            try:
+                return await _extract_with_openai(filename, content, mime_type)
+            except Exception as exc:  # noqa: BLE001
+                pass
+        try:
+            return await _extract_with_ocr(filename, content)
+        except Exception as exc:  # noqa: BLE001
+            return ExtractionResult(
+                filename=filename,
+                lines=[],
+                confidence="low",
+                warnings=[f"OCR échoué: {exc}"],
+            )
 
     return ExtractionResult(
         filename=filename,
         lines=[],
         confidence="low",
-        warnings=[
-            "Document image sans clé OpenAI: configurez OPENAI_API_KEY pour l'extraction automatique, "
-            "ou saisissez les lignes manuellement."
-        ],
+        warnings=[f"Type de fichier non supporté: {mime_type}"],
     )
 
 
