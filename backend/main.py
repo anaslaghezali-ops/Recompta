@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from dotenv import load_dotenv
+
+load_dotenv()  # charge backend/.env ou .env à la racine
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response

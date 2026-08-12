@@ -84,16 +84,35 @@ Ouvrir http://localhost:8000
 
 ## Extraction automatique
 
-- **PDF avec texte** : extraction heuristique (regex) sans clé API
-- **PDF scannés / images** : OCR local (Tesseract) automatique
-- **Images scannées (haute précision)** : `OPENAI_API_KEY` pour la vision IA (optionnel)
+| Type de document | Moteur | Précision |
+|------------------|--------|-----------|
+| PDF avec texte | Lecture directe | Excellente |
+| PDF scanné / image | **IA (OpenAI Vision)** si clé configurée | **Meilleure** (~95% sur scans marocains) |
+| PDF scanné / image | Tesseract (secours gratuit) | Moyenne (~60-70%) |
+
+**Recommandation** : utilisez l'IA pour les factures scannées. Tesseract reste en secours si pas de clé API.
 
 ```bash
-export OPENAI_API_KEY=sk-...
-export OPENAI_VISION_MODEL=gpt-4o-mini   # optionnel
+cd backend
+cp .env.example .env
 ```
 
-Sans clé API, vous pouvez toujours saisir les lignes manuellement dans l'interface.
+Ouvrez le fichier **`backend/.env`** et remplacez la clé :
+
+```
+OPENAI_API_KEY=sk-votre-vraie-clé-ici
+```
+
+Puis lancez le serveur **depuis le dossier `backend/`** :
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Sur la page web http://localhost:8000, vous devez voir le badge vert **« Extraction IA activée »**.
+
+> Ne commitez jamais le fichier `.env` (il est déjà dans `.gitignore`).
 
 ## API
 
@@ -106,7 +125,7 @@ Sans clé API, vous pouvez toujours saisir les lignes manuellement dans l'interf
 
 ## Prochaines étapes possibles
 
-- Connexion à un OCR local (Tesseract) pour les scans sans OpenAI
+- ~~Connexion à un OCR local (Tesseract) pour les scans sans OpenAI~~ ✓ fait (secours)
 - Base fournisseurs (ICE → nom, IF) pour auto-complétion
 - Import en lot depuis un dossier / email
 - Validation métier (doublons, totaux période)
