@@ -48,6 +48,8 @@ Recompta permet de :
 3. **Vérifier / corriger** les lignes dans une interface web
 4. **Exporter** un fichier Excel au format DED TVA attendu
 
+Voir [ARCHITECTURE.md](ARCHITECTURE.md) pour la vision SaaS multi-cabinets (extraction générique, sans règles par fournisseur).
+
 ## Format Excel généré
 
 Colonnes exportées (feuille `EDIMMYY` ou `EDIMMAAAA`) :

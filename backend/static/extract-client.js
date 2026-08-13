@@ -331,21 +331,17 @@ function folderKey(filename) {
   return parts.length > 1 ? parts[0].toLowerCase().trim() : "";
 }
 
-const FOLDER_SUPPLIERS = {
-  achibest: { lib_frss: "ACHIBEST", ice: "000229475000050", if: "1102277" },
-  eatmeat: { lib_frss: "EATMEAT", ice: "002540001000040", if: "45978904" },
-  mose: { lib_frss: "MOSE Food", ice: "000161664000072", if: "14427958" },
-  "mose food": { lib_frss: "MOSE Food", ice: "000161664000072", if: "14427958" },
-};
+const FOLDER_SUPPLIERS = {};
 
 function supplierHintFromPath(filename) {
   const key = folderKey(filename);
-  if (!key) return null;
-  if (FOLDER_SUPPLIERS[key]) return FOLDER_SUPPLIERS[key];
-  for (const [pattern, hint] of Object.entries(FOLDER_SUPPLIERS)) {
-    if (key.includes(pattern)) return hint;
-  }
-  return null;
+  if (!key || [".", "..", "unknown", "factures", "invoices"].includes(key)) return null;
+  const label = key
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return label ? { lib_frss: label } : null;
 }
 
 function normalizeIceDigits(value) {
@@ -506,7 +502,7 @@ function alignLinesWithFooterTotals(lines, text) {
 
 function applyTtcVentilationFixes(result) {
   const text = result.raw_text || "";
-  const ventilation = extractTvaVentilation(text);
+  const ventilation = extractVatLinesFromText(text);
   const warnings = [...(result.warnings || [])];
 
   if (ventilation.length && result.lines?.length) {
@@ -610,15 +606,16 @@ export function normalizeExtractionResults(results) {
 
   for (const [, group] of groups) {
     const pathHint = supplierHintFromPath(group.filenames[0] || "");
-    const bestIce = pathHint?.ice || pickBestIce(group.ices);
-    const bestIf = pathHint?.if || pickMostCommon(group.ifs);
-    const bestName = pathHint?.lib_frss || pickMostCommon(group.lines.map((l) => l.lib_frss));
+    const bestIce = pickBestIce(group.ices);
+    const bestIf = pickMostCommon(group.ifs);
+    const bestName = pickMostCommon(group.lines.map((l) => l.lib_frss));
 
     for (const line of group.lines) {
       line.designation = normalizeDesignation(line.designation);
-      if (bestName) line.lib_frss = bestName;
+      if (!line.lib_frss && bestName) line.lib_frss = bestName;
+      if (!line.lib_frss && pathHint?.lib_frss) line.lib_frss = pathHint.lib_frss;
       if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) line.ice_frs = bestIce;
-      if (bestIf) line.if = bestIf;
+      if (bestIf && !line.if) line.if = bestIf;
     }
   }
 
@@ -635,21 +632,15 @@ function guessTaux(ht, tva) {
   return 0.2;
 }
 
+function extractVatLinesFromText(text) {
+  const candidates = [extractTvaVentilation(text), extractAchibestTvaTable(text)].filter((c) => c.length);
+  if (!candidates.length) return [];
+  return candidates.sort((a, b) => b.length - a.length)[0];
+}
+
 function extractSupplierName(text, filename = "") {
-  const haystack = `${filename}\n${text}`;
   const pathHint = supplierHintFromPath(filename);
   if (pathHint?.lib_frss) return pathHint.lib_frss;
-  if (isAchibestDocument(text, filename)) return "ACHIBEST";
-  if (isEatMeatDocument(text, filename)) return "EATMEAT";
-
-  const branded = haystack.match(/\b(ACHIBEST|EATMEAT|MOSE\s*Food|ORANGE|GLOVO|CARREFOUR)\b/i);
-  if (branded) {
-    const name = branded[1].toUpperCase().replace(/  /g, " ");
-    if (name.includes("MOSE")) return "MOSE Food";
-    if (name.includes("EATMEAT")) return "EATMEAT";
-    return name === "ACHIBEST" ? "ACHIBEST" : name.charAt(0) + name.slice(1).toLowerCase();
-  }
-  if (text.toLowerCase().includes("partenaire des tables gourmandes")) return "ACHIBEST";
 
   const companyPattern = /\b(SARL|SA|STE|S\.A\.R\.L|S\.A\.R\.L\.A\.U)\b/i;
   for (const line of text.split("\n")) {
@@ -665,9 +656,6 @@ function extractSupplierName(text, filename = "") {
 }
 
 function extractSupplierIce(text, filename = "") {
-  const pathHint = supplierHintFromPath(filename);
-  if (pathHint?.ice && !isExcludedIce(pathHint.ice)) return pathHint.ice;
-
   const candidates = [...text.matchAll(new RegExp(ICE_PATTERN.source, "gi"))].map((m) => m[1]);
   const plain = [...text.matchAll(/\b(\d{15})\b/g)].map((m) => m[1]);
   const all = [...candidates, ...plain]
@@ -866,12 +854,7 @@ function heuristicExtract(filename, text) {
   const invoiceDate = dateCandidates[0] || "";
 
   const lineItems = extractLineItems(text);
-  const achibestLines = isAchibestDocument(text, filename) ? extractAchibestTvaTable(text) : [];
-  const ventilation = extractTvaVentilation(text);
-
-  let source = [];
-  if (achibestLines.length) source = achibestLines;
-  else if (ventilation.length) source = ventilation;
+  const source = extractVatLinesFromText(text);
 
   const lines = [];
 
