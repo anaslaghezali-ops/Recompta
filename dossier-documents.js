@@ -83,6 +83,64 @@ export async function uploadDossierDocumentFromBlob({
   return uploadDossierDocument({ dossierId, file, docType, sourceId });
 }
 
+export function documentDisplayName(filename) {
+  const parts = String(filename || "").replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] || filename || "document";
+}
+
+export function documentSupplierGroup(doc) {
+  if (doc?.doc_type === "bank") {
+    return {
+      key: "__bank__",
+      label: "Relevés bancaires",
+      kind: "bank",
+      filename: documentDisplayName(doc.original_filename),
+    };
+  }
+
+  const raw = String(doc?.original_filename || "").replace(/\\/g, "/");
+  const parts = raw.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    const supplier = parts[0].trim();
+    return {
+      key: `supplier:${supplier.toLowerCase()}`,
+      label: supplier,
+      kind: "supplier",
+      filename: parts.slice(1).join("/"),
+    };
+  }
+
+  const base = parts[0] || "document";
+  if (/\.zip$/i.test(base)) {
+    return { key: "__archive__", label: "Archives ZIP", kind: "archive", filename: base };
+  }
+  return { key: "__other__", label: "Autres documents", kind: "other", filename: base };
+}
+
+const GROUP_KIND_ORDER = { supplier: 0, bank: 1, archive: 2, other: 3 };
+
+export function groupDocumentsBySupplier(docs) {
+  const map = new Map();
+  for (const doc of docs || []) {
+    const group = documentSupplierGroup(doc);
+    if (!map.has(group.key)) {
+      map.set(group.key, {
+        key: group.key,
+        label: group.label,
+        kind: group.kind,
+        docs: [],
+      });
+    }
+    map.get(group.key).docs.push({ ...doc, displayName: group.filename });
+  }
+
+  return [...map.values()].sort((a, b) => {
+    const order = (GROUP_KIND_ORDER[a.kind] ?? 9) - (GROUP_KIND_ORDER[b.kind] ?? 9);
+    if (order !== 0) return order;
+    return a.label.localeCompare(b.label, "fr", { sensitivity: "base" });
+  });
+}
+
 export async function listDossierDocuments(dossierId, { docType = null } = {}) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return [];

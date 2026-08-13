@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=jobs4" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs5" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -225,8 +225,9 @@
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
       downloadDossierDocument,
+      groupDocumentsBySupplier,
       listDossierDocuments,
-    } from "./dossier-documents.js?v=doc1";
+    } from "./dossier-documents.js?v=doc2";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -381,27 +382,49 @@
       }
 
       emptyEl.hidden = true;
-      listEl.innerHTML = filtered.map((doc) => {
-        const icon = DOC_TYPE_ICONS[doc.doc_type] || "file";
-        const typeLabel = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
-        const dateLabel = new Date(doc.created_at).toLocaleString("fr-FR", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        return `
-          <div class="ws-doc-row" data-doc-id="${doc.id}">
-            <span class="ws-doc-icon"><i data-lucide="${icon}"></i></span>
-            <div class="ws-doc-meta">
-              <strong title="${escapeHtml(doc.original_filename)}">${escapeHtml(doc.original_filename)}</strong>
-              <span>${escapeHtml(typeLabel)} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
+      const groups = groupDocumentsBySupplier(filtered);
+      listEl.innerHTML = groups.map((group) => {
+        const countLabel = group.docs.length > 1
+          ? `${group.docs.length} documents`
+          : "1 document";
+        const rows = group.docs.map((doc) => {
+          const icon = DOC_TYPE_ICONS[doc.doc_type] || "file";
+          const typeLabel = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
+          const dateLabel = new Date(doc.created_at).toLocaleString("fr-FR", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const displayName = doc.displayName || doc.original_filename;
+          return `
+            <div class="ws-doc-row" data-doc-id="${doc.id}">
+              <span class="ws-doc-icon"><i data-lucide="${icon}"></i></span>
+              <div class="ws-doc-meta">
+                <strong title="${escapeHtml(doc.original_filename)}">${escapeHtml(displayName)}</strong>
+                <span>${escapeHtml(typeLabel)} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
+              </div>
+              <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}">
+                <i data-lucide="download"></i> Télécharger
+              </button>
             </div>
-            <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}">
-              <i data-lucide="download"></i> Télécharger
-            </button>
-          </div>
+          `;
+        }).join("");
+        const groupIcon = group.kind === "bank" ? "landmark"
+          : group.kind === "archive" ? "archive"
+            : "building-2";
+        return `
+          <section class="ws-doc-group" data-group="${escapeHtml(group.key)}">
+            <header class="ws-doc-group-header">
+              <span class="ws-doc-group-icon"><i data-lucide="${groupIcon}"></i></span>
+              <div>
+                <h3>${escapeHtml(group.label)}</h3>
+                <p>${countLabel}</p>
+              </div>
+            </header>
+            <div class="ws-doc-group-list">${rows}</div>
+          </section>
         `;
       }).join("");
 
