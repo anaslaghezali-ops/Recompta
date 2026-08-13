@@ -4,10 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Connexion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="landing.css?v=1" />
   <link rel="stylesheet" href="styles.css?v=auth3" />
 </head>
 <body>
-  <header class="hero">
+  <nav class="lp-nav" aria-label="Navigation">
+    <div class="lp-nav-inner">
+      <a href="index.html" class="lp-brand"><span class="lp-brand-mark">R</span> Recompta</a>
+      <div class="lp-nav-actions">
+        <a href="index.html" class="lp-btn lp-btn-ghost">Accueil</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero" style="padding-top:2rem;">
     <div class="hero-content">
       <p class="eyebrow">Recompta</p>
       <h1>Connexion</h1>
@@ -19,8 +32,7 @@
     <section class="card login-card">
       <h2>Se connecter</h2>
       <p class="hint" id="configHint" hidden>
-        Un seul fichier : <code>docs/supabase-config.js</code>.
-        Clé <strong>anon</strong> du projet <code>pbyoxfxngfutoiqjirkx</code>.
+        Un seul fichier : <code>docs/auth-client.js</code> (clé anon du projet <code>pbyoxfxngfutoiqjirkx</code>).
       </p>
       <form id="authForm">
         <label>Email
@@ -34,7 +46,7 @@
           <button id="submitBtn" class="primary" type="submit">Connexion</button>
         </div>
       </form>
-      <p class="hint">
+      <p class="hint" style="margin-top:1rem;">
         <a href="index.html">Retour à l'accueil</a>
         <span id="adminLinkWrap" hidden>
           · <a href="admin.html">Administration cabinets</a> (super-admin)

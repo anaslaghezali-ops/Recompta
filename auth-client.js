@@ -1,5 +1,10 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.86.0/+esm";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase-config.js?v=pbyoxfxngfutoiqjirkx-1";
+
+/** Config Supabase (inline : GitHub Pages ne sert pas supabase-config.js). */
+export const SUPABASE_CONFIG_VERSION = "pbyoxfxngfutoiqjirkx-2";
+export const SUPABASE_URL = "https://pbyoxfxngfutoiqjirkx.supabase.co";
+const RAW_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBieW94ZnhuZ2Z1dG9pcWppcmt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MzM0NTksImV4cCI6MjEwMjIwOTQ1OX0.XnBB0ZlLPLcdssCHfEyXSgVJlzi4oORkOxBAaWHT5kI";
+export const SUPABASE_ANON_KEY = RAW_ANON_KEY.trim().replace(/^["']|["']$/g, "");
 
 let client = null;
 
@@ -13,7 +18,7 @@ export function isSupabaseConfigured() {
 export function authErrorMessage(error) {
   const message = error?.message || "Échec de la connexion.";
   if (/invalid api key/i.test(message)) {
-    return "Clé API refusée (souvent un ancien fichier en cache). Faites Ctrl+Shift+R. La clé dans docs/supabase-config.js doit être celle du projet pbyoxfxngfutoiqjirkx.";
+    return "Clé API refusée (souvent un ancien fichier en cache). Faites Ctrl+Shift+R. Vérifiez SUPABASE_ANON_KEY dans docs/auth-client.js (projet pbyoxfxngfutoiqjirkx).";
   }
   return message;
 }
@@ -127,5 +132,3 @@ export async function redirectAfterLogin(userId) {
   if (membership) return "dossiers.html";
   return "production.html";
 }
-
-export { SUPABASE_URL } from "./supabase-config.js?v=pbyoxfxngfutoiqjirkx-1";
