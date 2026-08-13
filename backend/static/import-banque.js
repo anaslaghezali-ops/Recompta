@@ -21,6 +21,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
+import { uploadDossierDocument } from "./dossier-documents.js?v=doc1";
 
 const els = {};
 let session = null;
@@ -124,6 +125,12 @@ async function loadBankFile(file) {
     renderTxnTable();
     els.statusMessage.textContent = `${transactions.length} mouvement(s) chargé(s).`;
     els.statusMessage.classList.add("is-success");
+
+    uploadDossierDocument({
+      dossierId: session.dossierId,
+      file,
+      docType: "bank",
+    }).catch(() => {});
 
     await persistWorkspaceNow(
       session,
