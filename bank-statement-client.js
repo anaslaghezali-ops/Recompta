@@ -16,6 +16,21 @@ const AMOUNT_HEADER = /^montant$|amount|somme/i;
 
 const AMOUNT_TOLERANCE = 1.0;
 
+const LEGAL_FORM_TOKENS = new Set([
+  "SARL", "SARLAU", "SA", "SAS", "SASU", "SNC", "SCS", "STE", "SOCIETE", "AU", "EURL",
+]);
+
+function supplierNameKey(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.'']/g, "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter((token) => token && !LEGAL_FORM_TOKENS.has(token))
+    .join("");
+}
+
 function normalizeText(value) {
   return String(value || "")
     .normalize("NFD")
@@ -255,6 +270,49 @@ function amountsMatch(a, b) {
   return Math.abs(Math.abs(a) - Math.abs(b)) <= AMOUNT_TOLERANCE;
 }
 
+/** Sous-ensemble de groupes facture dont la somme TTC correspond au montant. */
+function findInvoiceSubset(groups, targetAmount) {
+  if (!groups.length) return null;
+
+  const total = groups.reduce((sum, group) => sum + group.totalTtc, 0);
+  if (amountsMatch(total, targetAmount)) return groups;
+
+  if (groups.length > 24) return null;
+
+  const count = groups.length;
+  for (let mask = 1; mask < 1 << count; mask += 1) {
+    const subset = [];
+    let sum = 0;
+    for (let i = 0; i < count; i += 1) {
+      if (mask & (1 << i)) {
+        subset.push(groups[i]);
+        sum += groups[i].totalTtc;
+      }
+    }
+    if (amountsMatch(sum, targetAmount)) return subset;
+  }
+  return null;
+}
+
+function supplierKeysFromLabel(label, groups, lines, usedLineIndices) {
+  const keys = new Set();
+  groups.forEach((group) => {
+    if (labelScore(label, group.lib_frss, group.fact_num) > 0) {
+      const key = supplierNameKey(group.lib_frss);
+      if (key) keys.add(key);
+    }
+  });
+  lines.forEach((line, index) => {
+    if (usedLineIndices.has(index)) return;
+    if (line.designation === "FRAIS BANCAIRE") return;
+    if (labelScore(label, line.lib_frss, line.fact_num) > 0) {
+      const key = supplierNameKey(line.lib_frss);
+      if (key) keys.add(key);
+    }
+  });
+  return keys;
+}
+
 function feeLineFromTransaction(txn, sourceFile, bankName = "BANQUE", bankIce = "", bankIf = "") {
   const ttc = txn.absAmount;
   const ht = Math.round((ttc / 1.1) * 100) / 100;
@@ -348,9 +406,51 @@ export function applyBankStatement(
       updated[index].date_paie_from_bank = true;
       usedLineIndices.add(index);
       matchedPayments.push({ txn, factNum: line.fact_num, lineCount: 1 });
-    } else {
-      unmatchedPayments.push(txn);
+      continue;
     }
+
+    const supplierKeys = supplierKeysFromLabel(txn.label, groups, updated, usedLineIndices);
+    let supplierMatch = null;
+    let supplierMatchScore = 0;
+
+    for (const supplierKey of supplierKeys) {
+      const supplierGroups = groups.filter(
+        (group) => !usedGroupKeys.has(group.key) && supplierNameKey(group.lib_frss) === supplierKey,
+      );
+      const subset = findInvoiceSubset(supplierGroups, debitAmount);
+      if (!subset) continue;
+
+      const score = Math.max(
+        ...subset.map((group) => labelScore(txn.label, group.lib_frss, group.fact_num)),
+      );
+      if (!supplierMatch || score > supplierMatchScore || subset.length > supplierMatch.length) {
+        supplierMatch = subset;
+        supplierMatchScore = score;
+      }
+    }
+
+    if (supplierMatch?.length) {
+      let lineCount = 0;
+      supplierMatch.forEach((group) => {
+        group.indices.forEach((idx) => {
+          updated[idx].date_paie = txn.date;
+          updated[idx].id_paie = 4;
+          updated[idx].date_paie_from_bank = true;
+          usedLineIndices.add(idx);
+          lineCount += 1;
+        });
+        usedGroupKeys.add(group.key);
+      });
+      matchedPayments.push({
+        txn,
+        supplierKey: supplierNameKey(supplierMatch[0].lib_frss),
+        invoiceCount: supplierMatch.length,
+        lineCount,
+      });
+      continue;
+    }
+
+    unmatchedPayments.push(txn);
   }
 
   const newFeeLines = [];
