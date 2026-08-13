@@ -10,6 +10,24 @@ import httpx
 DOCUMENTS_BUCKET = "dossier-documents"
 
 
+def _document_identity_keys(filename: str) -> set[str]:
+    name = str(filename or "").replace("\\", "/").strip("/")
+    parts = [part for part in name.split("/") if part]
+    keys: set[str] = set()
+    if len(parts) >= 2:
+        keys.add(f"{parts[-2].lower()}/{parts[-1].lower()}")
+    if parts:
+        keys.add(parts[-1].lower())
+    if not keys:
+        keys.add("document")
+    return keys
+
+
+def _document_identity_key(filename: str) -> str:
+    keys = _document_identity_keys(filename)
+    return sorted(keys, key=len, reverse=True)[0]
+
+
 def supabase_url() -> str:
     return (os.getenv("SUPABASE_URL") or "https://pbyoxfxngfutoiqjirkx.supabase.co").rstrip("/")
 
@@ -287,26 +305,42 @@ class SupabaseService:
         source_id: str | None = None,
         original_filename: str | None = None,
     ) -> dict[str, Any] | None:
-        params: dict[str, str] = {
-            "dossier_id": f"eq.{dossier_id}",
-            "select": "id, storage_path, source_id, original_filename",
-            "limit": "1",
-        }
         if source_id:
-            params["source_id"] = f"eq.{source_id}"
-        elif original_filename:
-            params["original_filename"] = f"eq.{original_filename}"
-        else:
+            response = await self.client.get(
+                f"{self.base}/rest/v1/dossier_documents",
+                params={
+                    "dossier_id": f"eq.{dossier_id}",
+                    "source_id": f"eq.{source_id}",
+                    "select": "id, storage_path, source_id, original_filename",
+                    "limit": "1",
+                },
+                headers=service_headers(),
+            )
+            response.raise_for_status()
+            rows = response.json()
+            if rows:
+                return rows[0]
+
+        if not original_filename:
             return None
 
+        target_keys = _document_identity_keys(original_filename)
         response = await self.client.get(
             f"{self.base}/rest/v1/dossier_documents",
-            params=params,
+            params={
+                "dossier_id": f"eq.{dossier_id}",
+                "select": "id, storage_path, source_id, original_filename, created_at",
+                "order": "created_at.desc",
+                "limit": "200",
+            },
             headers=service_headers(),
         )
         response.raise_for_status()
-        rows = response.json()
-        return rows[0] if rows else None
+        for row in response.json():
+            row_keys = _document_identity_keys(row.get("original_filename") or "")
+            if target_keys & row_keys:
+                return row
+        return None
 
     async def save_dossier_document(
         self,
@@ -321,7 +355,7 @@ class SupabaseService:
         existing = await self.find_dossier_document(
             dossier_id,
             source_id=source_id or None,
-            original_filename=None if source_id else filename,
+            original_filename=filename,
         )
         if existing:
             return existing
