@@ -381,14 +381,21 @@ def reconcile_supplier_if(result: ExtractionResult, text: str) -> ExtractionResu
 
 
 def _extract_invoice_number(text: str, filename: str) -> str:
+    # Sur un avoir, le numéro de l'avoir prime sur la facture d'origine citée.
+    avoir = re.search(r"AVOIR\s*(?:N[°o\.]?|:)?\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", text, re.I)
+    if avoir and not _is_reference_mention(text, avoir.start()):
+        return avoir.group(1).strip()
+
+    own = document_number_matches(text)
+    if own:
+        return own[0].group(1).strip()
+
     for pattern in (
-        INVOICE_NUM_PATTERN,
         re.compile(r"(?:Facture|FACTURE)\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", re.I),
-        re.compile(r"AVOIR\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", re.I),
         re.compile(r"FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)", re.I),
     ):
         match = pattern.search(text)
-        if match:
+        if match and not _is_reference_mention(text, match.start()):
             return match.group(1).strip()
     return Path(filename).stem
 
@@ -510,6 +517,29 @@ def _extract_mad_amounts(text: str) -> tuple[float | None, float | None, float |
 
 HEADER_LOOKBACK_LINES = 6
 
+# Un avoir ou une facture cite souvent le document d'origine (« Transformé de :
+# Facture N° ... »). Ces renvois ne doivent jamais ouvrir un nouveau document.
+REFERENCE_MENTION = re.compile(
+    r"(?:transform[ée]e?\s+de|r[ée]f[ée]rence|r[ée]f\.|suivant|origine|annule\s+et\s+remplace|"
+    r"bon\s+de\s+(?:retour|livraison)|relatif?\s+[àa]|selon|voir|concerne|objet)"
+    r"[\s:;,–-]*$",
+    re.I,
+)
+
+
+def _is_reference_mention(text: str, match_start: int) -> bool:
+    window = text[max(0, match_start - 80) : match_start]
+    return bool(REFERENCE_MENTION.search(window))
+
+
+def document_number_matches(text: str) -> list[re.Match]:
+    """Numéros qui ouvrent réellement un document, hors renvois à un autre."""
+    return [
+        match
+        for match in INVOICE_NUM_PATTERN.finditer(text)
+        if not _is_reference_mention(text, match.start())
+    ]
+
 
 def _segment_start(text: str, match_start: int, floor: int) -> int:
     """Remonte quelques lignes avant le numéro pour inclure l'en-tête fournisseur."""
@@ -526,7 +556,7 @@ def split_invoice_segments(text: str) -> list[str]:
     """Découpe un document qui contient plusieurs factures, une par numéro trouvé."""
     positions: list[int] = []
     seen: set[str] = set()
-    for match in INVOICE_NUM_PATTERN.finditer(text):
+    for match in document_number_matches(text):
         number = match.group(1).strip()
         if len(number) < 3 or number in seen:
             continue
@@ -552,8 +582,8 @@ def group_pages_by_invoice(pages: list[str]) -> list[str]:
     current_number: str | None = None
 
     for page in pages:
-        match = INVOICE_NUM_PATTERN.search(page)
-        number = match.group(1).strip() if match else None
+        matches = document_number_matches(page)
+        number = matches[0].group(1).strip() if matches else None
         if number and number != current_number:
             if current:
                 segments.append("\n".join(current))
@@ -751,6 +781,11 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
 5. **Plusieurs factures dans un même document** (scan groupé de plusieurs pages) :
    traite-les TOUTES. Une entrée par (facture, taux), avec le fact_num propre à
    chacune. N'en oublie aucune et ne fusionne jamais deux factures différentes.
+
+6. **Renvois à un autre document** : « Transformé de : Facture N° ... »,
+   « Référence », « Bon de retour », « Annule et remplace » désignent le
+   document d'ORIGINE, jamais une facture supplémentaire. Un avoir reste UN
+   seul document, identifié par son propre numéro d'avoir.
 
 ## Champs
 
