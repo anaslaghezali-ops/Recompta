@@ -33,7 +33,7 @@ Puis **Ports** → **8000** → **Open in Browser**.
 4. Vérifiez le tableau, corrigez si besoin
 5. **Télécharger Excel**
 
-> Les comptes cabinets, Supabase et paiements viendront **plus tard**, une fois le cœur métier validé.
+> Auth super-admin (étape 1) : voir [docs/AUTH.md](docs/AUTH.md). L'outil solo reste utilisable sans compte.
 
 ## Problème
 

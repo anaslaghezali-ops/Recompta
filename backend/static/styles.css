@@ -46,8 +46,87 @@ body {
   margin-right: auto;
 }
 
+.hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  max-width: var(--layout-max);
+  width: 100%;
+  margin: 0 auto 1.5rem;
+}
+
 .hero-content {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-auth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.hero-auth-link,
+.hero-auth button {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.hero-auth-link:hover,
+.hero-auth button:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.hero-auth-role {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(13, 122, 78, 0.85);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+}
+
+.hero-auth-email {
+  font-size: 0.8rem;
+  opacity: 0.9;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-wrap {
+  max-width: 28rem;
+}
+
+.login-card h2 {
+  margin-bottom: 1rem;
+}
+
+.hint.error { color: var(--danger); }
+.hint.success { color: var(--success); }
+
+button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .eyebrow {
