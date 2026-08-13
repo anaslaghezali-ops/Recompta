@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=dash1" />
+  <link rel="stylesheet" href="dashboard.css?v=workspace1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -28,45 +28,128 @@
           </div>
         </div>
         <div class="dash-topbar-actions">
-          <button type="button" class="dash-btn dash-btn-primary" id="newPeriodBtn">
-            <i data-lucide="calendar-plus"></i> Nouvelle période TVA
+          <button type="button" class="dash-btn" id="newPeriodBtn">
+            <i data-lucide="calendar-plus"></i> Nouvelle période
+          </button>
+          <button type="button" class="dash-btn dash-btn-primary" id="openProductionBtn" hidden>
+            <i data-lucide="play"></i> Ouvrir la production
           </button>
         </div>
       </header>
 
-      <main class="dash-content">
-        <div class="dash-panels">
-          <section class="dash-panel">
-            <h2>Informations client</h2>
-            <ul class="dash-info-list" id="clientInfoList"></ul>
-          </section>
-          <section class="dash-panel">
-            <h2>Actions rapides</h2>
-            <div class="dash-actions-grid" id="actionsGrid"></div>
-          </section>
+      <main class="dash-content ws-cockpit">
+        <div class="ws-client-meta" id="clientMeta"></div>
+
+        <div class="ws-period-bar" id="periodBar" hidden>
+          <label for="periodSelect">Période active</label>
+          <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période"></select>
         </div>
 
-        <section class="dash-panel">
-          <div class="dash-workspace-header" style="margin-bottom:0.75rem;">
-            <div>
-              <h2 style="margin:0;font-size:1rem;font-weight:800;letter-spacing:-0.02em;">Calendrier TVA</h2>
-              <p style="margin:0.25rem 0 0;font-size:0.82rem;color:var(--dash-muted);">Exercice fiscal — déclarations mensuelles</p>
-            </div>
-          </div>
-          <div class="dash-year-tabs" id="yearTabs"></div>
-          <div class="dash-month-grid" id="monthGrid"></div>
-          <div class="dash-legend">
-            <span><i class="dash-dot" style="background:#94a3b8;"></i> Brouillon</span>
-            <span><i class="dash-dot" style="background:#f59e0b;"></i> En revue</span>
-            <span><i class="dash-dot" style="background:#10b981;"></i> Déclaré</span>
-            <span><i class="dash-dot" style="background:#cbd5e1;border:1px dashed #94a3b8;"></i> À créer</span>
-          </div>
-        </section>
+        <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
+          <button type="button" class="active" data-tab="cockpit" role="tab">Période active</button>
+          <button type="button" data-tab="history" role="tab">Historique des périodes</button>
+        </div>
 
-        <section class="dash-panel" style="margin-top:0.75rem;">
-          <h2>Activité récente</h2>
-          <ul class="dash-timeline" id="activityTimeline"></ul>
-        </section>
+        <div id="cockpitView">
+          <div id="emptyPeriodState" class="ws-empty" hidden>
+            <i data-lucide="calendar" style="width:36px;height:36px;color:#94a3b8;"></i>
+            <h3>Aucune période TVA</h3>
+            <p>Créez la première période pour démarrer la production comptable de ce client.</p>
+            <button type="button" class="dash-btn dash-btn-primary" id="emptyNewPeriodBtn" style="margin-top:1rem;">
+              <i data-lucide="calendar-plus"></i> Créer une période TVA
+            </button>
+          </div>
+
+          <div id="activeCockpit" hidden>
+            <section class="ws-hero" id="heroCard">
+              <div class="ws-hero-main">
+                <span class="ws-hero-period" id="heroPeriod">—</span>
+                <div class="ws-hero-badges" id="heroBadges"></div>
+                <p class="ws-hero-deadline" id="heroDeadline">—</p>
+              </div>
+            <div class="ws-hero-progress">
+              <div class="ws-progress-ring" id="progressRing">
+                <span class="ws-progress-value" id="progressValue">0%</span>
+              </div>
+            </div>
+            </section>
+
+            <div class="dash-portfolio-kpis ws-kpis" id="cockpitKpis">
+              <div class="dash-kpi">
+                <div class="dash-kpi-label">Opérations</div>
+                <div class="dash-kpi-value" id="kpiOps">—</div>
+                <div class="dash-kpi-hint" id="kpiOpsHint">Relevé + factures</div>
+              </div>
+              <div class="dash-kpi" id="kpiAnomaliesWrap">
+                <div class="dash-kpi-label">Anomalies IA</div>
+                <div class="dash-kpi-value" id="kpiAnomalies">—</div>
+                <div class="dash-kpi-hint">À corriger</div>
+              </div>
+              <div class="dash-kpi">
+                <div class="dash-kpi-label">Factures</div>
+                <div class="dash-kpi-value" id="kpiLines">—</div>
+                <div class="dash-kpi-hint">Lignes achats</div>
+              </div>
+              <div class="dash-kpi">
+                <div class="dash-kpi-label">Relevé</div>
+                <div class="dash-kpi-value" id="kpiBank">—</div>
+                <div class="dash-kpi-hint">Opérations bancaires</div>
+              </div>
+              <div class="dash-kpi" id="kpiDeadlineWrap">
+                <div class="dash-kpi-label">Échéance TVA</div>
+                <div class="dash-kpi-value" id="kpiDeadlineDays">—</div>
+                <div class="dash-kpi-hint" id="kpiDeadlineHint">20 du mois suivant</div>
+              </div>
+            </div>
+
+            <section class="ws-section">
+              <h2>Pipeline de production</h2>
+              <div class="ws-pipeline-steps" id="pipelineSteps"></div>
+            </section>
+
+            <div class="ws-actions-row">
+              <div class="ws-cta-card">
+                <h3>Prochaine action</h3>
+                <a class="ws-cta-primary" id="primaryCta" href="#">
+                  <i data-lucide="arrow-right"></i>
+                  <span id="primaryCtaLabel">—</span>
+                </a>
+                <p style="margin:0;font-size:0.78rem;color:var(--dash-muted);" id="lastActivityLine">—</p>
+              </div>
+              <div class="ws-cta-card">
+                <h3>Accès rapide</h3>
+                <div class="ws-quick-grid" id="quickActions"></div>
+              </div>
+            </div>
+
+            <section class="ws-section">
+              <h2>Activité récente</h2>
+              <ul class="dash-timeline" id="activityTimeline"></ul>
+            </section>
+          </div>
+        </div>
+
+        <div id="historyView" hidden>
+          <section class="ws-section">
+            <div class="ws-history-header">
+              <div>
+                <h2>Historique des périodes</h2>
+                <p>Calendrier TVA — déclarations mensuelles par exercice</p>
+              </div>
+              <button type="button" class="dash-btn dash-btn-sm" id="historyNewPeriodBtn">
+                <i data-lucide="plus"></i> Nouvelle période
+              </button>
+            </div>
+            <div class="dash-year-tabs" id="yearTabs"></div>
+            <div class="dash-month-grid" id="monthGrid"></div>
+            <div class="dash-legend">
+              <span><i class="dash-dot" style="background:#94a3b8;"></i> Brouillon</span>
+              <span><i class="dash-dot" style="background:#f59e0b;"></i> En revue</span>
+              <span><i class="dash-dot" style="background:#10b981;"></i> Déclaré</span>
+              <span><i class="dash-dot" style="background:#cbd5e1;border:1px dashed #94a3b8;"></i> À créer</span>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
   </div>
@@ -99,20 +182,24 @@
       getClientWithDossiers,
       listAvailableYears,
       MONTH_LABELS,
-      periodToMmaaaa,
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
     import { listClientActivity } from "./dossier-persistence.js?v=persist1";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace1";
     import {
       bindSidebarMobile,
       escapeHtml,
       initLucide,
+      renderBadge,
+      renderPriorityBadge,
       sidebarHtml,
-    } from "./dashboard-ui.js?v=dash1";
+    } from "./dashboard-ui.js?v=portfolio1";
 
     const params = new URLSearchParams(window.location.search);
     const clientId = Number(params.get("client"));
+    const dossierParam = params.get("dossier") ? Number(params.get("dossier")) : null;
+
     const sidebarMount = document.getElementById("sidebarMount");
     const monthGrid = document.getElementById("monthGrid");
     const yearTabs = document.getElementById("yearTabs");
@@ -122,11 +209,15 @@
     const periodYear = document.getElementById("periodYear");
     const periodMonth = document.getElementById("periodMonth");
     const periodError = document.getElementById("periodError");
+    const periodSelect = document.getElementById("periodSelect");
+    const periodBar = document.getElementById("periodBar");
 
     let cabinetId = null;
     let client = null;
+    let cockpit = null;
     let selectedYear = new Date().getFullYear();
     let selectedDossierId = null;
+    let activeTab = "cockpit";
 
     function showPeriodError(message) {
       periodError.hidden = !message;
@@ -137,46 +228,183 @@
       window.location.href = `index.html?dossier=${dossierId}`;
     }
 
-    function renderClientInfo() {
-      document.getElementById("clientTitle").textContent = client.name;
-      document.getElementById("clientIceLine").textContent = `ICE ${client.ice}`;
-      document.title = `Recompta — ${client.name}`;
-      document.getElementById("clientInfoList").innerHTML = `
-        <li><span>Raison sociale</span><strong>${escapeHtml(client.name)}</strong></li>
-        <li><span>ICE</span><strong>${escapeHtml(client.ice)}</strong></li>
-        <li><span>Périodes TVA</span><strong>${client.dossiers.length}</strong></li>
-        <li><span>Client depuis</span><strong>${new Date(client.created_at).toLocaleDateString("fr-FR")}</strong></li>
-      `;
+    function setTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll("#viewTabs [data-tab]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === tab);
+      });
+      document.getElementById("cockpitView").hidden = tab !== "cockpit";
+      document.getElementById("historyView").hidden = tab !== "history";
+      if (tab === "history") {
+        renderYearTabs();
+        renderMonthGrid();
+      }
+      initLucide();
     }
 
-    function renderActions() {
-      const latest = client.dossiers[0];
-      selectedDossierId = latest?.id || null;
-      const disabled = !selectedDossierId;
-      const actions = [
-        { icon: "landmark", label: "Import banque", desc: "Relevé et rapprochement", soon: true },
-        { icon: "file-input", label: "Import achats", desc: "Factures fournisseurs", soon: false, action: "achats" },
-        { icon: "file-output", label: "Import ventes", desc: "Factures clients", soon: true },
-        { icon: "sparkles", label: "Analyse IA", desc: "Contrôles automatiques", soon: true },
-        { icon: "book-open", label: "Générer écritures", desc: "Proposition comptable", soon: true },
-        { icon: "file-spreadsheet", label: "Déclaration TVA", desc: "Excel DED TVA", soon: false, action: "tva" },
-        { icon: "history", label: "Historique", desc: "Versions et exports", soon: true },
-      ];
+    function renderProgressRing(progress) {
+      const radius = 30;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference - (progress / 100) * circumference;
+      const ring = document.getElementById("progressRing");
+      const valueEl = document.getElementById("progressValue");
+      ring.querySelector("svg")?.remove();
+      ring.insertAdjacentHTML("afterbegin", `
+        <svg viewBox="0 0 72 72" aria-hidden="true">
+          <circle class="track" cx="36" cy="36" r="${radius}"></circle>
+          <circle class="fill" cx="36" cy="36" r="${radius}"
+            stroke-dasharray="${circumference}"
+            stroke-dashoffset="${offset}"></circle>
+        </svg>
+      `);
+      valueEl.textContent = `${progress}%`;
+    }
 
-      document.getElementById("actionsGrid").innerHTML = actions.map((item) => `
-        <button type="button" class="dash-action-tile" data-action="${item.action || ""}" ${item.soon || disabled ? "disabled" : ""} title="${item.soon ? "Bientôt disponible" : ""}">
-          <i data-lucide="${item.icon}"></i>
-          <strong>${item.label}</strong>
-          <span>${item.soon ? "Bientôt" : item.desc}</span>
+    function renderPeriodSelector() {
+      const periods = cockpit?.allPeriods || [];
+      const openPeriods = periods.filter((d) => d.status !== "exported");
+
+      if (openPeriods.length <= 1) {
+        periodBar.hidden = true;
+        return;
+      }
+
+      periodBar.hidden = false;
+      periodSelect.innerHTML = openPeriods.map((d) => {
+        const label = `${formatMonthLabel(d.period_month)} ${d.period_year}`;
+        const meta = STATUS_META[d.status]?.label || "";
+        return `<option value="${d.id}" ${d.id === selectedDossierId ? "selected" : ""}>${escapeHtml(label)} — ${escapeHtml(meta)}</option>`;
+      }).join("");
+    }
+
+    function renderCockpit() {
+      const emptyState = document.getElementById("emptyPeriodState");
+      const activePanel = document.getElementById("activeCockpit");
+      const openProductionBtn = document.getElementById("openProductionBtn");
+
+      if (!cockpit?.hasPeriod) {
+        emptyState.hidden = false;
+        activePanel.hidden = true;
+        openProductionBtn.hidden = true;
+        periodBar.hidden = true;
+        initLucide();
+        return;
+      }
+
+      emptyState.hidden = true;
+      activePanel.hidden = false;
+      openProductionBtn.hidden = false;
+      selectedDossierId = cockpit.dossier.id;
+
+      const hero = document.getElementById("heroCard");
+      hero.classList.toggle("is-late", cockpit.isLate);
+      hero.classList.toggle("is-warn", !cockpit.isLate && cockpit.priority.tone === "warn");
+      hero.classList.toggle("is-done", cockpit.statusKey === "exported");
+
+      document.getElementById("heroPeriod").textContent = cockpit.periodLabel;
+      document.getElementById("heroBadges").innerHTML = `
+        ${renderBadge(cockpit.statusKey, cockpit.statusLabel)}
+        ${renderPriorityBadge(cockpit.priority)}
+      `;
+
+      const deadlineEl = document.getElementById("heroDeadline");
+      deadlineEl.textContent = cockpit.deadlineLabel;
+      deadlineEl.classList.toggle("is-late", cockpit.isLate);
+      deadlineEl.classList.toggle("is-warn", !cockpit.isLate && cockpit.daysLeft <= 7);
+
+      renderProgressRing(cockpit.progress);
+
+      document.getElementById("kpiOps").textContent = String(cockpit.operationCount);
+      document.getElementById("kpiAnomalies").textContent = String(cockpit.anomalyCount);
+      document.getElementById("kpiLines").textContent = String(cockpit.lineCount);
+      document.getElementById("kpiBank").textContent = String(cockpit.bankCount);
+
+      const deadlineDays = cockpit.daysLeft;
+      const deadlineDaysEl = document.getElementById("kpiDeadlineDays");
+      if (cockpit.statusKey === "exported") {
+        deadlineDaysEl.textContent = "✓";
+        document.getElementById("kpiDeadlineHint").textContent = "Période clôturée";
+      } else if (deadlineDays < 0) {
+        deadlineDaysEl.textContent = `${Math.abs(deadlineDays)}j`;
+        document.getElementById("kpiDeadlineHint").textContent = "de retard";
+      } else {
+        deadlineDaysEl.textContent = `${deadlineDays}j`;
+        document.getElementById("kpiDeadlineHint").textContent = "restantes";
+      }
+
+      document.getElementById("kpiAnomaliesWrap").classList.toggle("dash-kpi-warn", cockpit.anomalyCount > 0);
+      document.getElementById("kpiDeadlineWrap").classList.toggle("dash-kpi-alert", cockpit.isLate);
+
+      document.getElementById("pipelineSteps").innerHTML = cockpit.pipeline.map((step) => `
+        <button type="button" class="ws-pipeline-step ${step.status}" data-href="${step.href || ""}" ${step.href ? "" : "disabled"}>
+          <span class="ws-pipeline-icon"><i data-lucide="${step.icon}"></i></span>
+          <span class="ws-pipeline-label">${escapeHtml(step.label)}</span>
+          <span class="ws-pipeline-desc">${escapeHtml(step.desc)}</span>
         </button>
       `).join("");
 
-      document.getElementById("actionsGrid").querySelectorAll("[data-action]").forEach((btn) => {
-        if (btn.disabled) return;
-        btn.addEventListener("click", () => {
-          if (selectedDossierId) openDossierTool(selectedDossierId);
-        });
+      document.getElementById("pipelineSteps").querySelectorAll("[data-href]").forEach((btn) => {
+        const href = btn.dataset.href;
+        if (!href) return;
+        btn.addEventListener("click", () => { window.location.href = href; });
       });
+
+      const cta = document.getElementById("primaryCta");
+      const ctaLabel = document.getElementById("primaryCtaLabel");
+      ctaLabel.textContent = cockpit.nextAction.label;
+      if (cockpit.nextAction.href) {
+        cta.href = cockpit.nextAction.href;
+        cta.classList.remove("is-muted");
+      } else {
+        cta.href = "#";
+        cta.classList.add("is-muted");
+      }
+
+      document.getElementById("lastActivityLine").textContent =
+        `Dernière activité : ${cockpit.lastActivityLabel}`;
+
+      openProductionBtn.onclick = () => {
+        if (selectedDossierId) openDossierTool(selectedDossierId);
+      };
+
+      const quickActions = [
+        { icon: "landmark", label: "Banque", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "file-input", label: "Achats", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "file-spreadsheet", label: "Export TVA", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
+      ];
+
+      document.getElementById("quickActions").innerHTML = quickActions.map((item) => `
+        <button type="button" class="ws-quick-btn" data-href="${item.href || ""}" ${item.href ? "" : "disabled"}>
+          <i data-lucide="${item.icon}"></i>
+          ${escapeHtml(item.label)}
+        </button>
+      `).join("");
+
+      document.getElementById("quickActions").querySelectorAll("[data-href]").forEach((btn) => {
+        const href = btn.dataset.href;
+        if (!href) return;
+        btn.addEventListener("click", () => { window.location.href = href; });
+      });
+
+      renderPeriodSelector();
+      initLucide();
+    }
+
+    function renderClientHeader() {
+      document.getElementById("clientTitle").textContent = client.name;
+      document.getElementById("clientIceLine").textContent = `ICE ${client.ice}`;
+      document.title = `Recompta — ${client.name}`;
+
+      const openCount = (client.dossiers || []).filter((d) => d.status !== "exported").length;
+      const doneCount = (client.dossiers || []).filter((d) => d.status === "exported").length;
+
+      document.getElementById("clientMeta").innerHTML = `
+        <span>Client depuis <strong>${new Date(client.created_at).toLocaleDateString("fr-FR")}</strong></span>
+        <span><strong>${client.dossiers.length}</strong> période${client.dossiers.length > 1 ? "s" : ""} TVA</span>
+        <span><strong>${openCount}</strong> en cours</span>
+        <span><strong>${doneCount}</strong> clôturée${doneCount > 1 ? "s" : ""}</span>
+      `;
     }
 
     function renderYearTabs() {
@@ -206,8 +434,9 @@
           `;
         }
         const meta = STATUS_META[cell.status] || STATUS_META.draft;
+        const isActive = cell.dossier.id === selectedDossierId;
         return `
-          <button type="button" class="dash-month-cell status-${cell.status}" data-dossier-id="${cell.dossier.id}" title="${cell.label} ${selectedYear} — ${meta.label}">
+          <button type="button" class="dash-month-cell status-${cell.status} ${isActive ? "active-period" : ""}" data-dossier-id="${cell.dossier.id}" title="${cell.label} ${selectedYear} — ${meta.label}">
             <span class="month-label">${cell.short}</span>
             <span class="month-status">${meta.label}</span>
           </button>
@@ -215,7 +444,11 @@
       }).join("");
 
       monthGrid.querySelectorAll("[data-dossier-id]").forEach((btn) => {
-        btn.addEventListener("click", () => openDossierTool(btn.dataset.dossierId));
+        btn.addEventListener("click", async () => {
+          selectedDossierId = Number(btn.dataset.dossierId);
+          await reloadCockpit(selectedDossierId);
+          setTab("cockpit");
+        });
       });
       monthGrid.querySelectorAll(".dash-month-cell.empty").forEach((btn) => {
         btn.addEventListener("click", () => openNewPeriodModal(Number(btn.dataset.month)));
@@ -225,6 +458,8 @@
 
     async function renderTimeline() {
       let events = [];
+      const dossierId = cockpit?.dossier?.id;
+
       try {
         const activity = await listClientActivity(client.id, 12);
         events = activity.map((row) => `
@@ -237,7 +472,7 @@
         events = [];
       }
 
-      if (!events.length) {
+      if (!events.length && dossierId) {
         events = [...client.dossiers]
           .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
           .slice(0, 8)
@@ -257,7 +492,14 @@
 
       activityTimeline.innerHTML = events.length
         ? events.join("")
-        : `<li><div style="color:var(--dash-muted);">Aucune activité — créez une première période TVA.</div></li>`;
+        : `<li><div style="color:var(--dash-muted);">Aucune activité — commencez la production TVA.</div></li>`;
+    }
+
+    async function reloadCockpit(preferredDossierId = null) {
+      cockpit = await loadWorkspaceCockpit(client, preferredDossierId || selectedDossierId || dossierParam);
+      if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
+      renderCockpit();
+      await renderTimeline();
     }
 
     function openNewPeriodModal(presetMonth) {
@@ -292,17 +534,27 @@
             window.location.href = "login.html";
           });
 
-          renderClientInfo();
-          renderActions();
-          renderYearTabs();
-          renderMonthGrid();
-          await renderTimeline();
+          renderClientHeader();
+          await reloadCockpit(dossierParam);
           initLucide();
         }
       }
     }
 
+    document.getElementById("viewTabs").addEventListener("click", (event) => {
+      const tab = event.target.closest("[data-tab]");
+      if (!tab) return;
+      setTab(tab.dataset.tab);
+    });
+
+    periodSelect?.addEventListener("change", async () => {
+      selectedDossierId = Number(periodSelect.value);
+      await reloadCockpit(selectedDossierId);
+    });
+
     document.getElementById("newPeriodBtn").addEventListener("click", () => openNewPeriodModal());
+    document.getElementById("historyNewPeriodBtn").addEventListener("click", () => openNewPeriodModal());
+    document.getElementById("emptyNewPeriodBtn")?.addEventListener("click", () => openNewPeriodModal());
     document.getElementById("cancelPeriodBtn").addEventListener("click", () => newPeriodDialog.close());
 
     newPeriodForm.addEventListener("submit", async (event) => {
@@ -314,7 +566,11 @@
           month: periodMonth.value,
         });
         newPeriodDialog.close();
-        openDossierTool(dossier.id);
+        client = await getClientWithDossiers(clientId, cabinetId);
+        renderClientHeader();
+        selectedDossierId = dossier.id;
+        await reloadCockpit(dossier.id);
+        setTab("cockpit");
       } catch (error) {
         showPeriodError(error.message || "Impossible de créer la période.");
       }
