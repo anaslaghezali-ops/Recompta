@@ -41,5 +41,7 @@ l’app peut aussi appeler `POST /api/admin/cabinets` quand l’URL Codespace/Re
 ## Flux cabinet
 
 1. Super-admin crée cabinet + owner sur **admin.html**
-2. Le responsable se connecte sur **login.html**
-3. (Étape 3 à venir) tableau de bord cabinet + dossiers clients
+2. Le responsable se connecte → **dossiers.html** (clients + dossiers année/mois)
+3. Ouverture d'un dossier → outil TVA vierge pour ce client/période
+
+Voir [DOSSIERS.md](DOSSIERS.md) pour la migration Supabase et l'utilisation.

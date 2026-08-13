@@ -48,10 +48,20 @@ import {
 } from "./api-client.js";
 import {
   getSession,
+  getUserCabinetMembership,
   isSuperAdmin,
   isSupabaseConfigured,
   signOut,
-} from "./auth-client.js";
+} from "./auth-client.js?v=auth5";
+import {
+  formatMonthLabel,
+  loadDossierContext,
+} from "./dossiers-client.js?v=dossiers1";
+
+const dossierState = {
+  mode: "solo",
+  context: null,
+};
 
 const state = {
   files: [],
@@ -624,11 +634,61 @@ function resolvedApiUrl() {
 }
 
 function loadClientSettings() {
+  if (dossierState.mode === "dossier") return;
   const savedIce = localStorage.getItem("recompta_client_ice");
   if (savedIce) els.clientIce.value = savedIce;
 }
 
+function applyDossierContext(context) {
+  dossierState.mode = "dossier";
+  dossierState.context = context;
+  els.clientName.value = context.clientName;
+  els.clientIce.value = context.clientIce;
+  els.period.value = context.period;
+  els.clientName.readOnly = true;
+  els.clientIce.readOnly = true;
+  els.period.readOnly = true;
+
+  const dossierBanner = document.getElementById("dossierContext");
+  const dossierTitle = document.getElementById("dossierClientTitle");
+  const dossierPeriod = document.getElementById("dossierPeriodLabel");
+  if (dossierBanner) dossierBanner.hidden = false;
+  if (dossierTitle) dossierTitle.textContent = context.clientName;
+  if (dossierPeriod) {
+    dossierPeriod.textContent =
+      `${formatMonthLabel(context.month)} ${context.year} — ICE ${context.clientIce}`;
+  }
+  applyExtractionContext();
+  updateFilenamePreview();
+}
+
+async function initCabinetAccess() {
+  if (!isSupabaseConfigured()) return;
+
+  const session = await getSession();
+  if (!session?.user) return;
+
+  const admin = await isSuperAdmin(session.user.id);
+  if (admin) return;
+
+  const params = new URLSearchParams(window.location.search);
+  const dossierId = params.get("dossier");
+  if (!dossierId) {
+    window.location.href = "dossiers.html";
+    return;
+  }
+
+  const context = await loadDossierContext(dossierId);
+  if (!context) {
+    window.location.href = "dossiers.html";
+    return;
+  }
+
+  applyDossierContext(context);
+}
+
 function persistClientIce() {
+  if (dossierState.mode === "dossier") return;
   const ice = els.clientIce.value.trim().replace(/\D/g, "").slice(0, 15);
   els.clientIce.value = ice;
   if (ice.length === 15) localStorage.setItem("recompta_client_ice", ice);
@@ -1374,6 +1434,7 @@ updateButtons();
 setStep(1);
 refreshEngineBadge();
 renderHeroAuth();
+initCabinetAccess();
 
 async function renderHeroAuth() {
   const root = els.heroAuth;
@@ -1397,8 +1458,11 @@ async function renderHeroAuth() {
       return;
     }
     const admin = await isSuperAdmin(session.user.id);
+    const membership = admin ? null : await getUserCabinetMembership();
     const email = escapeHtml(session.user.email || "");
     root.innerHTML = `
+      ${admin ? `<a href="admin.html" class="hero-auth-link">Admin cabinets</a>` : ""}
+      ${membership ? `<a href="dossiers.html" class="hero-auth-link">Mes dossiers</a>` : ""}
       ${admin ? `<span class="hero-auth-role">Super-admin</span>` : ""}
       <span class="hero-auth-email" title="${email}">${email}</span>
       <button type="button" id="signOutBtn">Déconnexion</button>

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recompta — Dossiers clients</title>
+  <link rel="stylesheet" href="styles.css?v=dossiers1" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-top">
+      <div class="hero-content">
+        <p class="eyebrow">Recompta</p>
+        <h1 id="pageTitle">Dossiers clients</h1>
+        <p class="subtitle" id="pageSubtitle">Créez vos clients et ouvrez un dossier par mois pour la déclaration TVA.</p>
+      </div>
+      <div class="hero-auth">
+        <a href="index.html" class="hero-auth-link" id="soloToolLink" hidden>Outil solo</a>
+        <button type="button" id="signOutBtn" class="hero-auth-link">Déconnexion</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container dossiers-layout">
+    <section class="card">
+      <h2>Nouveau client</h2>
+      <form id="createClientForm" class="admin-form">
+        <div class="grid two">
+          <label>Nom du client
+            <input id="clientName" type="text" required minlength="2" placeholder="Société ABC" />
+          </label>
+          <label>ICE de la société
+            <input id="clientIce" type="text" required minlength="15" maxlength="15" inputmode="numeric" pattern="[0-9]{15}" placeholder="15 chiffres" />
+          </label>
+        </div>
+        <p class="hint error" id="clientError" hidden></p>
+        <p class="hint success" id="clientOk" hidden></p>
+        <div class="actions">
+          <button class="primary" type="submit">Ajouter le client</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="section-header">
+        <h2>Clients et dossiers</h2>
+        <button type="button" class="secondary small" id="refreshBtn">Actualiser</button>
+      </div>
+      <p class="hint" id="listHint">Chargement…</p>
+      <div id="clientsRoot" class="clients-root" hidden></div>
+    </section>
+  </main>
+
+  <dialog id="newDossierDialog" class="modal">
+    <form method="dialog" id="newDossierForm" class="modal-form">
+      <h3>Nouveau dossier</h3>
+      <p class="hint" id="newDossierClientLabel"></p>
+      <div class="grid two">
+        <label>Année
+          <input id="dossierYear" type="number" min="2000" max="2100" required />
+        </label>
+        <label>Mois
+          <select id="dossierMonth" required></select>
+        </label>
+      </div>
+      <p class="hint error" id="dossierError" hidden></p>
+      <div class="actions">
+        <button type="button" class="secondary" id="cancelDossierBtn">Annuler</button>
+        <button class="primary" type="submit">Créer le dossier</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { signOut } from "./auth-client.js?v=auth5";
+    import {
+      createClient,
+      createDossier,
+      formatMonthLabel,
+      groupDossiersByYear,
+      listClientsWithDossiers,
+      MONTH_LABELS,
+      periodToMmaaaa,
+      requireCabinetSession,
+    } from "./dossiers-client.js?v=dossiers1";
+
+    const pageTitle = document.getElementById("pageTitle");
+    const pageSubtitle = document.getElementById("pageSubtitle");
+    const createClientForm = document.getElementById("createClientForm");
+    const clientName = document.getElementById("clientName");
+    const clientIce = document.getElementById("clientIce");
+    const clientError = document.getElementById("clientError");
+    const clientOk = document.getElementById("clientOk");
+    const listHint = document.getElementById("listHint");
+    const clientsRoot = document.getElementById("clientsRoot");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const newDossierDialog = document.getElementById("newDossierDialog");
+    const newDossierForm = document.getElementById("newDossierForm");
+    const newDossierClientLabel = document.getElementById("newDossierClientLabel");
+    const dossierYear = document.getElementById("dossierYear");
+    const dossierMonth = document.getElementById("dossierMonth");
+    const dossierError = document.getElementById("dossierError");
+    const cancelDossierBtn = document.getElementById("cancelDossierBtn");
+
+    let cabinetId = null;
+    let pendingClient = null;
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function showClientError(message) {
+      clientError.hidden = !message;
+      clientError.textContent = message || "";
+      clientOk.hidden = true;
+    }
+
+    function showClientOk(message) {
+      clientOk.hidden = !message;
+      clientOk.textContent = message || "";
+      clientError.hidden = true;
+    }
+
+    function showDossierError(message) {
+      dossierError.hidden = !message;
+      dossierError.textContent = message || "";
+    }
+
+    function fillMonthSelect() {
+      dossierMonth.innerHTML = MONTH_LABELS.map((label, index) => (
+        `<option value="${index + 1}">${label}</option>`
+      )).join("");
+    }
+
+    function openDossier(dossierId) {
+      window.location.href = `index.html?dossier=${dossierId}`;
+    }
+
+    function renderClients(clients) {
+      if (!clients.length) {
+        listHint.hidden = false;
+        listHint.textContent = "Aucun client pour l'instant. Ajoutez votre premier client ci-dessus.";
+        clientsRoot.hidden = true;
+        return;
+      }
+
+      listHint.hidden = true;
+      clientsRoot.hidden = false;
+      clientsRoot.innerHTML = clients.map((client) => {
+        const years = groupDossiersByYear(client.dossiers);
+        const yearsHtml = years.length
+          ? years.map(({ year, dossiers }) => `
+              <div class="dossier-year">
+                <h4>${year}</h4>
+                <ul class="dossier-month-list">
+                  ${dossiers.map((d) => `
+                    <li>
+                      <button type="button" class="dossier-open-btn" data-dossier-id="${d.id}">
+                        ${escapeHtml(formatMonthLabel(d.period_month))}
+                        <span class="muted">(${escapeHtml(periodToMmaaaa(d.period_year, d.period_month))})</span>
+                      </button>
+                    </li>
+                  `).join("")}
+                </ul>
+              </div>
+            `).join("")
+          : `<p class="hint">Aucun dossier pour ce client.</p>`;
+
+        return `
+          <article class="client-card">
+            <div class="client-card-header">
+              <div>
+                <h3>${escapeHtml(client.name)}</h3>
+                <p class="hint">ICE ${escapeHtml(client.ice)}</p>
+              </div>
+              <button type="button" class="secondary small" data-client-id="${client.id}" data-client-name="${escapeHtml(client.name)}">
+                + Dossier
+              </button>
+            </div>
+            <div class="client-dossiers">${yearsHtml}</div>
+          </article>
+        `;
+      }).join("");
+
+      clientsRoot.querySelectorAll(".dossier-open-btn").forEach((btn) => {
+        btn.addEventListener("click", () => openDossier(btn.dataset.dossierId));
+      });
+      clientsRoot.querySelectorAll("[data-client-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          pendingClient = { id: Number(btn.dataset.clientId), name: btn.dataset.clientName };
+          newDossierClientLabel.textContent = `Client : ${pendingClient.name}`;
+          dossierYear.value = String(new Date().getFullYear());
+          dossierMonth.value = String(new Date().getMonth() + 1);
+          showDossierError("");
+          newDossierDialog.showModal();
+        });
+      });
+    }
+
+    async function refreshClients() {
+      listHint.hidden = false;
+      listHint.textContent = "Chargement…";
+      clientsRoot.hidden = true;
+      try {
+        const clients = await listClientsWithDossiers(cabinetId);
+        renderClients(clients);
+      } catch (error) {
+        listHint.hidden = false;
+        listHint.textContent = error.message || "Impossible de charger les clients.";
+      }
+    }
+
+    const membership = await requireCabinetSession();
+    if (!membership) {
+      // redirect handled
+    } else {
+      cabinetId = membership.cabinet_id;
+      pageTitle.textContent = membership.cabinet.name;
+      pageSubtitle.textContent = "Organisez vos dossiers TVA par client, année et mois.";
+      fillMonthSelect();
+      await refreshClients();
+    }
+
+    createClientForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showClientError("");
+      try {
+        await createClient(cabinetId, {
+          name: clientName.value,
+          ice: clientIce.value,
+        });
+        clientName.value = "";
+        clientIce.value = "";
+        showClientOk("Client ajouté.");
+        await refreshClients();
+      } catch (error) {
+        showClientError(error.message || "Erreur lors de la création du client.");
+      }
+    });
+
+    clientIce.addEventListener("input", () => {
+      clientIce.value = clientIce.value.replace(/\D/g, "").slice(0, 15);
+    });
+
+    newDossierForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!pendingClient) return;
+      showDossierError("");
+      try {
+        const dossier = await createDossier(pendingClient.id, {
+          year: dossierYear.value,
+          month: dossierMonth.value,
+        });
+        newDossierDialog.close();
+        openDossier(dossier.id);
+      } catch (error) {
+        showDossierError(error.message || "Erreur lors de la création du dossier.");
+      }
+    });
+
+    cancelDossierBtn.addEventListener("click", () => newDossierDialog.close());
+    refreshBtn.addEventListener("click", refreshClients);
+    signOutBtn.addEventListener("click", async () => {
+      await signOut();
+      window.location.href = "login.html";
+    });
+  </script>
+</body>
+</html>
