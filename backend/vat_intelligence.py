@@ -242,20 +242,10 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
             )
             for item in ventilation
         ]
-        result.warnings.append(
-            f"Ventilation relue depuis le document ({len(result.lines)} ligne(s))."
-        )
         return result
 
+    # Corrections appuyées sur le document : pas de message, le tableau affiche
+    # déjà les valeurs retenues.
     result.lines = align_lines_with_footer_totals(result.lines, text)
-    changed = False
-    fixed: list[InvoiceLine] = []
-    for line in result.lines:
-        before = (line.m_ht, line.tva, line.m_ttc)
-        fixed.append(reconcile_line_amounts(line, text))
-        if (fixed[-1].m_ht, fixed[-1].tva, fixed[-1].m_ttc) != before:
-            changed = True
-    result.lines = fixed
-    if changed:
-        result.warnings.append("Montants TVA réconciliés (contrôle mathématique).")
+    result.lines = [reconcile_line_amounts(line, text) for line in result.lines]
     return result

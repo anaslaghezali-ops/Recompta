@@ -160,6 +160,7 @@ def normalize_extraction_results(
         item = apply_avoir_signs(result.model_copy(deep=True))
         item = apply_vat_reconciliation(item)
         item.lines = consolidate_lines(item.lines)
+        item.warnings = list(dict.fromkeys(item.warnings))
         normalized.append(item)
 
     groups: dict[str, dict] = defaultdict(lambda: {"filenames": [], "lines": [], "ices": [], "ifs": []})

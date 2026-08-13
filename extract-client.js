@@ -522,19 +522,12 @@ function applyTtcVentilationFixes(result) {
       m_ttc: item.m_ttc,
       taux: item.taux,
     }));
-    warnings.push(`Ventilation TTC corrigée (${lines.length} ligne(s) — montants TTC convertis en HT).`);
     return { ...result, lines, warnings };
   }
 
-  let changed = false;
+  // Corrections appuyées sur le document : silencieuses, le tableau montre le résultat.
   const aligned = alignLinesWithFooterTotals(result.lines || [], text);
-  const lines = aligned.map((line) => {
-    const before = `${line.m_ht}|${line.tva}|${line.m_ttc}`;
-    const fixed = fixTtcMislabeledLine(line, text);
-    if (`${fixed.m_ht}|${fixed.tva}|${fixed.m_ttc}` !== before) changed = true;
-    return fixed;
-  });
-  if (changed) warnings.push("Montants TTC de la ventilation convertis en HT.");
+  const lines = aligned.map((line) => fixTtcMislabeledLine(line, text));
   return { ...result, lines, warnings };
 }
 
@@ -595,7 +588,11 @@ export function normalizeExtractionResults(results) {
     const withAvoir = applyAvoirSigns({ ...result, lines: result.lines || [] });
     const withIf = reconcileSupplierIf(withAvoir);
     const withTtc = applyTtcVentilationFixes(withIf);
-    return { ...withTtc, lines: consolidateLines(withTtc.lines || []) };
+    return {
+      ...withTtc,
+      lines: consolidateLines(withTtc.lines || []),
+      warnings: [...new Set(withTtc.warnings || [])],
+    };
   });
 
   const groups = new Map();
@@ -711,20 +708,10 @@ function reconcileSupplierIf(result) {
   if (!correct) return result;
 
   const wrong = otherLegalIds(text);
-  let corrected = false;
   for (const line of result.lines || []) {
     const current = String(line.if || "").replace(/\D/g, "");
     if (current === correct) continue;
-    if (!current || wrong.has(current)) {
-      line.if = correct;
-      corrected = true;
-    }
-  }
-  if (corrected) {
-    result.warnings = [
-      ...(result.warnings || []),
-      `IF corrigé depuis le pied de page du document (${correct}).`,
-    ];
+    if (!current || wrong.has(current)) line.if = correct;
   }
   return result;
 }

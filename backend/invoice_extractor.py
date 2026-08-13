@@ -351,19 +351,12 @@ def reconcile_supplier_if(result: ExtractionResult, text: str) -> ExtractionResu
         return result
 
     wrong_ids = other_legal_ids(text)
-    corrected = False
     for line in result.lines:
         current = re.sub(r"\D", "", line.if_fournisseur or "")
         if current == correct_if:
             continue
         if not current or current in wrong_ids:
             line.if_fournisseur = correct_if
-            corrected = True
-
-    if corrected:
-        result.warnings.append(
-            f"IF corrigé depuis le pied de page du document ({correct_if})."
-        )
     return result
 
 
@@ -915,12 +908,14 @@ async def _extract_with_openai_images(
         warnings=content_json.get("warnings", []),
     )
 
-    from normalize_results import apply_vat_reconciliation
+    from vat_intelligence import apply_vat_reconciliation, result_needs_escalation
 
     result = apply_vat_reconciliation(result)
+
+    # Le détail du contrôle de l'IA n'a d'intérêt que s'il reste une incohérence.
     verification = content_json.get("verification")
-    if isinstance(verification, list) and verification:
-        result.warnings.append(f"Vérification IA : {'; '.join(str(v) for v in verification[:3])}")
+    if isinstance(verification, list) and verification and result_needs_escalation(result):
+        result.warnings.append(f"Contrôle IA : {'; '.join(str(v) for v in verification[:3])}")
 
     return result
 
@@ -976,9 +971,6 @@ async def _supplement_ttc_ventilation(
             )
             for row in ventilation
         ]
-        result.warnings.append(
-            f"Ventilation relue depuis le document ({len(result.lines)} ligne(s))."
-        )
         return result
 
     return apply_vat_reconciliation(result)
