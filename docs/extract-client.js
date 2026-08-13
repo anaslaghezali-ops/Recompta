@@ -509,7 +509,11 @@ function applyTtcVentilationFixes(result) {
   const ventilation = extractVatLinesFromText(text);
   const warnings = [...(result.warnings || [])];
 
-  if (ventilation.length && result.lines?.length) {
+  const distinctInvoices = new Set((result.lines || []).map((l) => l.fact_num).filter(Boolean));
+
+  // Document multi-factures : la ventilation globale n'appartient pas à une
+  // seule facture, on ne réécrit donc pas les lignes à partir d'un modèle.
+  if (ventilation.length && result.lines?.length && distinctInvoices.size <= 1) {
     const template = result.lines[0];
     const lines = ventilation.map((item) => ({
       ...template,

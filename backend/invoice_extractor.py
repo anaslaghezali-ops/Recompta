@@ -84,6 +84,11 @@ def _parse_date(raw: str) -> date | None:
     return None
 
 
+def extract_text_from_pdf_pages(content: bytes) -> list[str]:
+    reader = PdfReader(BytesIO(content))
+    return [(page.extract_text() or "") for page in reader.pages]
+
+
 def extract_text_from_pdf(content: bytes) -> str:
     reader = PdfReader(BytesIO(content))
     chunks: list[str] = []
@@ -106,6 +111,25 @@ def pdf_to_png_pages(content: bytes, max_pages: int = 3, dpi: int = 200) -> list
         pix = doc[index].get_pixmap(dpi=dpi)
         pages.append(pix.tobytes("png"))
     return pages
+
+
+def pdf_page_count(content: bytes) -> int:
+    import pymupdf
+
+    doc = pymupdf.open(stream=content, filetype="pdf")
+    try:
+        return doc.page_count
+    finally:
+        doc.close()
+
+
+def ai_max_pages() -> int:
+    """Pages envoyées à l'IA. Un scan groupé contient souvent plusieurs factures."""
+    try:
+        value = int(os.getenv("AI_MAX_PAGES", "10"))
+    except ValueError:
+        return 10
+    return max(1, min(value, 30))
 
 
 def pdf_first_page_to_png(content: bytes, dpi: int = 200) -> bytes:
@@ -471,7 +495,96 @@ def _extract_mad_amounts(text: str) -> tuple[float | None, float | None, float |
     return None, None, None
 
 
-def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
+HEADER_LOOKBACK_LINES = 6
+
+
+def _segment_start(text: str, match_start: int, floor: int) -> int:
+    """Remonte quelques lignes avant le numéro pour inclure l'en-tête fournisseur."""
+    start = text.rfind("\n", 0, match_start) + 1
+    for _ in range(HEADER_LOOKBACK_LINES):
+        previous = text.rfind("\n", 0, max(start - 1, 0)) + 1
+        if previous <= floor or previous >= start:
+            break
+        start = previous
+    return max(start, floor)
+
+
+def split_invoice_segments(text: str) -> list[str]:
+    """Découpe un document qui contient plusieurs factures, une par numéro trouvé."""
+    positions: list[int] = []
+    seen: set[str] = set()
+    for match in INVOICE_NUM_PATTERN.finditer(text):
+        number = match.group(1).strip()
+        if len(number) < 3 or number in seen:
+            continue
+        seen.add(number)
+        positions.append(match.start())
+
+    if len(positions) < 2:
+        return [text]
+
+    boundaries = [0]
+    for index in range(1, len(positions)):
+        boundaries.append(_segment_start(text, positions[index], positions[index - 1]))
+    boundaries.append(len(text))
+
+    segments = [text[boundaries[i] : boundaries[i + 1]] for i in range(len(positions))]
+    return [segment for segment in segments if segment.strip()] or [text]
+
+
+def group_pages_by_invoice(pages: list[str]) -> list[str]:
+    """Une nouvelle facture commence à la page où apparaît un nouveau numéro."""
+    segments: list[str] = []
+    current: list[str] = []
+    current_number: str | None = None
+
+    for page in pages:
+        match = INVOICE_NUM_PATTERN.search(page)
+        number = match.group(1).strip() if match else None
+        if number and number != current_number:
+            if current:
+                segments.append("\n".join(current))
+            current = [page]
+            current_number = number
+        else:
+            current.append(page)
+
+    if current:
+        segments.append("\n".join(current))
+    return segments
+
+
+def _heuristic_extract(
+    filename: str, text: str, pages: list[str] | None = None
+) -> ExtractionResult:
+    # Le découpage par page est plus fiable : l'en-tête fournisseur reste avec
+    # sa propre facture, et une facture sur deux pages n'est pas coupée.
+    if pages and len(pages) > 1:
+        segments = group_pages_by_invoice(pages)
+    else:
+        segments = split_invoice_segments(text)
+    if len(segments) < 2:
+        return _heuristic_extract_single(filename, text)
+
+    merged = ExtractionResult(
+        filename=filename,
+        lines=[],
+        raw_text=text[:4000],
+        confidence="medium",
+        engine="text",
+    )
+    for segment in segments:
+        part = _heuristic_extract_single(filename, segment)
+        merged.lines.extend(part.lines)
+        for warning in part.warnings:
+            if warning not in merged.warnings:
+                merged.warnings.append(warning)
+
+    merged.warnings.append(f"{len(segments)} factures détectées dans ce document.")
+    return merged
+
+
+def _heuristic_extract_single(filename: str, text: str) -> ExtractionResult:
     warnings: list[str] = []
     if not text.strip():
         warnings.append("Aucun texte extrait du document. Saisie manuelle requise.")
@@ -621,6 +734,10 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
    - Si ça ne colle pas : tu as confondu HT et TTC → recalcule (HT = TTC − TVA)
 
 4. **Plusieurs taux** (10 % et 20 %) : une entrée JSON par taux, avec les montants de la ventilation.
+
+5. **Plusieurs factures dans un même document** (scan groupé de plusieurs pages) :
+   traite-les TOUTES. Une entrée par (facture, taux), avec le fact_num propre à
+   chacune. N'en oublie aucune et ne fusionne jamais deux factures différentes.
 
 ## Champs
 
@@ -835,7 +952,10 @@ async def _supplement_ttc_ventilation(
     result = reconcile_supplier_if(result, text)
 
     ventilation = extract_vat_lines_from_text(text)
-    if ventilation and result.lines:
+    distinct_invoices = {line.fact_num for line in result.lines if line.fact_num}
+    # Sur un document multi-factures, la ventilation lue globalement ne peut pas
+    # être réattribuée à une facture unique : on garde les lignes de l'IA.
+    if ventilation and result.lines and len(distinct_invoices) <= 1:
         template = result.lines[0]
         result.lines = [
             InvoiceLine(
@@ -889,10 +1009,20 @@ async def _extract_with_ai_cascade(
 
 
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
-    pages = await pdf_to_png_pages_async(content, max_pages=3)
+    limit = ai_max_pages()
+    pages = await pdf_to_png_pages_async(content, max_pages=limit)
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
+
     result = await _extract_with_ai_cascade(filename, [(page, "image/png") for page in pages])
+
+    total = await asyncio.to_thread(pdf_page_count, content)
+    if total > len(pages):
+        result.warnings.append(
+            f"Document de {total} pages : seules les {len(pages)} premières ont été "
+            f"analysées. Augmentez AI_MAX_PAGES pour tout traiter."
+        )
+
     return await _supplement_ttc_ventilation(result, filename, content, "application/pdf")
 
 
@@ -914,9 +1044,10 @@ async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResu
 
 async def extract_invoice(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
     if mime_type == "application/pdf":
-        text = await extract_text_from_pdf_async(content)
+        pages = await asyncio.to_thread(extract_text_from_pdf_pages, content)
+        text = "\n".join(page for page in pages if page.strip())
         if text.strip():
-            result = _heuristic_extract(filename, text)
+            result = _heuristic_extract(filename, text, pages=pages)
             if ai_available() and _needs_ai_upgrade(result):
                 try:
                     return await _extract_pdf_with_ai(filename, content)
