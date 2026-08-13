@@ -554,37 +554,54 @@ AI_EXTRACTION_PROMPT = """Tu es un expert comptable marocain. Analyse cette fact
 
 Extrais les informations pour la déclaration TVA (format DED TVA marocain).
 
-Règles importantes :
-- ICE fournisseur = 15 chiffres (en pied de page légal SARL/RC/IF, PAS l'ICE du client en haut de facture)
-- EATMEAT : ICE = 002540001000040, IF = 45978904
-- ACHIBEST : ICE = 000229475000050, IF = 1102277
-- IF = identifiant fiscal du fournisseur
-- Si plusieurs taux TVA (10% et 20%), crée UNE entrée par taux avec les montants HT/TVA/TTC correspondants
-- Ventilation TVA : si un montant est suivi de « TTC » (ex. « 1284,00 TTC 20% 214,00 »), ce premier montant est le TTC et NON le HT — HT = TTC − TVA
-- MOSE Food / M PRO Food Service : ICE 000161664000072, IF 14427958
-- Si le tableau de ventilation TVA a plusieurs lignes au même taux (ex. deux lignes à 10%), crée une entrée DISTINCTE par ligne (ne pas fusionner)
-- Sinon, UNE seule ligne avec les totaux HT/TVA/TTC de la facture (ne pas dupliquer par produit)
-- designation : utilise EXACTEMENT une de ces valeurs : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
-- id_paie : 1 (paiement comptant) ou 4 (virement/crédit) — utilise 4 par défaut
-- Pour un AVOIR : tous les montants HT, TVA et TTC doivent être NÉGATIFS
-- Dates au format YYYY-MM-DD
+## Méthode obligatoire (tous fournisseurs)
 
-Retourne UNIQUEMENT un JSON valide :
+Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
+
+1. **Lire les libellés visibles** sur le document : HT, TTC, TVA, « Montant HT », « Base HT », etc.
+   Ne devine jamais : si un montant est étiqueté « TTC », c'est le TTC, pas le HT.
+
+2. **Ventilation TVA marocaine** — formats fréquents (tous fournisseurs) :
+   - « 1284,00 TTC  20%  214,00 » → m_ttc=1284, tva=214, m_ht=1070, taux=0.2
+   - « Taux | Montant HT | TVA » → première colonne montant = HT
+   - Totaux pied de page « Total HT / Total Taxes / Total TTC » → utiliser ces totaux
+
+3. **Auto-vérification mathématique** avant de répondre, pour chaque ligne :
+   - m_ht + tva ≈ m_ttc (±0,05 MAD)
+   - tva / m_ht ≈ taux (±2 %)  OU  tva / m_ttc ≈ taux/(1+taux)
+   - Si ça ne colle pas : tu as confondu HT et TTC → recalcule (HT = TTC − TVA)
+
+4. **Plusieurs taux** (10 % et 20 %) : une entrée JSON par taux, avec les montants de la ventilation.
+
+## Champs
+
+- ICE fournisseur = 15 chiffres (pied de page légal, PAS l'ICE client en en-tête)
+- IF = identifiant fiscal fournisseur
+- designation : EXACTEMENT une de : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
+- id_paie : 1 (comptant) ou 4 (virement) — défaut 4
+- AVOIR : montants HT, TVA et TTC négatifs
+- Dates : YYYY-MM-DD
+
+## Réponse JSON
+
+Inclus un champ "verification" listant ton contrôle mathématique par ligne (ex. "20%: 1070+214=1284 OK").
+
 {
+  "verification": ["..."],
   "lines": [
     {
-      "fact_num": "FV26-023806",
+      "fact_num": "...",
       "designation": "MATIERES CONSOMMABLES",
-      "m_ht": 0.0,
-      "tva": 0.0,
-      "m_ttc": 0.0,
-      "if": "1102277",
-      "lib_frss": "ACHIBEST",
-      "ice_frs": "000229475000050",
+      "m_ht": 1070.0,
+      "tva": 214.0,
+      "m_ttc": 1284.0,
+      "if": "...",
+      "lib_frss": "...",
+      "ice_frs": "...",
       "taux": 0.2,
       "id_paie": 4,
-      "date_paie": "2026-06-04",
-      "date_fac": "2026-06-04"
+      "date_paie": "2026-06-13",
+      "date_fac": "2026-06-13"
     }
   ],
   "warnings": []
@@ -688,13 +705,22 @@ async def _extract_with_openai_images(
         content_json = json.loads(response.json()["choices"][0]["message"]["content"])
 
     lines = [InvoiceLine.model_validate(item) for item in content_json.get("lines", [])]
-    return ExtractionResult(
+    result = ExtractionResult(
         filename=filename,
         lines=lines,
         confidence="high",
         engine="ai",
         warnings=content_json.get("warnings", []),
     )
+
+    from normalize_results import apply_ttc_ventilation_fixes
+
+    result = apply_ttc_ventilation_fixes(result)
+    verification = content_json.get("verification")
+    if isinstance(verification, list) and verification:
+        result.warnings.append(f"Vérification IA : {'; '.join(str(v) for v in verification[:3])}")
+
+    return result
 
 
 async def _supplement_ttc_ventilation(
