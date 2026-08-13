@@ -389,7 +389,7 @@ def _extract_tva_ventilation(text: str) -> list[dict[str, float]]:
     """Parse les lignes de ventilation TVA (format MOSE Food, etc.)."""
     items: list[dict[str, float]] = []
     pattern = re.compile(
-        r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%\s+([\d.,]+)",
+        r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)",
         re.I,
     )
     for match in pattern.finditer(text):
@@ -560,6 +560,8 @@ Règles importantes :
 - ACHIBEST : ICE = 000229475000050, IF = 1102277
 - IF = identifiant fiscal du fournisseur
 - Si plusieurs taux TVA (10% et 20%), crée UNE entrée par taux avec les montants HT/TVA/TTC correspondants
+- Ventilation TVA : si un montant est suivi de « TTC » (ex. « 1284,00 TTC 20% 214,00 »), ce premier montant est le TTC et NON le HT — HT = TTC − TVA
+- MOSE Food / M PRO Food Service : ICE 000161664000072, IF 14427958
 - Si le tableau de ventilation TVA a plusieurs lignes au même taux (ex. deux lignes à 10%), crée une entrée DISTINCTE par ligne (ne pas fusionner)
 - Sinon, UNE seule ligne avec les totaux HT/TVA/TTC de la facture (ne pas dupliquer par produit)
 - designation : utilise EXACTEMENT une de ces valeurs : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
@@ -695,6 +697,61 @@ async def _extract_with_openai_images(
     )
 
 
+async def _supplement_ttc_ventilation(
+    result: ExtractionResult, filename: str, content: bytes, mime_type: str
+) -> ExtractionResult:
+    from normalize_results import apply_ttc_ventilation_fixes, parse_ttc_ventilation
+
+    text = result.raw_text or ""
+    if not text.strip() and mime_type == "application/pdf":
+        text = extract_text_from_pdf(content)
+    if not text.strip() and tesseract_available() and mime_type == "application/pdf":
+        try:
+            pages = pdf_to_png_pages(content, max_pages=2)
+            if pages:
+                text = "\n".join(ocr_image_bytes(page) for page in pages)
+        except Exception:  # noqa: BLE001
+            pass
+    if not text.strip() and mime_type.startswith("image/") and tesseract_available():
+        try:
+            text = ocr_image_bytes(content)
+        except Exception:  # noqa: BLE001
+            pass
+
+    if text.strip():
+        result.raw_text = text[:4000]
+
+    ventilation = parse_ttc_ventilation(text)
+    if ventilation:
+        template = result.lines[0] if result.lines else None
+        if template:
+            result.lines = [
+                InvoiceLine(
+                    fact_num=template.fact_num,
+                    designation=template.designation,
+                    m_ht=row["m_ht"],
+                    tva=row["tva"],
+                    m_ttc=row["m_ttc"],
+                    **{
+                        "if": template.if_fournisseur,
+                        "lib_frss": template.lib_frss,
+                        "ice_frs": template.ice_frs,
+                        "taux": row["taux"],
+                        "id_paie": template.id_paie,
+                        "date_paie": template.date_paie,
+                        "date_fac": template.date_fac,
+                    },
+                )
+                for row in ventilation
+            ]
+            result.warnings.append(
+                f"Ventilation TTC relue depuis le document ({len(result.lines)} ligne(s))."
+            )
+            return result
+
+    return apply_ttc_ventilation_fixes(result)
+
+
 async def _supplement_achibest_ventilation(
     result: ExtractionResult, filename: str, content: bytes
 ) -> ExtractionResult:
@@ -754,7 +811,8 @@ async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResul
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
     result = await _extract_with_openai_images(filename, [(page, "image/png") for page in pages])
-    return await _supplement_achibest_ventilation(result, filename, content)
+    result = await _supplement_achibest_ventilation(result, filename, content)
+    return await _supplement_ttc_ventilation(result, filename, content, "application/pdf")
 
 
 async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResult:
@@ -831,7 +889,8 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
     if mime_type.startswith("image/"):
         if ai_available():
             try:
-                return await _extract_with_openai(filename, content, mime_type)
+                result = await _extract_with_openai(filename, content, mime_type)
+                return await _supplement_ttc_ventilation(result, filename, content, mime_type)
             except Exception as exc:  # noqa: BLE001
                 return ExtractionResult(
                     filename=filename,

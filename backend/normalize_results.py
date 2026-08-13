@@ -23,8 +23,16 @@ FOLDER_SUPPLIERS: dict[str, dict[str, str]] = {
         "ice_frs": "002540001000040",
         "if_fournisseur": "45978904",
     },
-    "mose": {"lib_frss": "MOSE Food"},
-    "mose food": {"lib_frss": "MOSE Food"},
+    "mose": {
+        "lib_frss": "MOSE Food",
+        "ice_frs": "000161664000072",
+        "if_fournisseur": "14427958",
+    },
+    "mose food": {
+        "lib_frss": "MOSE Food",
+        "ice_frs": "000161664000072",
+        "if_fournisseur": "14427958",
+    },
 }
 
 
@@ -118,6 +126,99 @@ def apply_avoir_signs(result: ExtractionResult) -> ExtractionResult:
     return result
 
 
+def _is_ttc_mislabeled_as_ht(m_ht: float, tva: float, taux: float) -> bool:
+    """Détecte quand un montant TTC a été saisi dans m_ht (ex. ventilation MOSE Food)."""
+    ht = abs(m_ht)
+    tv = abs(tva)
+    if ht < 0.01 or tv < 0.01 or taux not in (0.1, 0.2):
+        return False
+    ratio = tv / ht
+    as_ht_rate = abs(ratio - taux) <= 0.025
+    as_ttc_rate = abs(ratio - taux / (1 + taux)) <= 0.025
+    if not as_ttc_rate or as_ht_rate:
+        return False
+    recomputed_ht = ht - tv
+    if recomputed_ht <= 0:
+        return False
+    return abs(tv / recomputed_ht - taux) <= 0.025
+
+
+def fix_ttc_mislabeled_line(line: InvoiceLine) -> InvoiceLine:
+    if not _is_ttc_mislabeled_as_ht(line.m_ht, line.tva, line.taux):
+        return line
+    sign = -1 if line.m_ht < 0 else 1
+    ttc_abs = abs(line.m_ht)
+    tva_abs = abs(line.tva)
+    ht_abs = round(ttc_abs - tva_abs, 2)
+    line.m_ht = ht_abs * sign
+    line.tva = tva_abs * sign
+    line.m_ttc = round(ttc_abs, 2) * sign
+    return line
+
+
+TTC_VENTILATION_PATTERN = re.compile(
+    r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)",
+    re.I,
+)
+
+
+def parse_ttc_ventilation(text: str) -> list[dict[str, float]]:
+    from invoice_extractor import _parse_amount
+
+    items: list[dict[str, float]] = []
+    for match in TTC_VENTILATION_PATTERN.finditer(text):
+        ttc = _parse_amount(match.group(1))
+        taux = _parse_amount(match.group(2))
+        tva = _parse_amount(match.group(3))
+        if ttc is None or taux is None or tva is None:
+            continue
+        taux_norm = taux / 100 if taux > 1 else taux
+        if taux_norm not in (0.1, 0.2):
+            continue
+        ht = round(ttc - tva, 2)
+        items.append({"m_ht": ht, "tva": tva, "m_ttc": ttc, "taux": taux_norm})
+    return items
+
+
+def apply_ttc_ventilation_fixes(result: ExtractionResult) -> ExtractionResult:
+    text = result.raw_text or ""
+    ventilation = parse_ttc_ventilation(text)
+
+    if ventilation:
+        template = result.lines[0] if result.lines else None
+        if template:
+            new_lines: list[InvoiceLine] = []
+            for item in ventilation:
+                new_lines.append(
+                    template.model_copy(
+                        update={
+                            "m_ht": item["m_ht"],
+                            "tva": item["tva"],
+                            "m_ttc": item["m_ttc"],
+                            "taux": item["taux"],
+                        }
+                    )
+                )
+            result.lines = new_lines
+            result.warnings.append(
+                f"Ventilation TTC corrigée ({len(new_lines)} ligne(s) — montants TTC convertis en HT)."
+            )
+            return result
+
+    fixed: list[InvoiceLine] = []
+    changed = False
+    for line in result.lines:
+        before = (line.m_ht, line.tva, line.m_ttc)
+        fixed.append(fix_ttc_mislabeled_line(line))
+        after = (fixed[-1].m_ht, fixed[-1].tva, fixed[-1].m_ttc)
+        if before != after:
+            changed = True
+    result.lines = fixed
+    if changed:
+        result.warnings.append("Montants TTC de la ventilation convertis en HT.")
+    return result
+
+
 def _should_consolidate_group(group: list[InvoiceLine]) -> bool:
     """Fusionne seulement les éclats produit (ex. EatMeat) où la TVA est sur une seule ligne."""
     if len(group) <= 1:
@@ -171,6 +272,7 @@ def normalize_extraction_results(
     normalized: list[ExtractionResult] = []
     for result in results:
         item = apply_avoir_signs(result.model_copy(deep=True))
+        item = apply_ttc_ventilation_fixes(item)
         item.lines = consolidate_lines(item.lines)
         normalized.append(item)
 
