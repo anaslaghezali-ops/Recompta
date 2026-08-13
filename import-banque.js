@@ -19,7 +19,7 @@ import {
   queueBankImport,
   showImportCompletionToast,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs5";
+} from "./import-jobs-client.js?v=jobs6";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import {
   createWorkspaceSaver,
