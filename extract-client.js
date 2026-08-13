@@ -1139,6 +1139,43 @@ export async function expandUploadedFilesToFiles(files) {
   );
 }
 
+function duplicateSignature(line) {
+  const factNum = String(line.fact_num || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  if (!factNum) return "";
+
+  const ice = normalizeIceDigits(line.ice_frs);
+  const supplier =
+    ice ||
+    String(line.lib_frss || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+
+  const ttc = Math.round((Number(line.m_ttc) || 0) * 100);
+  return `${supplier}|${factNum}|${Number(line.taux)}|${ttc}`;
+}
+
+/**
+ * Repère les lignes déjà présentes : même fournisseur, même numéro de facture,
+ * même taux et même montant TTC. Couvre la facture scannée deux fois comme le
+ * même fichier importé en double. Renvoie les indices des occurrences
+ * surnuméraires — la première est toujours conservée.
+ */
+export function findDuplicateLineIndexes(lines) {
+  const seen = new Map();
+  const duplicates = [];
+
+  (lines || []).forEach((line, index) => {
+    const signature = duplicateSignature(line);
+    if (!signature) return;
+    if (seen.has(signature)) duplicates.push(index);
+    else seen.set(signature, index);
+  });
+
+  return duplicates;
+}
+
 export async function extractAllFiles(files, onProgress) {
   const expanded = await expandUploadedFiles(files);
   const results = [];

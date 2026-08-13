@@ -1,6 +1,7 @@
 import {
   expandUploadedFilesToFiles,
   extractAllFiles,
+  findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
 } from "./extract-client.js";
@@ -57,6 +58,8 @@ const els = {
   linesTableBody: document.querySelector("#linesTable tbody"),
   lineCount: document.getElementById("lineCount"),
   fileCount: document.getElementById("fileCount"),
+  duplicateBadge: document.getElementById("duplicateBadge"),
+  removeDuplicatesBtn: document.getElementById("removeDuplicatesBtn"),
   emptyState: document.getElementById("emptyState"),
   tableWrap: document.getElementById("tableWrap"),
   steps: document.querySelectorAll(".step"),
@@ -112,6 +115,11 @@ function updateButtons() {
   els.lineCount.textContent = `${state.lines.length} ligne(s)`;
   els.fileCount.textContent = `${uniqueFiles.size} fichier(s)`;
 
+  const duplicateCount = findDuplicateLineIndexes(state.lines).length;
+  els.duplicateBadge.hidden = duplicateCount === 0;
+  els.duplicateBadge.textContent = `${duplicateCount} doublon(s)`;
+  els.removeDuplicatesBtn.hidden = duplicateCount === 0;
+
   const hasLines = state.lines.length > 0;
   els.emptyState.hidden = hasLines;
   els.tableWrap.hidden = !hasLines;
@@ -159,8 +167,14 @@ function formatSize(bytes) {
 
 function renderTable() {
   els.linesTableBody.innerHTML = "";
+  const duplicates = new Set(findDuplicateLineIndexes(state.lines));
+
   state.lines.forEach((line, index) => {
     const tr = document.createElement("tr");
+    if (duplicates.has(index)) {
+      tr.classList.add("duplicate-row");
+      tr.title = "Doublon probable : même fournisseur, facture, taux et montant TTC.";
+    }
 
     const fields = [
       { key: "source_file", type: "text", readonly: true, title: true },
@@ -517,6 +531,15 @@ async function extractFiles() {
     if (aiFiles) msg += ` ${aiFiles} via IA.`;
     if (warnFiles) msg += ` ${warnFiles} fichier(s) sans résultat.`;
 
+    const duplicateCount = findDuplicateLineIndexes(state.lines).length;
+    if (duplicateCount) {
+      msg += ` ${duplicateCount} doublon(s) détecté(s).`;
+      warnings.push(
+        `${duplicateCount} ligne(s) en double : même fournisseur, numéro de facture, ` +
+          `taux et montant TTC. Vérifiez les lignes surlignées avant d'exporter.`,
+      );
+    }
+
     els.extractionStatus.textContent = msg;
     els.extractionStatus.classList.remove("error", "success", "warn");
     renderWarnings(warnings);
@@ -654,6 +677,19 @@ function applyBankToLines() {
   else els.bankStatus.classList.add("success");
 }
 
+function removeDuplicates() {
+  const duplicates = new Set(findDuplicateLineIndexes(state.lines));
+  if (!duplicates.size) return;
+
+  state.lines = state.lines.filter((_line, index) => !duplicates.has(index));
+  renderTable();
+  updateButtons();
+
+  els.extractionStatus.textContent = `${duplicates.size} doublon(s) supprimé(s).`;
+  els.extractionStatus.classList.remove("error", "warn");
+  els.extractionStatus.classList.add("success");
+}
+
 function clearAll() {
   state.files = [];
   state.lines = [];
@@ -687,6 +723,7 @@ els.addLineBtn.addEventListener("click", () => {
   updateButtons();
 });
 els.exportBtn.addEventListener("click", exportExcel);
+els.removeDuplicatesBtn.addEventListener("click", removeDuplicates);
 els.clearBtn.addEventListener("click", clearAll);
 els.bankFileInput.addEventListener("change", (e) => loadBankFile(e.target.files?.[0]));
 els.applyBankBtn.addEventListener("click", applyBankToLines);

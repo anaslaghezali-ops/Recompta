@@ -378,6 +378,19 @@ button.loading .btn-label { opacity: 0.8; }
   color: var(--muted);
 }
 
+.badge.danger {
+  background: #fde8e8;
+  color: var(--danger);
+}
+
+tr.duplicate-row {
+  background: #fff6f6;
+}
+
+tr.duplicate-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
 .empty-state {
   text-align: center;
   padding: 2.5rem 1rem;
