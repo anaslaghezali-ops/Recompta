@@ -27,11 +27,12 @@ import {
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import {
   JOB_STATUS_LABELS,
+  aggregateActiveImportJobs,
   jobProgressPercent,
   listImportJobs,
   queueInvoiceImport,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs8";
+} from "./import-jobs-client.js?v=jobs9";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -49,6 +50,7 @@ let saver = null;
 let pendingFiles = [];
 let extracting = false;
 let stopJobPolling = null;
+let uploadInProgress = false;
 
 function emptyLine(sourceFile = "") {
   return {
@@ -276,6 +278,7 @@ function addFiles(fileList) {
 async function runQueue() {
   if (!pendingFiles.length || extracting) return;
   extracting = true;
+  uploadInProgress = true;
   els.queueBtn.disabled = true;
   els.extractBtn.disabled = true;
   els.progressPanel.hidden = false;
@@ -295,6 +298,9 @@ async function runQueue() {
         els.progressText.textContent = message;
         els.progressBar.style.width = `${percent}%`;
       },
+      onFileQueued: async () => {
+        await triggerWorkerProcessing();
+      },
     });
 
     pendingFiles = [];
@@ -304,7 +310,7 @@ async function runQueue() {
       ? ` (${result.skipped} fichier(s) ignoré(s))`
       : "";
     els.progressText.textContent =
-      `${result.uploaded} fichier(s) en file d'attente.${skippedNote} Vous pouvez quitter cette page.`;
+      `${result.uploaded} fichier(s) en file d'attente.${skippedNote} Le traitement continue sur le serveur — vous pouvez quitter cette page.`;
     els.progressBar.style.width = "100%";
     setStatus("Import lancé — traitement en arrière-plan", "success");
 
@@ -317,6 +323,7 @@ async function runQueue() {
     els.progressBar.style.width = "0%";
     setStatus(error.message, "error");
   } finally {
+    uploadInProgress = false;
     extracting = false;
     els.queueBtn.disabled = !pendingFiles.length;
     els.extractBtn.disabled = !pendingFiles.length;
@@ -536,6 +543,11 @@ export async function bootImportAchats() {
   bindDropZone(els.dropZone, els.fileInput);
   els.queueBtn.addEventListener("click", runQueue);
   els.extractBtn.addEventListener("click", runExtract);
+  window.addEventListener("beforeunload", (event) => {
+    if (!uploadInProgress) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   await renderJobsPanel();
   const activeJobs = await listImportJobs(session.dossierId, { limit: 1, activeOnly: true });
   if (activeJobs.some((job) => job.status === "queued")) {

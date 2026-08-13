@@ -58,6 +58,65 @@ class SupabaseService:
             self._client = httpx.AsyncClient(timeout=120.0)
         return self._client
 
+    async def promote_stale_uploading_jobs(self, max_age_seconds: int = 90) -> int:
+        """Reprend les envois interrompus : fichiers déjà reçus passent en file d'attente."""
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+        response = await self.client.get(
+            f"{self.base}/rest/v1/import_jobs",
+            params={
+                "status": "eq.uploading",
+                "uploaded_files": "gt.0",
+                "updated_at": f"lt.{cutoff}",
+                "select": "id,uploaded_files,total_files",
+                "order": "updated_at.asc",
+                "limit": "20",
+            },
+            headers=service_headers(),
+        )
+        response.raise_for_status()
+        promoted = 0
+        for job in response.json():
+            uploaded = int(job.get("uploaded_files") or 0)
+            total = int(job.get("total_files") or 0)
+            if uploaded <= 0:
+                continue
+            patch: dict[str, Any] = {
+                "status": "queued",
+                "total_files": uploaded,
+                "updated_at": _iso_now(),
+            }
+            if uploaded < total:
+                patch["error_summary"] = (
+                    f"Envoi interrompu — {uploaded}/{total} fichier(s) reçu(s), traitement partiel."
+                )
+            await self.update_job(int(job["id"]), patch)
+            promoted += 1
+        return promoted
+
+    async def fail_stale_empty_uploading_jobs(self, max_age_seconds: int = 300) -> int:
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+        response = await self.client.patch(
+            f"{self.base}/rest/v1/import_jobs",
+            params={
+                "status": "eq.uploading",
+                "uploaded_files": "eq.0",
+                "updated_at": f"lt.{cutoff}",
+            },
+            headers={**service_headers(), "Prefer": "return=representation"},
+            json={
+                "status": "failed",
+                "error_summary": "Envoi interrompu avant réception des fichiers.",
+                "finished_at": _iso_now(),
+                "updated_at": _iso_now(),
+            },
+        )
+        response.raise_for_status()
+        return len(response.json())
+
     async def requeue_stale_processing_jobs(self, max_age_seconds: int = 1800) -> int:
         from datetime import timedelta
 

@@ -371,6 +371,8 @@ async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[s
 async def process_pending_import_jobs(*, max_jobs: int = 1) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     async with SupabaseService() as db:
+        await db.fail_stale_empty_uploading_jobs()
+        await db.promote_stale_uploading_jobs()
         await db.requeue_stale_processing_jobs()
         queued = await db.fetch_queued_jobs(limit=max_jobs)
         for job in queued:

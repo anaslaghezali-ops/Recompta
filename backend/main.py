@@ -81,7 +81,7 @@ async def _import_worker_loop() -> None:
     while True:
         try:
             if import_worker_enabled():
-                await process_pending_import_jobs(max_jobs=1)
+                await process_pending_import_jobs(max_jobs=3)
         except Exception:  # noqa: BLE001
             import traceback
 
