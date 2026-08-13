@@ -629,12 +629,48 @@ def preferred_engine() -> str:
     return "ai" if ai_available() else "tesseract"
 
 
-async def _extract_with_openai(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
-    return await _extract_with_openai_images(filename, [(content, mime_type)])
+DEFAULT_VISION_MODEL = "gpt-5.4-mini"
+DEFAULT_VISION_MODEL_FALLBACK = "gpt-5.6-terra"
+
+
+def vision_model() -> str:
+    return os.getenv("OPENAI_VISION_MODEL", DEFAULT_VISION_MODEL).strip() or DEFAULT_VISION_MODEL
+
+
+def vision_model_fallback() -> str:
+    configured = os.getenv("OPENAI_VISION_MODEL_FALLBACK", DEFAULT_VISION_MODEL_FALLBACK).strip()
+    return configured or DEFAULT_VISION_MODEL_FALLBACK
+
+
+async def _post_chat_completion(api_key: str, payload: dict) -> dict:
+    """Appelle l'API en retirant les paramètres refusés par certains modèles."""
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        for _ in range(3):
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+            )
+            if response.status_code != 400:
+                response.raise_for_status()
+                return response.json()
+
+            detail = response.text
+            removed = False
+            for param in ("temperature", "response_format"):
+                if param in payload and param in detail:
+                    payload.pop(param)
+                    removed = True
+                    break
+            if not removed:
+                response.raise_for_status()
+
+        response.raise_for_status()
+        return response.json()
 
 
 async def _extract_with_openai_images(
-    filename: str, images: list[tuple[bytes, str]]
+    filename: str, images: list[tuple[bytes, str]], model: str | None = None
 ) -> ExtractionResult:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -660,21 +696,16 @@ async def _extract_with_openai_images(
             }
         )
 
+    used_model = model or vision_model()
     payload = {
-        "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+        "model": used_model,
         "messages": [{"role": "user", "content": message_content}],
         "response_format": {"type": "json_object"},
         "temperature": 0,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=payload,
-        )
-        response.raise_for_status()
-        content_json = json.loads(response.json()["choices"][0]["message"]["content"])
+    body = await _post_chat_completion(api_key, payload)
+    content_json = json.loads(body["choices"][0]["message"]["content"])
 
     lines = [InvoiceLine.model_validate(item) for item in content_json.get("lines", [])]
     result = ExtractionResult(
@@ -749,11 +780,35 @@ async def _supplement_ttc_ventilation(
     return apply_vat_reconciliation(result)
 
 
+async def _extract_with_ai_cascade(
+    filename: str, images: list[tuple[bytes, str]]
+) -> ExtractionResult:
+    """Modèle économique par défaut, escalade vers un modèle plus capable si incohérent."""
+    from vat_intelligence import result_needs_escalation
+
+    result = await _extract_with_openai_images(filename, images)
+
+    fallback = vision_model_fallback()
+    if not result_needs_escalation(result) or fallback == vision_model():
+        return result
+
+    try:
+        upgraded = await _extract_with_openai_images(filename, images, model=fallback)
+    except Exception:  # noqa: BLE001
+        return result
+
+    if result_needs_escalation(upgraded) and result.lines:
+        return result
+
+    upgraded.warnings.append(f"Scan difficile : relu avec {fallback}.")
+    return upgraded
+
+
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
     pages = pdf_to_png_pages(content, max_pages=3)
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
-    result = await _extract_with_openai_images(filename, [(page, "image/png") for page in pages])
+    result = await _extract_with_ai_cascade(filename, [(page, "image/png") for page in pages])
     return await _supplement_ttc_ventilation(result, filename, content, "application/pdf")
 
 
@@ -831,7 +886,7 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
     if mime_type.startswith("image/"):
         if ai_available():
             try:
-                result = await _extract_with_openai(filename, content, mime_type)
+                result = await _extract_with_ai_cascade(filename, [(content, mime_type)])
                 return await _supplement_ttc_ventilation(result, filename, content, mime_type)
             except Exception as exc:  # noqa: BLE001
                 return ExtractionResult(

@@ -51,15 +51,33 @@
 | **Actuel** | Mode solo, extraction + export Excel |
 | **Prochain** | Comptes cabinet (Supabase), dossiers clients isolés |
 | **Ensuite** | ICE client par dossier, historique fournisseurs appris (pas codé) |
-| **Option** | Modèle IA configurable (`gpt-4o` pour scans difficiles) |
+| **Option** | Modèle IA configurable + escalade automatique sur scans difficiles |
 
 ## Fiabilité : pourquoi 3 couches ?
 
 L'IA seule ne suffit pas à 100 % : biais d'entraînement (HT avant TTC), scans flous, mises en page infinies. La couche mathématique corrige **sans connaître le fournisseur** — c'est la garantie SaaS.
 
+## Choix du modèle IA
+
+Deux niveaux, escalade automatique quand la validation mathématique échoue.
+
+| Rôle | Modèle | Coût indicatif / 1 000 pages | Usage |
+|------|--------|------------------------------|-------|
+| **Principal** | `gpt-5.4-mini` | ~5 $ | Toutes les factures |
+| **Secours** | `gpt-5.6-terra` | ~16 $ | Scans flous, tableaux TVA denses |
+| Alternative éco | `gpt-5.4-nano` | ~1,7 $ | PDF natifs propres uniquement |
+
+Les modèles `mini` / `nano` réduisent la résolution des pages denses : c'est
+la raison principale des erreurs de lecture sur les photos de factures
+froissées. Le modèle de secours lit la page en pleine résolution.
+
+L'escalade ne se déclenche que si une ligne est incohérente
+(`HT + TVA ≠ TTC` ou `TVA/HT ≠ taux`), donc elle reste marginale en coût.
+
 ## Configuration recommandée (production)
 
 ```env
 OPENAI_API_KEY=sk-...
-OPENAI_VISION_MODEL=gpt-4o        # meilleure lecture que gpt-4o-mini
+OPENAI_VISION_MODEL=gpt-5.4-mini
+OPENAI_VISION_MODEL_FALLBACK=gpt-5.6-terra
 ```

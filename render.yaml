@@ -8,4 +8,6 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_VISION_MODEL
-        value: gpt-4o-mini
+        value: gpt-5.4-mini
+      - key: OPENAI_VISION_MODEL_FALLBACK
+        value: gpt-5.6-terra

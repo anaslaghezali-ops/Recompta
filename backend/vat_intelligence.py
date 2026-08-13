@@ -193,6 +193,27 @@ def align_lines_with_footer_totals(lines: list[InvoiceLine], text: str) -> list[
     return updated
 
 
+def line_is_coherent(line: InvoiceLine) -> bool:
+    """HT + TVA = TTC et TVA/HT cohérent avec le taux."""
+    ht = abs(line.m_ht)
+    tva = abs(line.tva)
+    ttc = abs(line.m_ttc)
+    if ht < 0.01 and ttc < 0.01:
+        return False
+    if abs(ht + tva - ttc) > max(0.05, ttc * 0.01):
+        return False
+    if ht > 0.01 and line.taux in (0.1, 0.2):
+        return abs(tva / ht - line.taux) <= 0.025
+    return True
+
+
+def result_needs_escalation(result: ExtractionResult) -> bool:
+    """Vrai si l'extraction est douteuse et mérite un modèle plus capable."""
+    if not result.lines:
+        return True
+    return any(not line_is_coherent(line) for line in result.lines)
+
+
 def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     """Réconciliation TVA générique post-extraction (IA ou OCR)."""
     from models import InvoiceLine
