@@ -16,7 +16,13 @@ export const DOC_TYPE_ICONS = {
 
 function sanitizeFilename(name) {
   const base = (name || "document").split(/[/\\]/).pop();
-  return base.replace(/[^\w.\- ()àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]/gi, "_").slice(0, 180);
+  const ascii = base.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const safe = ascii
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 180);
+  return safe || "document";
 }
 
 export function buildStoragePath(dossierId, originalFilename) {
