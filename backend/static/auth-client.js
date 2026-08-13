@@ -95,4 +95,37 @@ export async function requireSuperAdminSession() {
   return session;
 }
 
+export async function getUserCabinetMembership() {
+  const session = await getSession();
+  if (!session?.user) return null;
+
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from("cabinet_members")
+    .select("cabinet_id, role, cabinets(id, name, slug, is_active)")
+    .eq("user_id", session.user.id)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return null;
+  if (!data?.cabinets?.is_active) return null;
+
+  return {
+    session,
+    cabinet_id: data.cabinet_id,
+    role: data.role,
+    cabinet: data.cabinets,
+  };
+}
+
+export async function redirectAfterLogin(userId) {
+  if (await isSuperAdmin(userId)) return "admin.html";
+  const membership = await getUserCabinetMembership();
+  if (membership) return "dossiers.html";
+  return "index.html";
+}
+
 export { SUPABASE_URL } from "./supabase-config.js?v=pbyoxfxngfutoiqjirkx-1";

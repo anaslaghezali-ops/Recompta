@@ -11,7 +11,7 @@
     <div class="hero-content">
       <p class="eyebrow">Recompta</p>
       <h1>Connexion</h1>
-      <p class="subtitle">Connectez-vous avec le compte fourni par votre cabinet. Les nouveaux cabinets sont créés uniquement par l’administrateur Recompta.</p>
+      <p class="subtitle">Connectez-vous avec le compte fourni par votre cabinet. Les dossiers clients se gèrent depuis votre espace cabinet.</p>
     </div>
   </header>
 
@@ -35,7 +35,7 @@
         </div>
       </form>
       <p class="hint">
-        <a href="index.html">Retour à l'outil</a>
+        <a href="index.html">Retour à l'outil solo</a>
         <span id="adminLinkWrap" hidden>
           · <a href="admin.html">Administration cabinets</a> (super-admin)
         </span>
@@ -50,6 +50,7 @@
       isSuperAdmin,
       signIn,
       authErrorMessage,
+      redirectAfterLogin,
     } from "./auth-client.js?v=auth5";
 
     const form = document.getElementById("authForm");
@@ -65,21 +66,13 @@
       errorEl.textContent = message || "";
     }
 
-    async function redirectAfterLogin(userId) {
-      if (await isSuperAdmin(userId)) {
-        window.location.href = "admin.html";
-        return;
-      }
-      window.location.href = "index.html";
-    }
-
     if (!isSupabaseConfigured()) {
       configHint.hidden = false;
       form.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
     } else {
       const session = await getSession();
       if (session?.user) {
-        await redirectAfterLogin(session.user.id);
+        window.location.href = await redirectAfterLogin(session.user.id);
       }
     }
 
@@ -89,7 +82,7 @@
       submitBtn.disabled = true;
       try {
         const result = await signIn(email.value.trim(), password.value);
-        await redirectAfterLogin(result.user.id);
+        window.location.href = await redirectAfterLogin(result.user.id);
       } catch (err) {
         const msg = authErrorMessage(err);
         if (/signups not allowed|user registration/i.test(msg)) {

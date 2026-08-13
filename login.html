@@ -2,11 +2,104 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="refresh" content="0; url=docs/login.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Connexion</title>
-  <script>location.replace("docs/login.html");</script>
+  <link rel="stylesheet" href="styles.css?v=auth3" />
 </head>
 <body>
-  <p><a href="docs/login.html">Ouvrir la page de connexion</a></p>
+  <header class="hero">
+    <div class="hero-content">
+      <p class="eyebrow">Recompta</p>
+      <h1>Connexion</h1>
+      <p class="subtitle">Connectez-vous avec le compte fourni par votre cabinet. Les dossiers clients se gèrent depuis votre espace cabinet.</p>
+    </div>
+  </header>
+
+  <main class="container login-wrap">
+    <section class="card login-card">
+      <h2>Se connecter</h2>
+      <p class="hint" id="configHint" hidden>
+        Un seul fichier : <code>docs/supabase-config.js</code>.
+        Clé <strong>anon</strong> du projet <code>pbyoxfxngfutoiqjirkx</code>.
+      </p>
+      <form id="authForm">
+        <label>Email
+          <input id="email" type="email" autocomplete="username" required />
+        </label>
+        <label>Mot de passe
+          <input id="password" type="password" autocomplete="current-password" minlength="6" required />
+        </label>
+        <p class="hint error" id="authError" hidden></p>
+        <div class="actions">
+          <button id="submitBtn" class="primary" type="submit">Connexion</button>
+        </div>
+      </form>
+      <p class="hint">
+        <a href="index.html">Retour à l'outil solo</a>
+        <span id="adminLinkWrap" hidden>
+          · <a href="admin.html">Administration cabinets</a> (super-admin)
+        </span>
+      </p>
+    </section>
+  </main>
+
+  <script type="module">
+    import {
+      isSupabaseConfigured,
+      getSession,
+      isSuperAdmin,
+      signIn,
+      authErrorMessage,
+      redirectAfterLogin,
+    } from "./auth-client.js?v=auth5";
+
+    const form = document.getElementById("authForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const errorEl = document.getElementById("authError");
+    const configHint = document.getElementById("configHint");
+    const adminLinkWrap = document.getElementById("adminLinkWrap");
+    const email = document.getElementById("email");
+    const password = document.getElementById("password");
+
+    function showError(message) {
+      errorEl.hidden = !message;
+      errorEl.textContent = message || "";
+    }
+
+    if (!isSupabaseConfigured()) {
+      configHint.hidden = false;
+      form.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
+    } else {
+      const session = await getSession();
+      if (session?.user) {
+        window.location.href = await redirectAfterLogin(session.user.id);
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      submitBtn.disabled = true;
+      try {
+        const result = await signIn(email.value.trim(), password.value);
+        window.location.href = await redirectAfterLogin(result.user.id);
+      } catch (err) {
+        const msg = authErrorMessage(err);
+        if (/signups not allowed|user registration/i.test(msg)) {
+          showError("Inscription fermée. Demandez vos identifiants à l’administrateur Recompta.");
+        } else {
+          showError(msg);
+        }
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    getSession().then(async (session) => {
+      if (session?.user && await isSuperAdmin(session.user.id)) {
+        adminLinkWrap.hidden = false;
+      }
+    });
+  </script>
 </body>
 </html>
