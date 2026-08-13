@@ -25,6 +25,27 @@ const CODE_TVA_BY_DESIGNATION_TAUX = {
   "FRAIS BANCAIRE|0.1": 142,
 };
 
+const COLUMN_WIDTHS = [5, 14, 22, 11, 10, 11, 10, 20, 18, 7, 8, 12, 12, 10];
+
+const HEADER_STYLE = {
+  font: { bold: true, color: { rgb: "FFFFFFFF" }, sz: 11 },
+  fill: { patternType: "solid", fgColor: { rgb: "FF0B6BCB" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: {
+    top: { style: "thin", color: { rgb: "FFD9E3EF" } },
+    bottom: { style: "thin", color: { rgb: "FFD9E3EF" } },
+    left: { style: "thin", color: { rgb: "FFD9E3EF" } },
+    right: { style: "thin", color: { rgb: "FFD9E3EF" } },
+  },
+};
+
+const BODY_BORDER = {
+  top: { style: "thin", color: { rgb: "FFE8EEF4" } },
+  bottom: { style: "thin", color: { rgb: "FFE8EEF4" } },
+  left: { style: "thin", color: { rgb: "FFE8EEF4" } },
+  right: { style: "thin", color: { rgb: "FFE8EEF4" } },
+};
+
 function inferCodeTva(designation, taux) {
   return CODE_TVA_BY_DESIGNATION_TAUX[`${designation}|${taux}`] ?? null;
 }
@@ -34,12 +55,13 @@ function normalizeIce(value) {
   return digits.length === 15 ? digits : "";
 }
 
-function excelDate(value) {
+/** Série Excel en UTC (évite 46184,9583 à cause du fuseau horaire). */
+function excelDateSerial(value) {
   if (!value) return null;
-  const d = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  const epoch = Date.UTC(1899, 11, 30);
-  return (d.getTime() - epoch) / 86400000;
+  const m = String(value).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const utc = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  return (utc - Date.UTC(1899, 11, 30)) / 86400000;
 }
 
 function resolvedCodeTva(line) {
@@ -64,6 +86,47 @@ function safeFilename(clientName, period) {
   return `${safeClient}_DED_TVA_${period}.xlsx`;
 }
 
+function styleWorksheet(ws, rowCount) {
+  for (let c = 0; c < HEADERS.length; c += 1) {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[addr]) ws[addr].s = HEADER_STYLE;
+  }
+
+  for (let r = 1; r < rowCount; r += 1) {
+    for (let c = 0; c < HEADERS.length; c += 1) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[addr];
+      if (!cell) continue;
+      const style = { border: BODY_BORDER };
+      if (c === 3 || c === 4 || c === 5) {
+        style.numFmt = "#,##0.00";
+        style.alignment = { horizontal: "right" };
+      } else if (c === 9) {
+        style.numFmt = "0%";
+        style.alignment = { horizontal: "center" };
+      } else if (c === 11 || c === 12) {
+        if (typeof cell.v === "number") {
+          style.numFmt = "dd/mm/yyyy";
+          style.alignment = { horizontal: "center" };
+        }
+      } else if (c === 0 || c === 10 || c === 13) {
+        style.alignment = { horizontal: "center" };
+      }
+      cell.s = style;
+    }
+  }
+
+  ws["!cols"] = COLUMN_WIDTHS.map((wch) => ({ wch }));
+  ws["!autofilter"] = { ref: `A1:N${rowCount}` };
+  ws["!freeze"] = {
+    xSplit: 0,
+    ySplit: 1,
+    topLeftCell: "A2",
+    activePane: "bottomLeft",
+    state: "frozen",
+  };
+}
+
 export function exportDedTvaExcel({ clientName, period, lines }) {
   if (!/^\d{6}$/.test(period)) {
     throw new Error("La période doit être au format MMAAAA (ex: 062026).");
@@ -85,20 +148,14 @@ export function exportDedTvaExcel({ clientName, period, lines }) {
       normalizeIce(line.ice_frs),
       Number.isFinite(Number(line.taux)) ? Number(line.taux) : 0.2,
       Number(line.id_paie) || 4,
-      excelDate(line.date_paie),
-      excelDate(line.date_fac),
+      excelDateSerial(line.date_paie),
+      excelDateSerial(line.date_fac),
       resolvedCodeTva(line),
     ]);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-
-  for (let r = 1; r < rows.length; r += 1) {
-    const datePaie = ws[XLSX.utils.encode_cell({ r, c: 11 })];
-    const dateFac = ws[XLSX.utils.encode_cell({ r, c: 12 })];
-    if (datePaie && typeof datePaie.v === "number") datePaie.t = "n";
-    if (dateFac && typeof dateFac.v === "number") dateFac.t = "n";
-  }
+  styleWorksheet(ws, rows.length);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);

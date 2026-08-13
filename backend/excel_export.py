@@ -5,7 +5,8 @@ from io import BytesIO
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from models import ExportRequest, InvoiceLine
 
@@ -25,6 +26,27 @@ HEADERS = [
     "DATE_FAC",
     "CODE TVA",
 ]
+
+COLUMN_WIDTHS = [5, 14, 22, 11, 10, 11, 10, 20, 18, 7, 8, 12, 12, 10]
+
+HEADER_FILL = PatternFill("solid", fgColor="0B6BCB")
+HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
+THIN_BORDER = Border(
+    left=Side(style="thin", color="D9E3EF"),
+    right=Side(style="thin", color="D9E3EF"),
+    top=Side(style="thin", color="D9E3EF"),
+    bottom=Side(style="thin", color="D9E3EF"),
+)
+BODY_BORDER = Border(
+    left=Side(style="thin", color="E8EEF4"),
+    right=Side(style="thin", color="E8EEF4"),
+    top=Side(style="thin", color="E8EEF4"),
+    bottom=Side(style="thin", color="E8EEF4"),
+)
+
+DATE_FMT = "dd/mm/yyyy"
+AMOUNT_FMT = "#,##0.00"
+TAUX_FMT = "0%"
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "ded_tva_template.xlsx"
 
@@ -54,14 +76,39 @@ def _write_line(ws, row_idx: int, line: InvoiceLine) -> None:
         _to_excel_date(line.date_fac),
         line.resolved_code_tva(),
     ]
+    amount_cols = {4, 5, 6}
+    date_cols = {12, 13}
     for col_idx, value in enumerate(values, start=1):
-        ws.cell(row=row_idx, column=col_idx, value=value)
+        cell = ws.cell(row=row_idx, column=col_idx, value=value)
+        cell.border = BODY_BORDER
+        if col_idx in amount_cols:
+            cell.number_format = AMOUNT_FMT
+            cell.alignment = Alignment(horizontal="right")
+        elif col_idx == 10:
+            cell.number_format = TAUX_FMT
+            cell.alignment = Alignment(horizontal="center")
+        elif col_idx in date_cols and value is not None:
+            cell.number_format = DATE_FMT
+            cell.alignment = Alignment(horizontal="center")
+        elif col_idx in {1, 11, 14}:
+            cell.alignment = Alignment(horizontal="center")
 
 
 def _ensure_headers(ws) -> None:
     for col_idx, header in enumerate(HEADERS, start=1):
         cell = ws.cell(row=1, column=col_idx, value=header)
-        cell.font = Font(bold=True)
+        cell.font = HEADER_FONT
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = THIN_BORDER
+
+
+def _apply_sheet_layout(ws) -> None:
+    for col_idx, width in enumerate(COLUMN_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+    ws.freeze_panes = "A2"
+    if ws.max_row > 1:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}{ws.max_row}"
 
 
 def build_workbook(request: ExportRequest) -> Workbook:
@@ -86,6 +133,7 @@ def build_workbook(request: ExportRequest) -> Workbook:
     for idx, line in enumerate(request.lines, start=2):
         _write_line(ws, idx, line)
 
+    _apply_sheet_layout(ws)
     return wb
 
 
