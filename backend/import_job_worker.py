@@ -5,6 +5,7 @@ import os
 import traceback
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from bank_parser import normalize_ai_transactions, parse_bank_file
 from bank_statement import extract_bank_statement
@@ -16,6 +17,7 @@ from normalize_results import (
     normalize_extraction_results,
 )
 from supabase_service import SupabaseService
+from zip_utils import iter_invoice_files
 
 IMPORT_QUEUE_BUCKET = "import-queue"
 
@@ -62,6 +64,14 @@ def invoice_line_to_workspace_dict(
         "date_paie": line.date_paie.isoformat() if line.date_paie else "",
         "date_fac": line.date_fac.isoformat() if line.date_fac else "",
     }
+
+
+def _next_source_id() -> str:
+    return f"src-{int(datetime.now(timezone.utc).timestamp() * 1000)}-{uuid4().hex[:6]}"
+
+
+def _display_name(relative_name: str) -> str:
+    return relative_name.replace("\\", "/").split("/")[-1] or relative_name
 
 
 def extraction_concurrency() -> int:
@@ -239,59 +249,107 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     workspace = await db.load_workspace(dossier_id)
     lines: list[dict[str, Any]] = list(workspace.get("lines") or [])
 
-    processed = int(job.get("processed_files") or 0)
-    failed = int(job.get("failed_files") or 0)
-    extraction_results: list[ExtractionResult] = []
-    semaphore = asyncio.Semaphore(extraction_concurrency())
+    work_items: list[dict[str, Any]] = []
+    archive_failures = 0
 
-    async def process_file(file_row: dict[str, Any]) -> ExtractionResult | None:
-        nonlocal processed, failed
+    for file_row in files:
         file_id = int(file_row["id"])
         storage_path = file_row["storage_path"]
         filename = file_row["original_filename"]
-        source_id = file_row.get("source_id") or ""
         mime_type = file_row.get("mime_type") or "application/octet-stream"
+        parent_source = file_row.get("source_id") or _next_source_id()
 
         await db.update_job_file(file_id, {"status": "processing"})
+        try:
+            content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
+            expanded = iter_invoice_files(filename, content, mime_type)
+            if not expanded:
+                raise RuntimeError("Aucune facture exploitable (PDF, image ou ZIP).")
 
+            await db.save_dossier_document(
+                dossier_id,
+                filename=filename,
+                content=content,
+                mime_type=mime_type,
+                doc_type="invoice",
+                source_id=parent_source,
+            )
+
+            for relative_name, file_content, file_mime in expanded:
+                display_name = _display_name(relative_name)
+                source_id = parent_source if len(expanded) == 1 else _next_source_id()
+                if display_name != filename:
+                    await db.save_dossier_document(
+                        dossier_id,
+                        filename=display_name,
+                        content=file_content,
+                        mime_type=file_mime,
+                        doc_type="invoice",
+                        source_id=source_id,
+                    )
+                work_items.append(
+                    {
+                        "parent_file_id": file_id,
+                        "filename": display_name,
+                        "content": file_content,
+                        "mime_type": file_mime,
+                        "source_id": source_id,
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            archive_failures += 1
+            await db.update_job_file(
+                file_id,
+                {
+                    "status": "failed",
+                    "error_message": f"{type(exc).__name__}: {exc}",
+                    "processed_at": _iso_now(),
+                },
+            )
+
+    if not work_items:
+        await db.update_job(
+            job_id,
+            {
+                "status": "failed",
+                "processed_files": 0,
+                "failed_files": archive_failures,
+                "error_summary": "Aucune facture exploitable dans l'archive.",
+                "finished_at": _iso_now(),
+            },
+        )
+        return {"job_id": job_id, "processed": 0, "failed": archive_failures, "status": "failed"}
+
+    await db.update_job(
+        job_id,
+        {
+            "total_files": len(work_items),
+            "uploaded_files": len(work_items),
+            "processed_files": 0,
+            "failed_files": 0,
+        },
+    )
+
+    processed = 0
+    failed = 0
+    extraction_results: list[ExtractionResult] = []
+    semaphore = asyncio.Semaphore(extraction_concurrency())
+
+    async def process_item(item: dict[str, Any]) -> ExtractionResult:
+        nonlocal processed, failed
+        filename = item["filename"]
+        source_id = item["source_id"]
         async with semaphore:
             try:
-                content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
-                await db.save_dossier_document(
-                    dossier_id,
-                    filename=filename,
-                    content=content,
-                    mime_type=mime_type,
-                    doc_type="invoice",
-                    source_id=source_id or None,
-                )
-                result = await extract_invoice(filename, content, mime_type)
+                result = await extract_invoice(filename, item["content"], item["mime_type"])
                 result.filename = filename
                 result.source_id = source_id
-                line_count = len(result.lines)
-                await db.update_job_file(
-                    file_id,
-                    {
-                        "status": "done",
-                        "line_count": line_count,
-                        "processed_at": _iso_now(),
-                        "error_message": None,
-                    },
-                )
                 processed += 1
-                await db.update_job(job_id, {"processed_files": processed})
+                await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
                 return result
             except Exception as exc:  # noqa: BLE001
                 failed += 1
-                await db.update_job_file(
-                    file_id,
-                    {
-                        "status": "failed",
-                        "error_message": f"{type(exc).__name__}: {exc}",
-                        "processed_at": _iso_now(),
-                    },
-                )
-                await db.update_job(job_id, {"failed_files": failed})
+                await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
                 return ExtractionResult(
                     filename=filename,
                     source_id=source_id,
@@ -302,7 +360,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     token = activate_client_ice_exclusions(client_ice)
     new_lines: list[dict[str, Any]] = []
     try:
-        raw_results = await asyncio.gather(*(process_file(file_row) for file_row in files))
+        raw_results = await asyncio.gather(*(process_item(item) for item in work_items))
         extraction_results = [item for item in raw_results if item is not None]
 
         normalized = normalize_extraction_results(extraction_results, client_ice=client_ice)
@@ -330,13 +388,13 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     finally:
         deactivate_client_ice_exclusions(token)
 
-    total = int(job.get("total_files") or len(files))
+    total = len(work_items)
     if processed == 0:
         final_status = "failed"
         error_summary = "Aucun fichier n'a pu être extrait."
-    elif failed > 0:
+    elif failed > 0 or archive_failures > 0:
         final_status = "completed"
-        error_summary = f"{failed} fichier(s) en erreur sur {total}."
+        error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
     else:
         final_status = "completed"
         error_summary = None
@@ -346,16 +404,29 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         {
             "status": final_status,
             "processed_files": processed,
-            "failed_files": failed,
+            "failed_files": failed + archive_failures,
             "error_summary": error_summary,
             "finished_at": _iso_now(),
         },
     )
 
+    done_parents = {item["parent_file_id"] for item in work_items}
+    for file_id in done_parents:
+        count = sum(1 for item in work_items if item["parent_file_id"] == file_id)
+        await db.update_job_file(
+            file_id,
+            {
+                "status": "done",
+                "line_count": count,
+                "processed_at": _iso_now(),
+                "error_message": None,
+            },
+        )
+
     return {
         "job_id": job_id,
         "processed": processed,
-        "failed": failed,
+        "failed": failed + archive_failures,
         "new_lines": len(new_lines),
         "status": final_status,
     }

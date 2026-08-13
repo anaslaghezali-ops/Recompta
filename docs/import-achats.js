@@ -32,7 +32,7 @@ import {
   listImportJobs,
   queueInvoiceImport,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs9";
+} from "./import-jobs-client.js?v=jobs10";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -306,11 +306,8 @@ async function runQueue() {
     pendingFiles = [];
     renderFileQueue();
 
-    const skippedNote = result.skipped
-      ? ` (${result.skipped} fichier(s) ignoré(s))`
-      : "";
     els.progressText.textContent =
-      `${result.uploaded} fichier(s) en file d'attente.${skippedNote} Le traitement continue sur le serveur — vous pouvez quitter cette page.`;
+      "Envoi terminé. Le serveur décompresse le ZIP et traite les factures — vous pouvez quitter cette page.";
     els.progressBar.style.width = "100%";
     setStatus("Import lancé — traitement en arrière-plan", "success");
 
