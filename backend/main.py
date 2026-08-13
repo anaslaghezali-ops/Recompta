@@ -58,15 +58,33 @@ app.add_middleware(
 )
 
 
+# La vérification de clé est un aller-retour réseau vers OpenAI, appelé avant
+# chaque extraction. On le met en cache pour ne pas le payer à chaque import.
+_KEY_CHECK_TTL = 60.0
+_key_check_cache: dict[str, float | bool | str] = {"at": 0.0, "verified": False, "message": ""}
+
+
 @app.get("/api/health")
-async def health() -> dict:
+async def health(refresh: bool = False) -> dict:
     from invoice_extractor import ai_available, preferred_engine, tesseract_available, verify_openai_key
 
     configured = ai_available()
     verified = False
     ai_message = ""
     if configured:
-        verified, ai_message = await verify_openai_key()
+        age = asyncio.get_running_loop().time() - float(_key_check_cache["at"])
+        if refresh or age > _KEY_CHECK_TTL:
+            verified, ai_message = await verify_openai_key()
+            _key_check_cache.update(
+                {
+                    "at": asyncio.get_running_loop().time(),
+                    "verified": verified,
+                    "message": ai_message,
+                }
+            )
+        else:
+            verified = bool(_key_check_cache["verified"])
+            ai_message = str(_key_check_cache["message"])
 
     return {
         "status": "ok",

@@ -45,8 +45,9 @@ async function errorFromResponse(response) {
   return new Error(detail || `Erreur serveur (${response.status})`);
 }
 
-export async function fetchServerHealth(apiUrl) {
-  const response = await fetchOrExplain(`${apiUrl}/api/health`);
+export async function fetchServerHealth(apiUrl, { refresh = false } = {}) {
+  const url = refresh ? `${apiUrl}/api/health?refresh=true` : `${apiUrl}/api/health`;
+  const response = await fetchOrExplain(url);
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }
@@ -54,6 +55,8 @@ export async function fetchServerHealth(apiUrl) {
 // Envoi par petits lots : une requête unique de 100 fichiers dépasserait
 // largement les délais du navigateur et du proxy Codespace.
 const DEFAULT_BATCH_SIZE = 4;
+// Deux lots en vol : l'envoi du suivant recouvre le traitement du précédent.
+const DEFAULT_PARALLEL_BATCHES = 2;
 
 async function extractBatch(batch, apiUrl, normalizedIce) {
   const formData = new FormData();
@@ -71,7 +74,12 @@ async function extractBatch(batch, apiUrl, normalizedIce) {
 export async function extractViaServer(
   files,
   apiUrl,
-  { onProgress, clientIce, batchSize = DEFAULT_BATCH_SIZE } = {},
+  {
+    onProgress,
+    clientIce,
+    batchSize = DEFAULT_BATCH_SIZE,
+    parallelBatches = DEFAULT_PARALLEL_BATCHES,
+  } = {},
 ) {
   const normalizedIce = (clientIce || "").replace(/\D/g, "");
   const list = Array.from(files);
@@ -81,36 +89,50 @@ export async function extractViaServer(
     batches.push(list.slice(i, i + batchSize));
   }
 
-  const results = [];
+  const results = new Array(batches.length);
+  let nextIndex = 0;
   let done = 0;
+  let abortError = null;
 
-  for (const batch of batches) {
+  const report = () => {
     if (onProgress) {
       onProgress(done, list.length, `Extraction IA — ${done}/${list.length} fichier(s)…`);
     }
+  };
 
-    try {
-      results.push(...(await extractBatch(batch, apiUrl, normalizedIce)));
-    } catch (error) {
-      // Serveur injoignable : inutile d'insister sur les lots suivants.
-      if (error.message === UNREACHABLE_HINT) throw error;
-      batch.forEach((file) => {
-        results.push({
+  async function worker() {
+    while (!abortError) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= batches.length) return;
+
+      const batch = batches[index];
+      try {
+        results[index] = await extractBatch(batch, apiUrl, normalizedIce);
+      } catch (error) {
+        // Serveur injoignable : inutile d'insister sur les lots suivants.
+        if (error.message === UNREACHABLE_HINT) {
+          abortError = error;
+          return;
+        }
+        results[index] = batch.map((file) => ({
           filename: file.name,
           lines: [],
           engine: "ai",
           warnings: [`Lot en échec : ${error.message}`],
-        });
-      });
-    }
-
-    done += batch.length;
-    if (onProgress) {
-      onProgress(done, list.length, `Extraction IA — ${done}/${list.length} fichier(s)…`);
+        }));
+      }
+      done += batch.length;
+      report();
     }
   }
 
-  return results;
+  report();
+  const workers = Math.max(1, Math.min(parallelBatches, batches.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+
+  if (abortError) throw abortError;
+  return results.flat();
 }
 
 export function needsAiRetry(result) {

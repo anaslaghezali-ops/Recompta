@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -105,12 +106,44 @@ def pdf_first_page_to_png(content: bytes, dpi: int = 200) -> bytes:
     return pages[0] if pages else b""
 
 
+# Tesseract parallélise chaque page via OpenMP en utilisant tous les cœurs.
+# Comme on traite déjà plusieurs factures en parallèle, cela sursouscrit le CPU
+# (N pages × N cœurs de threads) et effondre le débit. Une page par thread est
+# nettement plus rapide à l'échelle du lot — la qualité de l'OCR est identique.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+
+
 def ocr_image_bytes(content: bytes, lang: str = "fra+eng") -> str:
     import pytesseract
     from PIL import Image
 
     image = Image.open(BytesIO(content))
     return pytesseract.image_to_string(image, lang=lang)
+
+
+# Le rendu PDF et l'OCR sont bloquants : sans thread, ils figent la boucle
+# asyncio et les extractions « simultanées » redeviennent séquentielles.
+async def extract_text_from_pdf_async(content: bytes) -> str:
+    return await asyncio.to_thread(extract_text_from_pdf, content)
+
+
+async def pdf_to_png_pages_async(
+    content: bytes, max_pages: int = 3, dpi: int = 200
+) -> list[bytes]:
+    return await asyncio.to_thread(pdf_to_png_pages, content, max_pages, dpi)
+
+
+async def pdf_first_page_to_png_async(content: bytes, dpi: int = 200) -> bytes:
+    return await asyncio.to_thread(pdf_first_page_to_png, content, dpi)
+
+
+async def ocr_image_bytes_async(content: bytes, lang: str = "fra+eng") -> str:
+    return await asyncio.to_thread(ocr_image_bytes, content, lang)
+
+
+async def ocr_pages_async(pages: list[bytes]) -> str:
+    texts = await asyncio.gather(*(ocr_image_bytes_async(page) for page in pages))
+    return "\n".join(texts)
 
 
 def _guess_designation(text: str) -> Designation:
@@ -733,17 +766,17 @@ async def _supplement_ttc_ventilation(
 
     text = result.raw_text or ""
     if not text.strip() and mime_type == "application/pdf":
-        text = extract_text_from_pdf(content)
+        text = await extract_text_from_pdf_async(content)
     if not text.strip() and tesseract_available() and mime_type == "application/pdf":
         try:
-            pages = pdf_to_png_pages(content, max_pages=2)
+            pages = await pdf_to_png_pages_async(content, max_pages=2)
             if pages:
-                text = "\n".join(ocr_image_bytes(page) for page in pages)
+                text = await ocr_pages_async(pages)
         except Exception:  # noqa: BLE001
             pass
     if not text.strip() and mime_type.startswith("image/") and tesseract_available():
         try:
-            text = ocr_image_bytes(content)
+            text = await ocr_image_bytes_async(content)
         except Exception:  # noqa: BLE001
             pass
 
@@ -805,7 +838,7 @@ async def _extract_with_ai_cascade(
 
 
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
-    pages = pdf_to_png_pages(content, max_pages=3)
+    pages = await pdf_to_png_pages_async(content, max_pages=3)
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
     result = await _extract_with_ai_cascade(filename, [(page, "image/png") for page in pages])
@@ -813,7 +846,7 @@ async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResul
 
 
 async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResult:
-    text = ocr_image_bytes(image_bytes)
+    text = await ocr_image_bytes_async(image_bytes)
     if not text.strip():
         return ExtractionResult(
             filename=filename,
@@ -830,7 +863,7 @@ async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResu
 
 async def extract_invoice(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
     if mime_type == "application/pdf":
-        text = extract_text_from_pdf(content)
+        text = await extract_text_from_pdf_async(content)
         if text.strip():
             result = _heuristic_extract(filename, text)
             if ai_available() and _needs_ai_upgrade(result):
@@ -864,7 +897,7 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
             )
 
         try:
-            png_bytes = pdf_first_page_to_png(content)
+            png_bytes = await pdf_first_page_to_png_async(content)
             if png_bytes:
                 return await _extract_with_ocr(filename, png_bytes)
         except Exception as exc:  # noqa: BLE001
