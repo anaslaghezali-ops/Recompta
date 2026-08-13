@@ -1,6 +1,7 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { isInvoiceFile, isZipFile } from "./extract-client.js";
-import { uploadImportJobFile } from "./api-client.js?v=api2";
+import { documentIdentityKeys } from "./dossier-documents.js?v=doc3";
+import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
 
@@ -270,9 +271,22 @@ export function importDocTypeLabel(docType) {
   return DOC_TYPE_LABELS[docType] || "import";
 }
 
-export function importJobPageUrl(job, dossierId) {
+export function workspacePageUrl(clientId, dossierId, { tab = null, view = null } = {}) {
+  const params = new URLSearchParams();
+  if (clientId) params.set("client", clientId);
+  if (dossierId) params.set("dossier", dossierId);
+  if (tab) params.set("tab", tab);
+  if (view) params.set("view", view);
+  const qs = params.toString();
+  return `workspace.html${qs ? `?${qs}` : ""}`;
+}
+
+export function importJobPageUrl(job, dossierId, clientId = null) {
   const id = dossierId || job?.dossier_id;
   if (!id) return "dossiers.html";
+  if (clientId) {
+    return workspacePageUrl(clientId, id, { tab: "cockpit" });
+  }
   if (job?.doc_type === "bank") return `import-banque.html?dossier=${id}`;
   return `import-achats.html?dossier=${id}`;
 }
@@ -338,9 +352,10 @@ export function markImportJobSeen(jobId) {
 export function shouldNotifyImportCompletion(job) {
   if (!job || job.status !== "completed") return false;
   if (readSeenJobIds().includes(String(job.id))) return false;
+  if (job.options?.analysis_from_documents) return true;
   if ((job.total_files || 0) >= COMPLETION_NOTIFY_MIN_FILES) return true;
   if (job.doc_type === "bank") return true;
-  return false;
+  return (job.processed_files || 0) > 0;
 }
 
 export async function requestImportNotificationPermission() {
@@ -355,13 +370,20 @@ export async function requestImportNotificationPermission() {
   }
 }
 
-export function showImportCompletionToast(job, { dossierName = "" } = {}) {
-  if (!job || job.status === "failed") return;
+export function showImportCompletionToast(job, { dossierName = "", clientId = null } = {}) {
+  if (!job) return;
   markImportJobSeen(job.id);
 
   const message = formatImportCompletionMessage(job);
   const prefix = dossierName ? `${dossierName} — ` : "";
   const text = `${prefix}${message}`;
+  const isAnalysis = Boolean(job.options?.analysis_from_documents);
+  const title = job.status === "failed"
+    ? (isAnalysis ? "Analyse échouée" : "Import échoué")
+    : (isAnalysis ? "Analyse IA terminée" : "Import terminé");
+  const linkUrl = clientId
+    ? workspacePageUrl(clientId, job.dossier_id, { tab: "review" })
+    : importJobPageUrl(job, job.dossier_id, clientId);
 
   let container = document.getElementById("importToastContainer");
   if (!container) {
@@ -375,10 +397,10 @@ export function showImportCompletionToast(job, { dossierName = "" } = {}) {
   toast.className = `import-toast import-toast-${job.status === "failed" ? "error" : "success"}`;
   toast.innerHTML = `
     <div class="import-toast-body">
-      <strong>${job.status === "failed" ? "Import échoué" : "Import terminé"}</strong>
+      <strong>${title}</strong>
       <p>${text}</p>
     </div>
-    <a class="import-toast-link" href="${importJobPageUrl(job)}">Voir</a>
+    <a class="import-toast-link" href="${linkUrl}">Voir</a>
   `;
   container.appendChild(toast);
 
@@ -389,7 +411,7 @@ export function showImportCompletionToast(job, { dossierName = "" } = {}) {
 
   if (shouldNotifyImportCompletion(job) && "Notification" in window && Notification.permission === "granted") {
     try {
-      new Notification(job.status === "failed" ? "Import échoué" : "Import terminé", {
+      new Notification(title, {
         body: text,
         tag: `import-job-${job.id}`,
       });
@@ -927,4 +949,42 @@ export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {
     stopped = true;
     clearInterval(timer);
   };
+}
+
+export function countPendingAnalysis(documents, workspace) {
+  const lines = workspace?.lines || [];
+  const bank = workspace?.bank_transactions || [];
+  const processedKeys = new Set();
+
+  for (const line of lines) {
+    for (const key of documentIdentityKeys(line.source_file || "")) {
+      processedKeys.add(key);
+    }
+    if (line.source_id) processedKeys.add(`sid:${line.source_id}`);
+  }
+
+  let invoicePending = 0;
+  let bankPending = 0;
+
+  for (const doc of documents || []) {
+    if (doc.doc_type === "invoice") {
+      const sid = doc.source_id ? `sid:${doc.source_id}` : null;
+      const keys = documentIdentityKeys(doc.original_filename || "");
+      const processed = (sid && processedKeys.has(sid))
+        || [...keys].some((key) => processedKeys.has(key));
+      if (!processed) invoicePending += 1;
+    } else if (doc.doc_type === "bank" && bank.length === 0) {
+      bankPending += 1;
+    }
+  }
+
+  return {
+    invoicePending,
+    bankPending,
+    total: invoicePending + bankPending,
+  };
+}
+
+export async function launchDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "" } = {}) {
+  return apiStartDossierAnalysis(apiUrl, dossierId, { docType, clientIce });
 }

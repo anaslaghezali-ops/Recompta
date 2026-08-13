@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=jobs6" />
+  <link rel="stylesheet" href="dashboard.css?v=review1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -57,12 +57,13 @@
               <span id="importBannerPercent">0%</span>
             </div>
           </div>
-          <button type="button" id="importBannerBtn" class="dash-btn dash-btn-sm">Voir l'import</button>
+          <button type="button" id="importBannerBtn" class="dash-btn dash-btn-sm">Détails</button>
         </div>
 
         <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
           <button type="button" class="active" data-tab="cockpit" role="tab">Période active</button>
           <button type="button" data-tab="documents" role="tab">Documents</button>
+          <button type="button" data-tab="review" role="tab">Revue & export</button>
           <button type="button" data-tab="history" role="tab">Historique des périodes</button>
         </div>
 
@@ -118,6 +119,24 @@
               </div>
             </div>
 
+            <section class="ws-section ws-analysis-card" id="analysisCard" hidden>
+              <div class="ws-analysis-inner">
+                <div class="ws-analysis-copy">
+                  <h2><i data-lucide="sparkles"></i> Analyse IA</h2>
+                  <p id="analysisHint">Importez vos documents puis lancez l'extraction en arrière-plan. Vous serez averti à la fin.</p>
+                  <p class="ws-analysis-meta" id="analysisMeta"></p>
+                </div>
+                <div class="ws-analysis-actions">
+                  <button type="button" class="dash-btn dash-btn-primary" id="launchAnalysisBtn">
+                    <i data-lucide="play"></i> Lancer l'analyse IA
+                  </button>
+                  <button type="button" class="dash-btn" id="openReviewBtn" hidden>
+                    <i data-lucide="table-2"></i> Voir la revue
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <section class="ws-section">
               <h2>Pipeline de production</h2>
               <div class="ws-pipeline-steps" id="pipelineSteps"></div>
@@ -164,6 +183,51 @@
           </section>
         </div>
 
+        <div id="reviewView" hidden>
+          <section class="ws-section ws-review-panel" id="reviewPanel">
+            <div class="ws-review-header">
+              <div>
+                <h2>Revue des lignes & export TVA</h2>
+                <p class="hint">Corrigez les anomalies puis exportez le fichier Excel DED TVA.</p>
+              </div>
+              <div class="ws-review-badges">
+                <span id="reviewLineCount" class="ws-review-badge muted">0 ligne(s)</span>
+                <span id="reviewAnomalyBadge" class="ws-review-badge warn" hidden>0 à relire</span>
+                <span id="reviewDuplicateBadge" class="ws-review-badge danger" hidden>0 doublon(s)</span>
+              </div>
+            </div>
+            <div class="ws-review-toolbar">
+              <button type="button" class="dash-btn dash-btn-sm" id="reviewAnomaliesToggle">
+                <i data-lucide="filter"></i> Anomalies seulement
+              </button>
+              <button type="button" class="dash-btn dash-btn-sm danger" id="reviewRemoveDuplicatesBtn" hidden>
+                Supprimer les doublons
+              </button>
+              <button type="button" class="dash-btn dash-btn-primary" id="reviewExportBtn" disabled>
+                <i data-lucide="download"></i> Exporter Excel
+              </button>
+            </div>
+            <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
+            <div id="reviewEmptyState" class="ws-empty">
+              <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
+              <h3>Aucune ligne extraite</h3>
+              <p>Importez des factures puis lancez l'analyse IA depuis l'onglet Période active.</p>
+            </div>
+            <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
+              <table class="ws-review-table">
+                <thead>
+                  <tr>
+                    <th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th>
+                    <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
+                    <th>Date fact.</th><th>Date paie</th><th></th>
+                  </tr>
+                </thead>
+                <tbody id="reviewTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
         <div id="historyView" hidden>
           <section class="ws-section">
             <div class="ws-history-header">
@@ -207,6 +271,30 @@
     </form>
   </dialog>
 
+  <dialog id="reviewExportDialog" class="dash-modal">
+    <form method="dialog" class="dash-modal-inner">
+      <h3>Vérification avant export</h3>
+      <p id="reviewExportIntro" class="hint"></p>
+      <ul id="reviewExportList" class="ws-export-review-list"></ul>
+      <div class="dash-form-actions">
+        <button type="submit" class="dash-btn" value="cancel">Annuler</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="reviewExportConfirm">Exporter quand même</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="reviewFieldBulkDialog" class="dash-modal">
+    <form method="dialog" class="dash-modal-inner">
+      <h3 id="reviewFieldBulkTitle">Valeur modifiée</h3>
+      <p id="reviewFieldBulkIntro" class="hint"></p>
+      <div class="dash-form-actions">
+        <button type="submit" class="dash-btn" value="cancel">Cette ligne seulement</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="reviewFieldBulkApplyAll">Appliquer partout</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth6";
     import {
@@ -220,7 +308,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
-    import { listClientActivity } from "./dossier-persistence.js?v=persist1";
+    import { listClientActivity, loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
@@ -232,15 +320,17 @@
     import {
       formatActiveImportLabel,
       getActiveImportSummary,
-      importJobPageUrl,
       jobProgressPercent,
       JOB_STATUS_LABELS,
+      countPendingAnalysis,
+      launchDossierAnalysis,
       reconcileStaleImportJobs,
       showImportCompletionToast,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs13";
-    import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace3";
+    } from "./import-jobs-client.js?v=jobs14";
+    import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js?v=api3";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace4";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review1";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -253,6 +343,8 @@
     const params = new URLSearchParams(window.location.search);
     const clientId = Number(params.get("client"));
     const dossierParam = params.get("dossier") ? Number(params.get("dossier")) : null;
+    const tabParam = params.get("tab");
+    const viewParam = params.get("view");
 
     const sidebarMount = document.getElementById("sidebarMount");
     const monthGrid = document.getElementById("monthGrid");
@@ -271,13 +363,40 @@
     let cockpit = null;
     let selectedYear = new Date().getFullYear();
     let selectedDossierId = null;
-    let activeTab = "cockpit";
+    let activeTab = tabParam || "cockpit";
     let importPollTimer = null;
     let hadActiveImport = false;
     let stopCompletionWatcher = null;
     let activeImportJob = null;
     let documentsCache = [];
     let documentFilter = "all";
+    let pendingAnalysisCount = 0;
+    let reviewController = null;
+    let analysisInFlight = false;
+
+    function getReviewContext() {
+      if (!cockpit?.dossier || !client) return null;
+      return {
+        dossierId: cockpit.dossier.id,
+        clientId: client.id,
+        clientName: client.name,
+        clientIce: client.ice,
+        periodYear: cockpit.dossier.period_year,
+        periodMonth: cockpit.dossier.period_month,
+      };
+    }
+
+    function ensureReviewController() {
+      if (reviewController) return reviewController;
+      const panel = document.getElementById("reviewPanel");
+      if (!panel) return null;
+      reviewController = createWorkspaceReview({
+        mountEl: panel,
+        getContext: getReviewContext,
+        onStateChange: () => reloadCockpit(selectedDossierId).catch(() => {}),
+      });
+      return reviewController;
+    }
 
     function showPeriodError(message) {
       periodError.hidden = !message;
@@ -324,13 +443,115 @@
         if (apiUrl) ensureImportWorkerRunning(apiUrl, { limit: 3 }).catch(() => {});
       }
       startImportPolling();
+      renderAnalysisCard().catch(() => {});
       initLucide();
     }
 
     function openActiveImportPage() {
       if (!activeImportJob) return;
-      const url = importJobPageUrl(activeImportJob, selectedDossierId);
-      window.location.href = url;
+      setTab("cockpit");
+      document.getElementById("analysisCard")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    async function renderAnalysisCard() {
+      const card = document.getElementById("analysisCard");
+      const hint = document.getElementById("analysisHint");
+      const meta = document.getElementById("analysisMeta");
+      const launchBtn = document.getElementById("launchAnalysisBtn");
+      const openReviewBtn = document.getElementById("openReviewBtn");
+
+      if (!card || !cockpit?.hasPeriod) {
+        card?.setAttribute("hidden", "");
+        return;
+      }
+
+      card.hidden = false;
+      const hasLines = cockpit.lineCount > 0;
+      const isRunning = Boolean(activeImportJob);
+      openReviewBtn.hidden = !hasLines;
+
+      if (isRunning) {
+        const percent = jobProgressPercent(activeImportJob);
+        hint.textContent = `${JOB_STATUS_LABELS[activeImportJob.status] || "Analyse"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`;
+        meta.textContent = "Traitement en arrière-plan — vous pouvez quitter cette page.";
+        launchBtn.disabled = true;
+        launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Analyse en cours…';
+      } else if (pendingAnalysisCount > 0) {
+        hint.textContent = `${pendingAnalysisCount} document(s) prêt(s) à analyser.`;
+        meta.textContent = "L'extraction IA démarre sur le serveur — notification à la fin.";
+        launchBtn.disabled = analysisInFlight;
+        launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+      } else if (hasLines) {
+        hint.textContent = "Extraction terminée. Passez à la revue pour corriger et exporter.";
+        meta.textContent = cockpit.anomalyCount > 0
+          ? `${cockpit.anomalyCount} anomalie(s) à corriger.`
+          : "Aucune anomalie détectée.";
+        launchBtn.disabled = true;
+        launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
+      } else {
+        hint.textContent = "Importez des factures ou relevés, puis lancez l'analyse ici.";
+        meta.textContent = "L'upload et l'analyse sont séparés : vous contrôlez quand démarrer.";
+        launchBtn.disabled = true;
+        launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+      }
+      initLucide();
+    }
+
+    async function refreshPendingAnalysis() {
+      if (!selectedDossierId) {
+        pendingAnalysisCount = 0;
+        return;
+      }
+      try {
+        if (!documentsCache.length) {
+          documentsCache = await listDossierDocuments(selectedDossierId);
+        }
+        const workspace = await loadDossierWorkspace(selectedDossierId);
+        pendingAnalysisCount = countPendingAnalysis(documentsCache, workspace).total;
+      } catch {
+        pendingAnalysisCount = 0;
+      }
+    }
+
+    async function handleLaunchAnalysis() {
+      if (!selectedDossierId || analysisInFlight || activeImportJob) return;
+      const apiUrl = getApiUrl();
+      if (!apiUrl) {
+        alert("Configurez l'URL du Codespace (port 8000) dans les paramètres d'import.");
+        return;
+      }
+
+      analysisInFlight = true;
+      renderAnalysisCard();
+      try {
+        await refreshPendingAnalysis();
+        const invoiceResult = pendingAnalysisCount > 0
+          ? await launchDossierAnalysis(apiUrl, selectedDossierId, {
+            docType: "invoice",
+            clientIce: client?.ice || "",
+          })
+          : { queued_jobs: 0 };
+        const bankPending = countPendingAnalysis(documentsCache, await loadDossierWorkspace(selectedDossierId)).bankPending;
+        let bankResult = { queued_jobs: 0 };
+        if (bankPending > 0) {
+          bankResult = await launchDossierAnalysis(apiUrl, selectedDossierId, {
+            docType: "bank",
+            clientIce: client?.ice || "",
+          });
+        }
+        const totalQueued = (invoiceResult.queued_jobs || 0) + (bankResult.queued_jobs || 0);
+        if (!totalQueued) {
+          alert(invoiceResult.message || "Aucun document en attente d'analyse.");
+        } else {
+          await ensureImportWorkerRunning(apiUrl, { limit: 3 });
+          await renderImportBanner();
+        }
+      } catch (error) {
+        alert(error.message || "Impossible de lancer l'analyse.");
+      } finally {
+        analysisInFlight = false;
+        await renderAnalysisCard();
+      }
     }
 
     function startCompletionWatcher() {
@@ -338,9 +559,10 @@
       const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
       if (!dossierIds.length) return;
       stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
-        showImportCompletionToast(job, { dossierName: client?.name || "" });
+        showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
         if (job.dossier_id === selectedDossierId) {
           reloadCockpit(selectedDossierId).catch(() => {});
+          if (activeTab === "review") ensureReviewController()?.load();
         }
       });
     }
@@ -483,13 +705,14 @@
       if (dossierId) window.location.href = `import-achats.html?dossier=${dossierId}`;
     }
 
-    function setTab(tab) {
+    function setTab(tab, { view = null } = {}) {
       activeTab = tab;
       document.querySelectorAll("#viewTabs [data-tab]").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.tab === tab);
       });
       document.getElementById("cockpitView").hidden = tab !== "cockpit";
       document.getElementById("documentsView").hidden = tab !== "documents";
+      document.getElementById("reviewView").hidden = tab !== "review";
       document.getElementById("historyView").hidden = tab !== "history";
       if (tab === "history") {
         renderYearTabs();
@@ -497,6 +720,11 @@
       }
       if (tab === "documents") {
         renderDocuments();
+      }
+      if (tab === "review") {
+        const review = ensureReviewController();
+        review?.load();
+        if (view === "anomalies") review?.setAnomaliesOnly(true);
       }
       initLucide();
     }
@@ -595,27 +823,54 @@
       document.getElementById("kpiDeadlineWrap").classList.toggle("dash-kpi-alert", cockpit.isLate);
 
       document.getElementById("pipelineSteps").innerHTML = cockpit.pipeline.map((step) => `
-        <button type="button" class="ws-pipeline-step ${step.status}" data-href="${step.href || ""}" ${step.href ? "" : "disabled"}>
+        <button type="button" class="ws-pipeline-step ${step.status}"
+          data-href="${step.href || ""}"
+          data-tab="${step.tab || ""}"
+          data-view="${step.view || ""}"
+          data-action="${step.action || ""}"
+          ${step.href || step.tab || step.action ? "" : "disabled"}>
           <span class="ws-pipeline-icon"><i data-lucide="${step.icon}"></i></span>
           <span class="ws-pipeline-label">${escapeHtml(step.label)}</span>
           <span class="ws-pipeline-desc">${escapeHtml(step.desc)}</span>
         </button>
       `).join("");
 
-      document.getElementById("pipelineSteps").querySelectorAll("[data-href]").forEach((btn) => {
+      document.getElementById("pipelineSteps").querySelectorAll(".ws-pipeline-step").forEach((btn) => {
         const href = btn.dataset.href;
-        if (!href) return;
-        btn.addEventListener("click", () => { window.location.href = href; });
+        const tab = btn.dataset.tab;
+        const view = btn.dataset.view;
+        const action = btn.dataset.action;
+        btn.addEventListener("click", () => {
+          if (action === "analysis") {
+            handleLaunchAnalysis();
+            return;
+          }
+          if (tab) {
+            setTab(tab, { view: view || null });
+            return;
+          }
+          if (href) window.location.href = href;
+        });
       });
 
       const cta = document.getElementById("primaryCta");
       const ctaLabel = document.getElementById("primaryCtaLabel");
       ctaLabel.textContent = cockpit.nextAction.label;
-      if (cockpit.nextAction.href) {
+      if (cockpit.nextAction.tab) {
+        cta.href = "#";
+        cta.classList.remove("is-muted");
+        cta.onclick = (event) => {
+          event.preventDefault();
+          if (cockpit.nextAction.action === "analysis") handleLaunchAnalysis();
+          else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
+        };
+      } else if (cockpit.nextAction.href) {
         cta.href = cockpit.nextAction.href;
+        cta.onclick = null;
         cta.classList.remove("is-muted");
       } else {
         cta.href = "#";
+        cta.onclick = null;
         cta.classList.add("is-muted");
       }
 
@@ -623,7 +878,10 @@
         `Dernière activité : ${cockpit.lastActivityLabel}`;
 
       openProductionBtn.onclick = () => {
-        if (cockpit.nextAction?.href) {
+        if (cockpit.nextAction?.tab) {
+          if (cockpit.nextAction.action === "analysis") handleLaunchAnalysis();
+          else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
+        } else if (cockpit.nextAction?.href) {
           window.location.href = cockpit.nextAction.href;
         } else if (selectedDossierId) {
           openDossierTool(selectedDossierId);
@@ -633,8 +891,9 @@
       const quickActions = [
         { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
         { icon: "file-input", label: "Achats", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}&view=anomalies` : null },
-        { icon: "file-spreadsheet", label: "Export TVA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "sparkles", label: "Analyse IA", action: "analysis" },
+        { icon: "table-2", label: "Revue", action: "review" },
+        { icon: "file-spreadsheet", label: "Export", action: "review" },
         { icon: "folder-open", label: "Documents", action: "documents" },
       ];
 
@@ -652,10 +911,15 @@
           btn.addEventListener("click", () => { window.location.href = href; });
         } else if (action === "documents") {
           btn.addEventListener("click", () => setTab("documents"));
+        } else if (action === "review") {
+          btn.addEventListener("click", () => setTab("review"));
+        } else if (action === "analysis") {
+          btn.addEventListener("click", () => handleLaunchAnalysis());
         }
       });
 
       renderPeriodSelector();
+      renderAnalysisCard();
       initLucide();
     }
 
@@ -764,7 +1028,22 @@
     }
 
     async function reloadCockpit(preferredDossierId = null) {
-      cockpit = await loadWorkspaceCockpit(client, preferredDossierId || selectedDossierId || dossierParam);
+      const dossierId = preferredDossierId || selectedDossierId || dossierParam;
+      if (dossierId) {
+        try {
+          documentsCache = await listDossierDocuments(dossierId);
+          const workspace = await loadDossierWorkspace(dossierId);
+          pendingAnalysisCount = countPendingAnalysis(documentsCache, workspace).total;
+        } catch {
+          documentsCache = [];
+          pendingAnalysisCount = 0;
+        }
+      } else {
+        documentsCache = [];
+        pendingAnalysisCount = 0;
+      }
+
+      cockpit = await loadWorkspaceCockpit(client, dossierId, { pendingAnalysis: pendingAnalysisCount });
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
       await renderTimeline();
@@ -777,7 +1056,9 @@
         }
       }
       await renderImportBanner();
+      await renderAnalysisCard();
       if (activeTab === "documents") await renderDocuments();
+      if (activeTab === "review") ensureReviewController()?.load();
     }
 
     function openNewPeriodModal(presetMonth) {
@@ -814,6 +1095,7 @@
 
           renderClientHeader();
           await reloadCockpit(dossierParam);
+          if (tabParam) setTab(tabParam, { view: viewParam });
           startCompletionWatcher();
           initLucide();
         }
@@ -821,6 +1103,8 @@
     }
 
     document.getElementById("importBannerBtn")?.addEventListener("click", openActiveImportPage);
+    document.getElementById("launchAnalysisBtn")?.addEventListener("click", handleLaunchAnalysis);
+    document.getElementById("openReviewBtn")?.addEventListener("click", () => setTab("review"));
 
     document.getElementById("docFilters")?.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-filter]");

@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from admin_saas import router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
+from dossier_analysis import queue_dossier_analysis
 from import_job_queue import complete_job_upload
 from import_job_worker import process_pending_import_jobs
 from invoice_extractor import extract_invoice
@@ -304,6 +305,47 @@ async def upload_import_job_file(
 
     asyncio.create_task(kick_worker())
     return {"job": job}
+
+
+@app.post("/api/dossiers/{dossier_id}/analyze")
+async def analyze_dossier_documents(
+    dossier_id: int,
+    doc_type: str = "invoice",
+    client_ice: str = "",
+) -> dict:
+    """Lance l'analyse IA en arrière-plan pour les documents stockés non encore traités."""
+    if not import_worker_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
+        )
+    if doc_type not in {"invoice", "bank"}:
+        raise HTTPException(status_code=400, detail="doc_type doit être invoice ou bank.")
+
+    try:
+        result = await queue_dossier_analysis(
+            dossier_id,
+            doc_type=doc_type,
+            client_ice=client_ice.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if result.get("queued_jobs", 0) > 0:
+
+        async def kick_worker() -> None:
+            try:
+                await process_pending_import_jobs(max_jobs=3)
+            except Exception:  # noqa: BLE001
+                import traceback
+
+                traceback.print_exc()
+
+        asyncio.create_task(kick_worker())
+
+    return result
 
 
 @app.post("/api/import-jobs/process")
