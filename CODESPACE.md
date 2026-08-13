@@ -48,6 +48,11 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
    https://votre-codespace-8000.app.github.dev
    ```
 
+> **À refaire après chaque redémarrage du Codespace.** La visibilité revient à
+> **Privée** par défaut. Un port privé renvoie la page d'authentification GitHub
+> au lieu de l'API, ce que le navigateur signale comme une **erreur CORS**
+> (`No 'Access-Control-Allow-Origin' header`). Le serveur n'est pas en cause.
+
 ### 4. Sur la page GitHub (votre vraie interface)
 
 1. Ouvrez **https://anaslaghezali-ops.github.io/Recompta/**
@@ -75,6 +80,25 @@ C'est enregistré dans votre navigateur — vous n'avez pas à refaire à chaque
 ## Si l'URL Codespace change
 
 À chaque **nouveau** Codespace, l'URL `*.app.github.dev` change → recopiez-la dans GitHub Pages et retestez.
+
+---
+
+## Erreur CORS lors de l'extraction
+
+```
+Access to fetch ... has been blocked by CORS policy:
+No 'Access-Control-Allow-Origin' header is present
+```
+
+Dans l'ordre :
+
+1. **Port 8000 en Public** (cause n°1 — voir étape 3 ci-dessus)
+2. **uvicorn tourne toujours** — vérifiez le terminal du Codespace
+3. **URL à jour** dans GitHub Pages si le Codespace a été recréé
+
+Le serveur autorise déjà toutes les origines et renvoie ses erreurs en JSON
+avec les en-têtes CORS : un vrai plantage s'affiche donc comme un message
+d'erreur lisible, pas comme une erreur CORS.
 
 ---
 

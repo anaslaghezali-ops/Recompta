@@ -15,9 +15,39 @@ export function saveApiUrl(url) {
   else localStorage.removeItem(STORAGE_KEY);
 }
 
+const UNREACHABLE_HINT =
+  "Serveur injoignable. Dans le Codespace : onglet Ports → 8000 → clic droit → " +
+  "Port Visibility → Public. La visibilité redevient Privée à chaque redémarrage du Codespace.";
+
+async function fetchOrExplain(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch {
+    throw new Error(UNREACHABLE_HINT);
+  }
+}
+
+async function errorFromResponse(response) {
+  let detail = "";
+  try {
+    const body = await response.text();
+    try {
+      detail = JSON.parse(body).detail || body;
+    } catch {
+      detail = body;
+    }
+  } catch {
+    detail = "";
+  }
+  if (response.status === 302 || response.status === 401 || response.status === 403) {
+    return new Error(UNREACHABLE_HINT);
+  }
+  return new Error(detail || `Erreur serveur (${response.status})`);
+}
+
 export async function fetchServerHealth(apiUrl) {
-  const response = await fetch(`${apiUrl}/api/health`);
-  if (!response.ok) throw new Error(`Serveur injoignable (${response.status})`);
+  const response = await fetchOrExplain(`${apiUrl}/api/health`);
+  if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }
 
@@ -31,15 +61,12 @@ export async function extractViaServer(files, apiUrl, { onProgress, clientIce } 
 
   if (onProgress) onProgress(0, files.length, "Envoi au serveur IA…");
 
-  const response = await fetch(`${apiUrl}/api/extract`, {
+  const response = await fetchOrExplain(`${apiUrl}/api/extract`, {
     method: "POST",
     body: formData,
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Erreur serveur (${response.status})`);
-  }
+  if (!response.ok) throw await errorFromResponse(response);
 
   if (onProgress) onProgress(files.length, files.length, "Terminé");
   return response.json();
