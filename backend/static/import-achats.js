@@ -16,8 +16,10 @@ import {
   extractViaServer,
   fetchServerHealth,
   getApiUrl,
+  kickImportJobWorker,
   saveApiUrl,
 } from "./api-client.js";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
@@ -282,6 +284,11 @@ async function runQueue() {
     els.progressBar.style.width = "100%";
     setStatus("Import lancé — traitement en arrière-plan", "success");
 
+    const apiUrl = resolvedApiUrl();
+    if (apiUrl) {
+      kickImportJobWorker(apiUrl).catch(() => {});
+    }
+
     await renderJobsPanel();
     startJobsPolling();
   } catch (error) {
@@ -347,12 +354,24 @@ function startJobsPolling() {
   stopJobPolling?.();
   stopJobPolling = startImportJobPolling(session.dossierId, async (jobs) => {
     if (!jobs.length) {
+      await reloadSessionLines();
       await renderJobsPanel();
       return;
     }
     els.jobsPanel.hidden = false;
     els.jobsList.innerHTML = jobs.map(renderJobRow).join("");
+    initLucide();
   });
+}
+
+async function reloadSessionLines() {
+  const workspace = await loadDossierWorkspace(session.dossierId);
+  session.lines = workspace?.lines || [];
+  session.updatedAt = workspace?.updated_at || session.updatedAt;
+  renderLinesTable();
+  if (session.lines.length) {
+    setStatus(`Dernière sauvegarde : ${new Date(session.updatedAt || Date.now()).toLocaleString("fr-FR")}`, "success");
+  }
 }
 
 async function runExtract() {

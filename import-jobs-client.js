@@ -15,6 +15,8 @@ export const JOB_STATUS_LABELS = {
 function nextSourceId() {
   return `src-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+function sanitizeFilename(name) {
   const base = (name || "document").split(/[/\\]/).pop();
   return base.replace(/[^\w.\- ()àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]/gi, "_").slice(0, 180);
 }
@@ -80,7 +82,8 @@ export function jobProgressPercent(job) {
   if (job.status === "processing" || job.status === "completed" || job.status === "failed") {
     return Math.round((job.processed_files / job.total_files) * 100);
   }
-  return job.uploaded_files >= job.total_files ? 100 : 0;
+  if (job.status === "queued") return 0;
+  return 0;
 }
 
 /**

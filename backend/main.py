@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from admin_saas import router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
+from import_job_worker import process_pending_import_jobs
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
 from normalize_results import (
@@ -66,6 +67,45 @@ app.add_middleware(
 # chaque extraction. On le met en cache pour ne pas le payer à chaque import.
 _KEY_CHECK_TTL = 60.0
 _key_check_cache: dict[str, float | bool | str] = {"at": 0.0, "verified": False, "message": ""}
+_worker_task: asyncio.Task | None = None
+
+
+def import_worker_enabled() -> bool:
+    if os.getenv("IMPORT_WORKER_ENABLED", "1").strip().lower() in {"0", "false", "no"}:
+        return False
+    return bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+
+
+async def _import_worker_loop() -> None:
+    poll_seconds = float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8"))
+    while True:
+        try:
+            if import_worker_enabled():
+                await process_pending_import_jobs(max_jobs=1)
+        except Exception:  # noqa: BLE001
+            import traceback
+
+            traceback.print_exc()
+        await asyncio.sleep(poll_seconds)
+
+
+@app.on_event("startup")
+async def start_import_worker() -> None:
+    global _worker_task
+    if import_worker_enabled():
+        _worker_task = asyncio.create_task(_import_worker_loop())
+
+
+@app.on_event("shutdown")
+async def stop_import_worker() -> None:
+    global _worker_task
+    if _worker_task is not None:
+        _worker_task.cancel()
+        try:
+            await _worker_task
+        except asyncio.CancelledError:
+            pass
+        _worker_task = None
 
 
 @app.get("/api/health")
@@ -219,6 +259,16 @@ async def import_bank_statement(
     upload_name = file.filename or "releve_bancaire"
     mime_type = file.content_type or "application/octet-stream"
     return await extract_bank_statement(upload_name, content, mime_type)
+
+
+@app.post("/api/import-jobs/process")
+async def process_import_jobs(limit: int = 1) -> dict:
+    """Déclenche le traitement des jobs en file d'attente (worker asynchrone)."""
+    try:
+        results = await process_pending_import_jobs(max_jobs=max(1, min(limit, 3)))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"processed_jobs": len(results), "results": results}
 
 
 @app.post("/api/export")
