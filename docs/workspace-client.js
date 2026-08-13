@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio1";
+} from "./portfolio-client.js?v=portfolio2";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
