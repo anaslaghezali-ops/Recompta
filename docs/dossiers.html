@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=dash1" />
+  <link rel="stylesheet" href="dashboard.css?v=portfolio1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -21,7 +21,7 @@
           </button>
           <div>
             <h1>Portefeuille clients</h1>
-            <p id="topbarSubtitle">Vue d'ensemble de vos dossiers TVA</p>
+            <p id="topbarSubtitle">Sur quels clients travailler aujourd'hui ?</p>
           </div>
         </div>
         <div class="dash-topbar-actions">
@@ -38,21 +38,42 @@
         </div>
       </header>
 
-      <main class="dash-content">
-        <div class="dash-kpi-row" id="kpiRow">
-          <div class="dash-kpi"><div class="dash-kpi-label">Clients</div><div class="dash-kpi-value" id="kpiClients">—</div></div>
-          <div class="dash-kpi"><div class="dash-kpi-label">Périodes ouvertes</div><div class="dash-kpi-value" id="kpiOpen">—</div></div>
-          <div class="dash-kpi"><div class="dash-kpi-label">En revue</div><div class="dash-kpi-value" id="kpiReview">—</div></div>
-          <div class="dash-kpi"><div class="dash-kpi-label">À déclarer</div><div class="dash-kpi-value" id="kpiDraft">—</div></div>
+      <main class="dash-content dash-portfolio">
+        <div class="dash-portfolio-kpis" id="kpiRow">
+          <div class="dash-kpi" id="kpiActiveWrap">
+            <div class="dash-kpi-label">Clients actifs</div>
+            <div class="dash-kpi-value" id="kpiActive">—</div>
+            <div class="dash-kpi-hint">En production TVA</div>
+          </div>
+          <div class="dash-kpi" id="kpiPeriodsWrap">
+            <div class="dash-kpi-label">Périodes en cours</div>
+            <div class="dash-kpi-value" id="kpiPeriods">—</div>
+            <div class="dash-kpi-hint">Ouvertes dans le cabinet</div>
+          </div>
+          <div class="dash-kpi" id="kpiExceptionsWrap">
+            <div class="dash-kpi-label">Exceptions IA</div>
+            <div class="dash-kpi-value" id="kpiExceptions">—</div>
+            <div class="dash-kpi-hint">Anomalies à corriger</div>
+          </div>
+          <div class="dash-kpi dash-kpi-success" id="kpiExportsWrap">
+            <div class="dash-kpi-label">Exports prêts</div>
+            <div class="dash-kpi-value" id="kpiExports">—</div>
+            <div class="dash-kpi-hint">Périodes clôturées</div>
+          </div>
+          <div class="dash-kpi" id="kpiLateWrap">
+            <div class="dash-kpi-label">TVA en retard</div>
+            <div class="dash-kpi-value" id="kpiLate">—</div>
+            <div class="dash-kpi-hint">Échéance dépassée</div>
+          </div>
         </div>
 
-        <div class="dash-toolbar">
-          <div class="dash-toolbar-filters" id="statusFilters">
-            <button type="button" class="dash-filter-chip active" data-filter="all">Tous</button>
-            <button type="button" class="dash-filter-chip" data-filter="active">En cours</button>
-            <button type="button" class="dash-filter-chip" data-filter="review">En revue</button>
-            <button type="button" class="dash-filter-chip" data-filter="new">Nouveaux</button>
-          </div>
+        <div class="dash-segmented" id="statusFilters" role="tablist" aria-label="Filtrer le portefeuille">
+          <button type="button" class="active" data-filter="all" role="tab">Tous <span class="dash-segmented-count" data-count="all">0</span></button>
+          <button type="button" data-filter="priority" role="tab">Prioritaires <span class="dash-segmented-count" data-count="priority">0</span></button>
+          <button type="button" data-filter="late" role="tab">En retard <span class="dash-segmented-count" data-count="late">0</span></button>
+          <button type="button" data-filter="validate" role="tab">À valider <span class="dash-segmented-count" data-count="validate">0</span></button>
+          <button type="button" data-filter="done" role="tab">Terminés <span class="dash-segmented-count" data-count="done">0</span></button>
+          <button type="button" data-filter="mine" role="tab">Mes clients <span class="dash-segmented-count" data-count="mine">0</span></button>
         </div>
 
         <div id="listHint" class="dash-empty" hidden>
@@ -64,7 +85,21 @@
           </button>
         </div>
 
-        <div id="clientsGrid" class="dash-client-grid" hidden></div>
+        <div id="portfolioList" class="dash-portfolio-list" hidden>
+          <div class="dash-portfolio-head" aria-hidden="true">
+            <span></span>
+            <span>Client</span>
+            <span>Période</span>
+            <span>Progression</span>
+            <span>Ops</span>
+            <span>Anom.</span>
+            <span>Activité</span>
+            <span>Prochaine action</span>
+            <span>Priorité</span>
+            <span></span>
+          </div>
+          <div class="dash-portfolio-rows" id="portfolioRows"></div>
+        </div>
       </main>
     </div>
   </div>
@@ -89,33 +124,44 @@
 
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth5";
-    import {
-      computeClientStats,
-      createClient,
-      formatRelativeTime,
-      listClientsWithDossiers,
-      requireCabinetSession,
-    } from "./dossiers-client.js?v=dash2";
+    import { createClient, requireCabinetSession } from "./dossiers-client.js?v=dash2";
     import {
       bindSidebarMobile,
       escapeHtml,
       initLucide,
       renderBadge,
+      renderPriorityBadge,
       sidebarHtml,
-    } from "./dashboard-ui.js?v=dash1";
+    } from "./dashboard-ui.js?v=portfolio1";
+    import {
+      computePortfolioKpis,
+      listPortfolioRows,
+      matchesPortfolioFilter,
+    } from "./portfolio-client.js?v=portfolio1";
 
-    const sidebarMount = document.getElementById("sidebarMount");
-    const clientsGrid = document.getElementById("clientsGrid");
+    const portfolioRows = document.getElementById("portfolioRows");
+    const portfolioList = document.getElementById("portfolioList");
     const listHint = document.getElementById("listHint");
     const searchInput = document.getElementById("searchInput");
+    const sidebarMount = document.getElementById("sidebarMount");
     const newClientDialog = document.getElementById("newClientDialog");
     const newClientForm = document.getElementById("newClientForm");
     const clientName = document.getElementById("clientName");
     const clientIce = document.getElementById("clientIce");
     const clientError = document.getElementById("clientError");
 
+    const FILTER_LABELS = {
+      all: "all",
+      priority: "priority",
+      late: "late",
+      validate: "validate",
+      done: "done",
+      mine: "mine",
+    };
+
     let cabinetId = null;
-    let allClients = [];
+    let userId = null;
+    let allRows = [];
     let activeFilter = "all";
     let searchQuery = "";
 
@@ -128,45 +174,131 @@
       window.location.href = `workspace.html?client=${clientId}`;
     }
 
-    function matchesFilter(client, stats) {
-      if (activeFilter === "all") return true;
-      if (activeFilter === "new") return stats.periodCount === 0;
-      if (activeFilter === "review") return stats.statusKey === "in_review";
-      if (activeFilter === "active") return stats.openCount > 0;
-      return true;
-    }
-
-    function matchesSearch(client) {
+    function matchesSearch(row) {
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
-      return client.name.toLowerCase().includes(q) || client.ice.includes(q);
+      return row.name.toLowerCase().includes(q) || row.ice.includes(q);
     }
 
-    function updateKpis(clients) {
-      const statsList = clients.map((c) => computeClientStats(c));
-      document.getElementById("kpiClients").textContent = String(clients.length);
-      document.getElementById("kpiOpen").textContent = String(
-        statsList.reduce((sum, s) => sum + s.openCount, 0),
-      );
-      document.getElementById("kpiReview").textContent = String(
-        statsList.filter((s) => s.statusKey === "in_review").length,
-      );
-      document.getElementById("kpiDraft").textContent = String(
-        statsList.filter((s) => s.statusKey === "draft" && s.periodCount > 0).length,
-      );
+    function countByFilter(filter) {
+      return allRows.filter((row) => matchesPortfolioFilter(row, filter, userId)).length;
     }
 
-    function renderClients() {
-      const filtered = allClients.filter((client) => {
-        const stats = computeClientStats(client);
-        return matchesFilter(client, stats) && matchesSearch(client);
+    function updateFilterCounts() {
+      for (const key of Object.values(FILTER_LABELS)) {
+        const el = document.querySelector(`[data-count="${key}"]`);
+        if (el) el.textContent = String(countByFilter(key));
+      }
+    }
+
+    function updateKpis(rows) {
+      const kpis = computePortfolioKpis(rows);
+      document.getElementById("kpiActive").textContent = String(kpis.activeClients);
+      document.getElementById("kpiPeriods").textContent = String(kpis.periodsInProgress);
+      document.getElementById("kpiExceptions").textContent = String(kpis.aiExceptions);
+      document.getElementById("kpiExports").textContent = String(kpis.exportsReady);
+      document.getElementById("kpiLate").textContent = String(kpis.tvaLate);
+
+      document.getElementById("kpiExceptionsWrap").classList.toggle("dash-kpi-warn", kpis.aiExceptions > 0);
+      document.getElementById("kpiLateWrap").classList.toggle("dash-kpi-alert", kpis.tvaLate > 0);
+    }
+
+    function priorityClass(row) {
+      const tone = row.priority?.tone || "neutral";
+      if (tone === "danger") return "priority-danger";
+      if (tone === "warn") return "priority-warn";
+      if (tone === "accent") return "priority-accent";
+      if (tone === "success") return "priority-success";
+      return "priority-neutral";
+    }
+
+    function renderRow(row) {
+      const progress = row.isDone ? 100 : row.progress;
+      const anomalyClass = row.anomalyCount > 0 ? "has-anomalies" : "";
+      const nextClass = row.nextAction?.action === "done" ? "is-muted" : "";
+      const periodText = row.periodLabel || "—";
+      const opsText = row.operationCount > 0 ? String(row.operationCount) : "—";
+      const anomalyText = row.anomalyCount > 0 ? String(row.anomalyCount) : "—";
+
+      return `
+        <article class="dash-portfolio-row ${priorityClass(row)}" data-client-id="${escapeHtml(row.clientId)}" tabindex="0">
+          <div class="dash-portfolio-row-accent" aria-hidden="true"></div>
+          <div class="dash-portfolio-client">
+            <strong class="dash-portfolio-name">${escapeHtml(row.name)}</strong>
+            <span class="dash-portfolio-ice">ICE ${escapeHtml(row.ice)}</span>
+          </div>
+          <div class="dash-portfolio-col period">${escapeHtml(periodText)}</div>
+          <div class="dash-portfolio-col progress">
+            <div class="dash-portfolio-progress">
+              <div class="dash-progress-track" aria-hidden="true">
+                <div class="dash-progress-fill" style="width:${progress}%"></div>
+              </div>
+              <span class="dash-progress-pct">${progress}%</span>
+            </div>
+          </div>
+          <div class="dash-portfolio-col ops">${opsText}</div>
+          <div class="dash-portfolio-col anomalies ${anomalyClass}">${anomalyText}</div>
+          <div class="dash-portfolio-col activity">${escapeHtml(row.lastActivityLabel)}</div>
+          <div class="dash-portfolio-col next">
+            <span class="dash-portfolio-next ${nextClass}">${escapeHtml(row.nextAction?.label || "—")}</span>
+          </div>
+          <div class="dash-portfolio-col status">
+            ${renderPriorityBadge(row.priority)}
+          </div>
+          <div class="dash-portfolio-col">
+            <button type="button" class="dash-btn dash-btn-sm dash-portfolio-open" data-open-client="${escapeHtml(row.clientId)}">
+              Ouvrir
+            </button>
+          </div>
+          <div class="dash-portfolio-row-mobile">
+            <span class="dash-portfolio-mobile-chip">${renderPriorityBadge(row.priority)}</span>
+            <span class="dash-portfolio-mobile-chip">Période <strong>${escapeHtml(periodText)}</strong></span>
+            <span class="dash-portfolio-mobile-chip">Progression <strong>${progress}%</strong></span>
+            <span class="dash-portfolio-mobile-chip">Ops <strong>${opsText}</strong></span>
+            <span class="dash-portfolio-mobile-chip ${row.anomalyCount > 0 ? "is-danger" : ""}">Anomalies <strong>${anomalyText}</strong></span>
+            <span class="dash-portfolio-mobile-chip">${escapeHtml(row.lastActivityLabel)}</span>
+            <span class="dash-portfolio-mobile-chip">→ <strong>${escapeHtml(row.nextAction?.label || "—")}</strong></span>
+            <span class="dash-portfolio-mobile-chip">${renderBadge(row.statusKey, row.statusLabel)}</span>
+          </div>
+        </article>
+      `;
+    }
+
+    function bindRowEvents() {
+      portfolioRows.querySelectorAll(".dash-portfolio-row").forEach((row) => {
+        const clientId = row.dataset.clientId;
+        row.addEventListener("click", (event) => {
+          if (event.target.closest("button")) return;
+          openWorkspace(clientId);
+        });
+        row.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openWorkspace(clientId);
+          }
+        });
+      });
+      portfolioRows.querySelectorAll("[data-open-client]").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openWorkspace(btn.dataset.openClient);
+        });
+      });
+    }
+
+    function renderPortfolio() {
+      const filtered = allRows.filter((row) => {
+        return matchesPortfolioFilter(row, activeFilter, userId) && matchesSearch(row);
       });
 
-      updateKpis(allClients);
+      updateKpis(allRows);
+      updateFilterCounts();
 
-      if (!allClients.length) {
+      if (!allRows.length) {
         listHint.hidden = false;
-        clientsGrid.hidden = true;
+        listHint.querySelector("h3").textContent = "Aucun client";
+        listHint.querySelector("p").textContent = "Ajoutez votre premier client pour commencer le suivi TVA.";
+        portfolioList.hidden = true;
         initLucide();
         return;
       }
@@ -175,50 +307,29 @@
         listHint.hidden = false;
         listHint.querySelector("h3").textContent = "Aucun résultat";
         listHint.querySelector("p").textContent = "Modifiez la recherche ou le filtre.";
-        clientsGrid.hidden = true;
+        portfolioList.hidden = true;
         initLucide();
         return;
       }
 
       listHint.hidden = true;
-      clientsGrid.hidden = false;
-      clientsGrid.innerHTML = filtered.map((client) => {
-        const stats = computeClientStats(client);
-        return `
-          <article class="dash-client-card">
-            <div class="dash-client-card-top">
-              <div>
-                <h3>${escapeHtml(client.name)}</h3>
-                <div class="dash-client-ice">ICE ${escapeHtml(client.ice)}</div>
-              </div>
-              ${renderBadge(stats.statusKey, stats.statusLabel)}
-            </div>
-            <dl class="dash-client-meta">
-              <div><dt>Périodes</dt><dd>${stats.periodCount} ouverte${stats.periodCount > 1 ? "s" : ""}</dd></div>
-              <div><dt>Dernière activité</dt><dd>${escapeHtml(formatRelativeTime(stats.lastActivity))}</dd></div>
-              <div><dt>Dernière période</dt><dd>${escapeHtml(stats.lastPeriod || "—")}</dd></div>
-              <div><dt>En cours</dt><dd>${stats.openCount}</dd></div>
-            </dl>
-            <div class="dash-client-card-footer">
-              <span style="font-size:0.75rem;color:var(--dash-muted);">Dossier TVA mensuel</span>
-              <button type="button" class="dash-btn dash-btn-primary dash-btn-sm" data-open-client="${client.id}">
-                Ouvrir <i data-lucide="arrow-right"></i>
-              </button>
-            </div>
-          </article>
-        `;
-      }).join("");
-
-      clientsGrid.querySelectorAll("[data-open-client]").forEach((btn) => {
-        btn.addEventListener("click", () => openWorkspace(btn.dataset.openClient));
-      });
+      portfolioList.hidden = false;
+      portfolioRows.innerHTML = filtered.map(renderRow).join("");
+      bindRowEvents();
       initLucide();
     }
 
     async function refreshClients() {
-      const clients = await listClientsWithDossiers(cabinetId);
-      allClients = clients;
-      renderClients();
+      portfolioList.hidden = false;
+      portfolioRows.innerHTML = '<div class="dash-portfolio-loading">Chargement du portefeuille…</div>';
+      listHint.hidden = true;
+
+      try {
+        allRows = await listPortfolioRows(cabinetId);
+        renderPortfolio();
+      } catch (error) {
+        portfolioRows.innerHTML = `<div class="dash-portfolio-loading">Erreur : ${escapeHtml(error.message || "chargement impossible")}</div>`;
+      }
     }
 
     function openNewClientModal() {
@@ -232,6 +343,7 @@
     const membership = await requireCabinetSession();
     if (membership) {
       cabinetId = membership.cabinet_id;
+      userId = membership.session?.user?.id || null;
       sidebarMount.innerHTML = sidebarHtml({
         cabinetName: membership.cabinet.name,
         active: "portfolio",
@@ -254,17 +366,17 @@
 
     searchInput.addEventListener("input", () => {
       searchQuery = searchInput.value.trim();
-      renderClients();
+      renderPortfolio();
     });
 
     document.getElementById("statusFilters").addEventListener("click", (event) => {
       const chip = event.target.closest("[data-filter]");
       if (!chip) return;
       activeFilter = chip.dataset.filter;
-      document.querySelectorAll(".dash-filter-chip").forEach((el) => {
+      document.querySelectorAll("#statusFilters [data-filter]").forEach((el) => {
         el.classList.toggle("active", el.dataset.filter === activeFilter);
       });
-      renderClients();
+      renderPortfolio();
     });
 
     clientIce.addEventListener("input", () => {

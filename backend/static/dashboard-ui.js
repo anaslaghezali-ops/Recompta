@@ -19,6 +19,11 @@ export function renderBadge(statusKey, label) {
   return `<span class="dash-badge dash-badge-${tone}">${escapeHtml(label)}</span>`;
 }
 
+export function renderPriorityBadge(priority) {
+  const tone = priority?.tone || "neutral";
+  return `<span class="dash-priority-badge dash-priority-${tone}">${escapeHtml(priority?.label || "")}</span>`;
+}
+
 export function sidebarHtml({ cabinetName, active }) {
   return `
     <aside class="dash-sidebar" id="dashSidebar">
