@@ -189,15 +189,11 @@ export async function parseBankStatementViaServer(file, apiUrl) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${apiUrl}/api/import-bank-statement`, {
+  const response = await fetchWithRetry(`${apiUrl}/api/import-bank-statement`, {
     method: "POST",
     body: formData,
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Erreur serveur (${response.status})`);
-  }
-
+  if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }

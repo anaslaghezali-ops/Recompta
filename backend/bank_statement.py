@@ -12,11 +12,13 @@ from pydantic import BaseModel, Field
 from invoice_extractor import (
     ai_available,
     format_openai_error,
-    pdf_to_png_pages,
+    ocr_image_bytes_async,
+    pdf_to_png_pages_async,
     tesseract_available,
     verify_openai_key,
+    vision_model,
     _image_to_base64,
-    ocr_image_bytes,
+    _post_chat_completion,
 )
 
 BANK_STATEMENT_PROMPT = """Tu analyses un relevé bancaire marocain (PDF ou scan).
@@ -106,20 +108,14 @@ async def _extract_with_ai(filename: str, images: list[tuple[bytes, str]]) -> Ba
         )
 
     payload = {
-        "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+        "model": vision_model(),
         "messages": [{"role": "user", "content": message_content}],
         "response_format": {"type": "json_object"},
         "temperature": 0,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=payload,
-        )
-        response.raise_for_status()
-        content_json = json.loads(response.json()["choices"][0]["message"]["content"])
+    body = await _post_chat_completion(api_key, payload)
+    content_json = json.loads(body["choices"][0]["message"]["content"])
 
     txns = [BankTransaction.model_validate(item) for item in content_json.get("transactions", [])]
     return BankStatementResult(
@@ -141,7 +137,7 @@ async def extract_bank_statement(filename: str, content: bytes, mime_type: str) 
     if mime_type == "application/pdf":
         if ai_available():
             try:
-                pages = pdf_to_png_pages(content, max_pages=5)
+                pages = await pdf_to_png_pages_async(content, max_pages=5)
                 if pages:
                     return await _extract_with_ai(
                         filename, [(page, "image/png") for page in pages]
@@ -153,9 +149,9 @@ async def extract_bank_statement(filename: str, content: bytes, mime_type: str) 
                 )
 
         if tesseract_available():
-            pages = pdf_to_png_pages(content, max_pages=1)
+            pages = await pdf_to_png_pages_async(content, max_pages=1)
             if pages:
-                text = ocr_image_bytes(pages[0])
+                text = await ocr_image_bytes_async(pages[0])
                 txns = _heuristic_from_text(text)
                 return BankStatementResult(
                     filename=filename,
@@ -179,7 +175,7 @@ async def extract_bank_statement(filename: str, content: bytes, mime_type: str) 
                     warnings=[f"Extraction IA échouée ({format_openai_error(exc)})."],
                 )
         if tesseract_available():
-            text = ocr_image_bytes(content)
+            text = await ocr_image_bytes_async(content)
             return BankStatementResult(
                 filename=filename,
                 transactions=_heuristic_from_text(text),
