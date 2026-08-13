@@ -197,9 +197,12 @@
     import { listClientActivity } from "./dossier-persistence.js?v=persist1";
     import {
       formatActiveImportLabel,
+      importJobPageUrl,
       JOB_STATUS_LABELS,
       listImportJobs,
-    } from "./import-jobs-client.js?v=jobs2";
+      showImportCompletionToast,
+      startImportCompletionWatcher,
+    } from "./import-jobs-client.js?v=jobs3";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
@@ -234,6 +237,7 @@
     let activeTab = "cockpit";
     let importPollTimer = null;
     let hadActiveImport = false;
+    let stopCompletionWatcher = null;
 
     function showPeriodError(message) {
       periodError.hidden = !message;
@@ -271,10 +275,21 @@
       document.getElementById("importBannerTitle").textContent =
         JOB_STATUS_LABELS[job.status] || "Import en cours";
       document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
-      document.getElementById("importBannerLink").href =
-        `import-achats.html?dossier=${selectedDossierId}`;
+      document.getElementById("importBannerLink").href = importJobPageUrl(job, selectedDossierId);
       startImportPolling();
       initLucide();
+    }
+
+    function startCompletionWatcher() {
+      stopCompletionWatcher?.();
+      const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
+      if (!dossierIds.length) return;
+      stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
+        showImportCompletionToast(job, { dossierName: client?.name || "" });
+        if (job.dossier_id === selectedDossierId) {
+          reloadCockpit(selectedDossierId).catch(() => {});
+        }
+      });
     }
 
     function startImportPolling() {
@@ -611,6 +626,7 @@
 
           renderClientHeader();
           await reloadCockpit(dossierParam);
+          startCompletionWatcher();
           initLucide();
         }
       }

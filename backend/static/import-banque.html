@@ -44,7 +44,20 @@
               <input id="fileInput" type="file" accept=".csv,.txt,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.webp" />
               <div class="imp-dropzone-icon"><i data-lucide="landmark"></i></div>
               <h3>Déposez votre relevé ici</h3>
-              <p>CSV, Excel ou PDF/image (IA via Codespace)</p>
+              <p>CSV, Excel ou PDF/image — traitement en arrière-plan</p>
+            </div>
+            <div class="imp-actions">
+              <button type="button" class="dash-btn dash-btn-primary" id="queueBtn" disabled>
+                <i data-lucide="cloud-upload"></i> Mettre en file d'attente
+              </button>
+              <button type="button" class="dash-btn" id="loadNowBtn" disabled>
+                <i data-lucide="zap"></i> Charger maintenant
+              </button>
+            </div>
+            <p class="imp-queue-hint" id="queueHint">Le relevé est envoyé sur la plateforme puis analysé en arrière-plan. Vous pouvez quitter cette page.</p>
+            <div class="imp-progress" id="progressPanel" hidden>
+              <p id="progressText">—</p>
+              <div class="imp-progress-track"><div class="imp-progress-fill" id="progressBar"></div></div>
             </div>
             <p class="imp-status" id="statusMessage"></p>
           </section>
@@ -64,6 +77,14 @@
             </div>
           </section>
         </div>
+
+        <section class="imp-card" id="jobsPanel" hidden>
+          <div class="imp-jobs-header">
+            <h2>Imports en cours</h2>
+            <p>Le relevé continue d'être analysé si vous quittez cette page.</p>
+          </div>
+          <div class="imp-jobs-list" id="jobsList"></div>
+        </section>
 
         <div class="imp-stats">
           <div class="imp-stat"><span>Mouvements</span><strong id="txnCount">0</strong></div>
@@ -125,7 +146,7 @@
     </form>
   </dialog>
 
-  <script type="module" src="import-banque.js?v=imp1"></script>
+  <script type="module" src="import-banque.js?v=imp2"></script>
   <script type="module">
     document.getElementById("backBtn").addEventListener("click", (e) => {
       e.preventDefault();
