@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio3";
+} from "./portfolio-client.js?v=portfolio4";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -89,7 +89,7 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
       desc: anomalyCount > 0 ? `${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}` : "Vérification automatique",
       icon: "sparkles",
       status: stepStatus(reviewDone, reviewCurrent),
-      href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
+      href: dossier ? `production.html?dossier=${dossier.id}&view=anomalies` : null,
     },
     {
       key: "validate",

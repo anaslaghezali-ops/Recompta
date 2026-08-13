@@ -510,12 +510,24 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+function isAnomaliesReviewView() {
+  return new URLSearchParams(window.location.search).get("view") === "anomalies";
+}
+
+function lineNeedsReview(line, isDuplicate) {
+  if (isDuplicate) return true;
+  const conf = line.field_confidence || {};
+  return Object.values(conf).some((level) => level === "error" || level === "warn");
+}
+
 function renderTable() {
   refreshAllFieldConfidence();
   els.linesTableBody.innerHTML = "";
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));
+  const anomaliesOnly = isAnomaliesReviewView();
 
   state.lines.forEach((line, index) => {
+    if (anomaliesOnly && !lineNeedsReview(line, duplicates.has(index))) return;
     const tr = document.createElement("tr");
     if (index === state.selectedLineIndex) {
       tr.classList.add("selected-row");
@@ -794,6 +806,12 @@ async function initCabinetAccess() {
   applyDossierContext(context);
   initWorkspacePersistence();
   await loadPersistedWorkspace();
+  if (isAnomaliesReviewView()) {
+    setStep(3);
+    const hint = document.getElementById("anomalyViewHint");
+    if (hint) hint.hidden = false;
+    document.getElementById("reviewSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function persistClientIce() {
