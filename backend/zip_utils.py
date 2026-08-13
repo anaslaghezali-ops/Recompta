@@ -6,6 +6,8 @@ from io import BytesIO
 from pathlib import PurePosixPath
 
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".tif"}
+SKIP_BASENAMES = {".ds_store", "thumbs.db", "desktop.ini"}
+MIN_FILE_BYTES = 400
 EXTENSION_MIME = {
     ".pdf": "application/pdf",
     ".png": "image/png",
@@ -47,9 +49,18 @@ def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
             if info.is_dir():
                 continue
             name = PurePosixPath(info.filename).as_posix()
+            base = PurePosixPath(name).name
+            if not base or base.startswith(".") or base.startswith("._"):
+                continue
+            if base.lower() in SKIP_BASENAMES:
+                continue
             if name.startswith("__MACOSX/") or "/." in name:
                 continue
             if not is_invoice_file(name):
                 continue
-            files.append((name, archive.read(info), mime_for_filename(name)))
+            payload = archive.read(info)
+            if len(payload) < MIN_FILE_BYTES:
+                continue
+            files.append((name, payload, mime_for_filename(name)))
+    files.sort(key=lambda item: item[0].lower())
     return files

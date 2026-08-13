@@ -182,7 +182,7 @@ class SupabaseService:
             f"{self.base}/rest/v1/import_job_files",
             params={
                 "job_id": f"eq.{job_id}",
-                "status": "in.(uploaded,queued)",
+                "status": "in.(uploaded,queued,processing)",
                 "order": "id.asc",
                 "select": "*",
             },
