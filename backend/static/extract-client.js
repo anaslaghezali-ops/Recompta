@@ -259,7 +259,7 @@ function guessDesignation(text) {
   if (/(relevé de compte|releve de compte|agios|frais bancaire)/.test(lowered)) return "FRAIS BANCAIRE";
   // « bon de livraison » accompagne une facture de marchandises : ce n'est pas
   // une prestation de service.
-  if (/\b(prestation|honoraire|frais de service)\b/.test(lowered)) return "PRESTATIONS";
+  if (/\b(prestations?|honoraires?|frais de service)\b/.test(lowered)) return "PRESTATIONS";
   return "MATIERES CONSOMMABLES";
 }
 

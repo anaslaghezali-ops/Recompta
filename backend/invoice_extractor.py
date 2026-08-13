@@ -205,7 +205,7 @@ def _guess_designation(text: str) -> Designation:
         return Designation.FRAIS_BANCAIRE
     # « bon de livraison » accompagne une facture de marchandises : ce n'est pas
     # une prestation de service.
-    if re.search(r"\b(prestation|honoraire|frais de service)\b", lowered) or re.search(
+    if re.search(r"\b(prestations?|honoraires?|frais de service)\b", lowered) or re.search(
         r"(?<!bon de )\bservice de livraison\b", lowered
     ):
         return Designation.PRESTATIONS
