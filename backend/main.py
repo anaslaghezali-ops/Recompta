@@ -10,9 +10,9 @@ _backend_dir = Path(__file__).resolve().parent
 load_dotenv(_backend_dir / ".env")
 load_dotenv(_backend_dir.parent / ".env")
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from excel_export import export_filename, export_to_bytes
@@ -27,12 +27,32 @@ from zip_utils import iter_invoice_files
 
 app = FastAPI(title="Recompta API", version="0.2.0")
 
+
+# Déclaré avant CORSMiddleware pour rester à l'intérieur de celui-ci : une erreur
+# non gérée doit renvoyer un JSON *avec* les en-têtes CORS, sinon le navigateur
+# affiche une erreur CORS trompeuse au lieu du vrai message.
+@app.middleware("http")
+async def json_errors_with_cors(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Erreur serveur : {type(exc).__name__}: {exc}"},
+        )
+
+
+# allow_credentials doit rester False avec allow_origins="*" (spec CORS).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
