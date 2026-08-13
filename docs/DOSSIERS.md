@@ -19,18 +19,29 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 
 1. `supabase/migrations/20260813220000_cabinet_clients_dossiers.sql` → **Run**
 2. Si erreur RLS à la création de dossier : `supabase/migrations/20260813230000_fix_dossiers_rls.sql` → **Run**
+3. Persistance lignes + banque + historique : `supabase/migrations/20260813240000_dossier_workspace_persistence.sql` → **Run**
 
 ## Flux cabinet
 
-1. Connexion avec le compte créé par le super-admin
-2. **Dossiers clients** → ajouter un client (nom + ICE)
-3. **+ Dossier** sur le client → choisir année et mois
-4. Ouverture de l'outil TVA (`index.html?dossier=…`) — extraction et export pour ce dossier
+1. Connexion → **dossiers.html** (portefeuille clients — dashboard)
+2. Carte client → **workspace.html** (calendrier TVA annuel + actions rapides)
+3. Clic sur un mois ou « Déclaration TVA » → `index.html?dossier=…`
 
 ## Mode solo (sans compte)
 
 `index.html` reste accessible sans connexion pour les tests rapides, avec des champs vides (pas de données Aichoum par défaut).
 
+## Sauvegarde automatique
+
+Chaque dossier TVA enregistre dans Supabase :
+- **Lignes extraites** et modifications du tableau
+- **Relevé bancaire** importé
+- **Historique** (extractions, exports, rapprochements)
+
+Sauvegarde auto toutes les ~1,5 s après modification. À la réouverture du dossier, tout est restauré.
+
+**Note :** les fichiers PDF/images ne sont pas encore stockés (aperçu document après rechargement = prochaine étape). Les **données métier** (lignes, montants, dates) sont conservées.
+
 ## Prochaine étape
 
-Persistance des lignes extraites et des fichiers dans Supabase (aujourd'hui : session navigateur uniquement).
+Stockage des fichiers sources dans Supabase Storage pour l'aperçu document après rechargement.

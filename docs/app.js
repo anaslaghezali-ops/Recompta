@@ -56,12 +56,112 @@ import {
 import {
   formatMonthLabel,
   loadDossierContext,
-} from "./dossiers-client.js?v=dossiers1";
+} from "./dossiers-client.js?v=dash2";
+import {
+  createDebouncedSaver,
+  loadDossierWorkspace,
+  logDossierActivity,
+  markDossierExported,
+  saveDossierWorkspace,
+} from "./dossier-persistence.js?v=persist1";
 
 const dossierState = {
   mode: "solo",
   context: null,
 };
+
+let extractionInProgress = false;
+let workspaceSaver = null;
+
+function isDossierMode() {
+  return dossierState.mode === "dossier" && dossierState.context?.dossierId;
+}
+
+function setSaveStatus(text, tone = "muted") {
+  const el = document.getElementById("saveStatus");
+  if (!el || !isDossierMode()) return;
+  el.textContent = text || "";
+  el.style.color = tone === "error" ? "var(--danger)"
+    : tone === "success" ? "var(--success)"
+      : "var(--muted)";
+}
+
+function getWorkspacePayload() {
+  return {
+    lines: state.lines,
+    bankTransactions: state.bankTransactions,
+    bankMeta: state.bankMeta,
+  };
+}
+
+async function persistWorkspaceNow(eventType, summary, meta = {}) {
+  if (!isDossierMode()) return;
+  const dossierId = dossierState.context.dossierId;
+  setSaveStatus("Enregistrement…");
+  try {
+    await saveDossierWorkspace(dossierId, getWorkspacePayload());
+    if (eventType) {
+      await logDossierActivity(dossierId, eventType, summary, meta);
+    }
+    setSaveStatus("Enregistré sur Supabase", "success");
+  } catch (error) {
+    setSaveStatus(`Erreur sauvegarde : ${error.message}`, "error");
+    throw error;
+  }
+}
+
+function scheduleWorkspaceSave(eventType = "save", summary = "Modifications enregistrées") {
+  if (!isDossierMode()) return;
+  setSaveStatus("Modifications en attente…");
+  workspaceSaver?.schedule({ eventType, summary });
+}
+
+function initWorkspacePersistence() {
+  if (!isDossierMode()) return;
+  workspaceSaver = createDebouncedSaver(async ({ eventType, summary }) => {
+    await persistWorkspaceNow(eventType, summary, {
+      line_count: state.lines.length,
+    });
+  }, 1500);
+
+  window.addEventListener("beforeunload", (event) => {
+    if (extractionInProgress) {
+      event.preventDefault();
+      event.returnValue = "";
+      return;
+    }
+    if (workspaceSaver) {
+      workspaceSaver.flush();
+    }
+  });
+}
+
+async function loadPersistedWorkspace() {
+  if (!isDossierMode()) return;
+  setSaveStatus("Chargement du dossier…");
+  try {
+    const data = await loadDossierWorkspace(dossierState.context.dossierId);
+    state.lines = data.lines || [];
+    state.bankTransactions = data.bank_transactions || [];
+    state.bankMeta = { ...state.bankMeta, ...(data.bank_meta || {}) };
+    refreshAllFieldConfidence();
+    renderTable();
+    updateButtons();
+    if (state.lines.length > 0) {
+      setStep(3);
+      els.extractionStatus.textContent =
+        `${state.lines.length} ligne(s) restaurée(s) depuis Supabase.`;
+      els.extractionStatus.classList.add("success");
+    }
+    if (data.updated_at) {
+      setSaveStatus(`Dernière sauvegarde : ${new Date(data.updated_at).toLocaleString("fr-FR")}`, "success");
+    } else {
+      setSaveStatus("Nouveau dossier — les modifications seront sauvegardées automatiquement");
+    }
+  } catch (error) {
+    setSaveStatus(`Impossible de charger : ${error.message}`, "error");
+  }
+}
 
 const state = {
   files: [],
@@ -521,6 +621,7 @@ function renderTable() {
           }
           renderTable();
           updateButtons();
+          scheduleWorkspaceSave();
           if (field.key in BULK_EDIT_FIELDS) {
             maybeOfferFieldBulk(field.key, oldValue, newValue, index);
           }
@@ -569,6 +670,7 @@ function renderTable() {
       }
       renderTable();
       updateButtons();
+      scheduleWorkspaceSave();
     });
     actionTd.appendChild(deleteBtn);
     tr.appendChild(actionTd);
@@ -658,6 +760,11 @@ function applyDossierContext(context) {
     dossierPeriod.textContent =
       `${formatMonthLabel(context.month)} ${context.year} — ICE ${context.clientIce}`;
   }
+  const backLink = document.getElementById("dossierBackLink");
+  if (backLink && context.clientId) {
+    backLink.href = `workspace.html?client=${context.clientId}`;
+    backLink.textContent = "← Retour au dossier";
+  }
   applyExtractionContext();
   updateFilenamePreview();
 }
@@ -685,6 +792,8 @@ async function initCabinetAccess() {
   }
 
   applyDossierContext(context);
+  initWorkspacePersistence();
+  await loadPersistedWorkspace();
 }
 
 function persistClientIce() {
@@ -851,6 +960,7 @@ async function runExtraction(expanded) {
 async function extractFiles() {
   if (!state.files.length) return;
 
+  extractionInProgress = true;
   setLoading(true);
   clearWarnings();
   els.extractionStatus.textContent = "Extraction en cours…";
@@ -938,10 +1048,17 @@ async function extractFiles() {
     renderWarnings(warnings);
     if (warnings.length || warnFiles) els.extractionStatus.classList.add("warn");
     else if (newLines > 0) els.extractionStatus.classList.add("success");
+
+    await persistWorkspaceNow(
+      "extraction",
+      `${newLines} ligne(s) extraite(s)`,
+      { new_lines: newLines, ok_files: okFiles },
+    );
   } catch (error) {
     els.extractionStatus.textContent = `Erreur : ${error.message}`;
     els.extractionStatus.classList.add("error");
   } finally {
+    extractionInProgress = false;
     setLoading(false);
   }
 }
@@ -951,6 +1068,7 @@ function downloadExcel() {
   els.exportBtn.disabled = true;
   els.exportBtn.textContent = "Génération…";
 
+  (async () => {
   try {
     const filename = exportDedTvaExcel({
       clientName: els.clientName.value.trim() || "CLIENT",
@@ -981,12 +1099,23 @@ function downloadExcel() {
     els.extractionStatus.textContent = `Fichier ${filename} téléchargé avec succès.`;
     els.extractionStatus.classList.remove("error", "warn");
     els.extractionStatus.classList.add("success");
+    if (isDossierMode()) {
+      await markDossierExported(dossierState.context.dossierId);
+      await logDossierActivity(
+        dossierState.context.dossierId,
+        "export",
+        `Export Excel ${filename}`,
+        { line_count: state.lines.length },
+      );
+      setSaveStatus("Export enregistré dans l'historique", "success");
+    }
   } catch (error) {
     alert(`Export impossible : ${error.message}`);
   } finally {
     els.exportBtn.textContent = "Télécharger Excel";
     updateButtons();
   }
+  })();
 }
 
 function openExportReview(issues) {
@@ -1100,6 +1229,7 @@ async function loadBankFile(file) {
       els.bankStatus.textContent += ` ${warnings.join(" ")}`;
       els.bankStatus.classList.add("warn");
     }
+    scheduleWorkspaceSave("bank_import", `Relevé bancaire importé (${transactions.length} mvts)`);
   } catch (error) {
     clearBankState();
     els.bankStatus.textContent = `Erreur relevé : ${error.message}`;
@@ -1281,6 +1411,7 @@ function confirmBankMatch() {
   els.bankMatchDialog.close();
   skipBankMatchCloseHandler = false;
   showNextBankMatchDialog();
+  if (!pendingBankMatchQueue.length) scheduleWorkspaceSave("bank_match", "Rapprochement bancaire confirmé");
 }
 
 function applyBankToLines() {
@@ -1302,6 +1433,7 @@ function applyBankToLines() {
   updateBankStatusMessage();
 
   if (pendingBankMatchQueue.length) showNextBankMatchDialog();
+  else scheduleWorkspaceSave("bank_apply", "Rapprochement bancaire appliqué");
 }
 
 function removeDuplicates() {
@@ -1323,6 +1455,7 @@ function removeDuplicates() {
   els.extractionStatus.textContent = `${duplicates.size} doublon(s) supprimé(s).`;
   els.extractionStatus.classList.remove("error", "warn");
   els.extractionStatus.classList.add("success");
+  scheduleWorkspaceSave("dedupe", `${duplicates.size} doublon(s) supprimé(s)`);
 }
 
 function clearAll() {
@@ -1341,6 +1474,9 @@ function clearAll() {
   els.fileInput.value = "";
   updateButtons();
   setStep(1);
+  if (isDossierMode()) {
+    persistWorkspaceNow("clear", "Dossier réinitialisé").catch(() => {});
+  }
 }
 
 els.clientName.addEventListener("input", updateFilenamePreview);
@@ -1360,6 +1496,7 @@ els.addLineBtn.addEventListener("click", () => {
   state.lines.push(emptyLine());
   renderTable();
   updateButtons();
+  scheduleWorkspaceSave();
 });
 els.exportBtn.addEventListener("click", exportExcel);
 els.exportReviewConfirm.addEventListener("click", (event) => {
