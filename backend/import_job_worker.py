@@ -115,6 +115,15 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
     try:
         content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
 
+        await db.save_dossier_document(
+            dossier_id,
+            filename=filename,
+            content=content,
+            mime_type=mime_type,
+            doc_type="bank",
+            source_id=file_row.get("source_id") or None,
+        )
+
         if _is_spreadsheet(filename, mime_type):
             transactions, bank_meta, warnings = parse_bank_file(filename, content)
             engine = "spreadsheet"
@@ -248,6 +257,14 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         async with semaphore:
             try:
                 content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
+                await db.save_dossier_document(
+                    dossier_id,
+                    filename=filename,
+                    content=content,
+                    mime_type=mime_type,
+                    doc_type="invoice",
+                    source_id=source_id or None,
+                )
                 result = await extract_invoice(filename, content, mime_type)
                 result.filename = filename
                 result.source_id = source_id

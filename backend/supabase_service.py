@@ -7,6 +7,8 @@ from urllib.parse import quote
 
 import httpx
 
+DOCUMENTS_BUCKET = "dossier-documents"
+
 
 def supabase_url() -> str:
     return (os.getenv("SUPABASE_URL") or "https://pbyoxfxngfutoiqjirkx.supabase.co").rstrip("/")
@@ -197,3 +199,91 @@ class SupabaseService:
             json={"status": status, "updated_at": _iso_now()},
         )
         response.raise_for_status()
+
+    async def find_dossier_document(
+        self,
+        dossier_id: int,
+        *,
+        source_id: str | None = None,
+        original_filename: str | None = None,
+    ) -> dict[str, Any] | None:
+        params: dict[str, str] = {
+            "dossier_id": f"eq.{dossier_id}",
+            "select": "id, storage_path, source_id, original_filename",
+            "limit": "1",
+        }
+        if source_id:
+            params["source_id"] = f"eq.{source_id}"
+        elif original_filename:
+            params["original_filename"] = f"eq.{original_filename}"
+        else:
+            return None
+
+        response = await self.client.get(
+            f"{self.base}/rest/v1/dossier_documents",
+            params=params,
+            headers=service_headers(),
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+
+    async def save_dossier_document(
+        self,
+        dossier_id: int,
+        *,
+        filename: str,
+        content: bytes,
+        mime_type: str,
+        doc_type: str,
+        source_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        existing = await self.find_dossier_document(
+            dossier_id,
+            source_id=source_id or None,
+            original_filename=None if source_id else filename,
+        )
+        if existing:
+            return existing
+
+        import re
+        import secrets
+
+        safe = re.sub(r"[^\w.\- ()àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]", "_", (filename or "document").split("/")[-1])[:180]
+        storage_path = f"dossier/{dossier_id}/{int(datetime.now(timezone.utc).timestamp() * 1000)}-{secrets.token_hex(4)}_{safe}"
+        encoded = quote(storage_path, safe="/")
+
+        upload_response = await self.client.post(
+            f"{self.base}/storage/v1/object/{DOCUMENTS_BUCKET}/{encoded}",
+            headers={
+                **service_headers(),
+                "Content-Type": mime_type or "application/octet-stream",
+                "x-upsert": "false",
+            },
+            content=content,
+        )
+        upload_response.raise_for_status()
+
+        insert_response = await self.client.post(
+            f"{self.base}/rest/v1/dossier_documents",
+            headers={**service_headers(), "Prefer": "return=representation"},
+            json={
+                "dossier_id": dossier_id,
+                "doc_type": doc_type,
+                "original_filename": filename,
+                "storage_path": storage_path,
+                "mime_type": mime_type or "application/octet-stream",
+                "size_bytes": len(content),
+                "source_id": source_id,
+            },
+        )
+        if insert_response.status_code >= 400:
+            await self.client.delete(
+                f"{self.base}/storage/v1/object/{DOCUMENTS_BUCKET}",
+                headers=service_headers(),
+                json={"prefixes": [storage_path]},
+            )
+            insert_response.raise_for_status()
+
+        rows = insert_response.json()
+        return rows[0] if rows else None
