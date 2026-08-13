@@ -157,7 +157,11 @@ function formatIsoDate(d) {
   return `${y}-${m}-${day}`;
 }
 
-function isMeaningfulPdfText(text) {
+const SCAN_REQUIRES_AI =
+  "Document scanné ou photo — extraction IA obligatoire (Codespace port 8000). " +
+  "L'OCR navigateur n'est pas utilisé pour la DED TVA.";
+
+export function isMeaningfulPdfText(text) {
   const compact = text.replace(/\s+/g, "");
   if (compact.length < 60) return false;
   return (
@@ -1209,7 +1213,7 @@ export async function extractInvoice(filename, content, mimeType, onOcrPage) {
       return {
         filename,
         lines: [],
-        engine: "tesseract",
+        engine: "scan",
         warnings: [`PDF illisible: ${err.message}`],
       };
     }
@@ -1227,34 +1231,22 @@ export async function extractInvoice(filename, content, mimeType, onOcrPage) {
       return result;
     }
 
-    try {
-      const ocrText = await ocrPdfFromDocument(pdf, (page, total) => {
-        if (onOcrPage) onOcrPage(page, total);
-      });
-      const combined = [text, ocrText].filter(Boolean).join("\n");
-      return extractWithOcr(filename, combined, { pageInfo: `PDF scanné (${MAX_OCR_PAGES} max)` });
-    } catch (err) {
-      return {
-        filename,
-        lines: [],
-        engine: "tesseract",
-        warnings: [`OCR échoué: ${err.message}`],
-      };
-    }
+    // PDF scanné : pas d'OCR Tesseract — l'IA Vision via le serveur est obligatoire.
+    return {
+      filename,
+      lines: [],
+      engine: "scan",
+      warnings: [SCAN_REQUIRES_AI],
+    };
   }
 
   if (mimeType.startsWith("image/")) {
-    try {
-      const canvas = await imageToCanvas(content, mimeType);
-      return extractWithOcr(filename, canvas);
-    } catch (err) {
-      return {
-        filename,
-        lines: [],
-        engine: "tesseract",
-        warnings: [`Image illisible: ${err.message}`],
-      };
-    }
+    return {
+      filename,
+      lines: [],
+      engine: "scan",
+      warnings: [SCAN_REQUIRES_AI],
+    };
   }
 
   return {

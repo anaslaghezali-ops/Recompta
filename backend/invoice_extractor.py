@@ -120,6 +120,30 @@ def extract_text_from_pdf(content: bytes) -> str:
     return "\n".join(page for page in extract_text_from_pdf_pages(content) if page.strip())
 
 
+def is_meaningful_pdf_text(text: str, min_chars: int = 60) -> bool:
+    """Vrai si le PDF a une vraie couche texte (facture native, pas un scan)."""
+    compact = re.sub(r"\s+", "", text or "")
+    if len(compact) < min_chars:
+        return False
+    return bool(
+        re.search(r"\d{15}", text)
+        or re.search(r"total\s+(?:ht|ttc|tva)", text, re.I)
+        or re.search(r"facture", text, re.I)
+        or re.search(r"\bICE\b", text, re.I)
+    )
+
+
+def pdf_is_scanned(content: bytes) -> bool:
+    return not is_meaningful_pdf_text(extract_text_from_pdf(content))
+
+
+SCAN_REQUIRES_AI_WARNING = (
+    "Document scanné ou photo — extraction IA obligatoire. "
+    "Configurez OPENAI_API_KEY dans backend/.env, redémarrez uvicorn, "
+    "et vérifiez la connexion depuis GitHub Pages. L'OCR Tesseract n'est pas utilisé."
+)
+
+
 KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {}
 
 
@@ -1205,15 +1229,18 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
     if mime_type == "application/pdf":
         pages = await asyncio.to_thread(extract_text_from_pdf_pages, content)
         text = "\n".join(page for page in pages if page.strip())
-        if text.strip():
+        if is_meaningful_pdf_text(text):
             result = _heuristic_extract(filename, text, pages=pages)
             if ai_available() and _needs_ai_upgrade(result):
                 try:
                     return await _extract_pdf_with_ai(filename, content)
                 except Exception as exc:  # noqa: BLE001
-                    result.warnings.append(f"Extraction IA échouée ({format_openai_error(exc)}) — résultat texte conservé.")
+                    result.warnings.append(
+                        f"Extraction IA échouée ({format_openai_error(exc)}) — résultat texte conservé."
+                    )
             return result
 
+        # PDF scanné : IA Vision uniquement, jamais Tesseract.
         if ai_available():
             try:
                 return await _extract_pdf_with_ai(filename, content)
@@ -1222,39 +1249,16 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                     filename=filename,
                     lines=[],
                     confidence="low",
-                    engine="ai",
+                    engine="scan",
                     warnings=[f"Extraction IA échouée: {format_openai_error(exc)}"],
                 )
-
-        if not tesseract_available():
-            return ExtractionResult(
-                filename=filename,
-                lines=[],
-                confidence="low",
-                engine="manual",
-                warnings=[
-                    "PDF scanné : configurez OPENAI_API_KEY dans backend/.env et redémarrez uvicorn."
-                ],
-            )
-
-        try:
-            png_bytes = await pdf_first_page_to_png_async(content)
-            if png_bytes:
-                return await _extract_with_ocr(filename, png_bytes)
-        except Exception as exc:  # noqa: BLE001
-            return ExtractionResult(
-                filename=filename,
-                lines=[],
-                confidence="low",
-                engine="tesseract",
-                warnings=[f"OCR échoué: {exc}"],
-            )
 
         return ExtractionResult(
             filename=filename,
             lines=[],
             confidence="low",
-            warnings=["PDF scanné : impossible d'extraire le texte."],
+            engine="scan",
+            warnings=[SCAN_REQUIRES_AI_WARNING],
         )
 
     if mime_type.startswith("image/"):
@@ -1267,15 +1271,15 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
                     filename=filename,
                     lines=[],
                     confidence="low",
-                    engine="ai",
+                    engine="scan",
                     warnings=[f"Extraction IA échouée: {format_openai_error(exc)}"],
                 )
         return ExtractionResult(
             filename=filename,
             lines=[],
             confidence="low",
-            engine="manual",
-            warnings=["OPENAI_API_KEY manquante dans backend/.env — créez le fichier et redémarrez uvicorn."],
+            engine="scan",
+            warnings=[SCAN_REQUIRES_AI_WARNING],
         )
 
     return ExtractionResult(

@@ -1,7 +1,7 @@
 import {
   completeSupplierIdentifiers,
   expandUploadedFilesToFiles,
-  extractAllFiles,
+  extractInvoice,
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
@@ -16,8 +16,6 @@ import {
   extractViaServer,
   fetchServerHealth,
   getApiUrl,
-  mergeWithAiRetry,
-  needsAiRetry,
   parseBankStatementViaServer,
   saveApiUrl,
 } from "./api-client.js";
@@ -326,6 +324,7 @@ function setLoading(loading) {
 
 function engineLabel(engine) {
   if (engine === "ai") return "IA";
+  if (engine === "scan") return "Scan";
   if (engine === "tesseract") return "OCR";
   if (engine === "text") return "PDF";
   if (engine === "manual") return "Manuel";
@@ -428,13 +427,25 @@ async function refreshEngineBadge() {
       return;
     } catch {
       els.engineBadge.className = "engine-badge tesseract";
-      els.engineBadge.textContent = "Serveur IA injoignable — OCR local en secours";
+      els.engineBadge.textContent = "Serveur IA injoignable — scans impossibles sans IA";
       return;
     }
   }
 
   els.engineBadge.className = "engine-badge tesseract";
-  els.engineBadge.textContent = "OCR navigateur (Tesseract)";
+  els.engineBadge.textContent = "Mode local — PDF texte uniquement ; scans = serveur IA";
+}
+
+async function extractTextPdfsLocally(files, onProgress) {
+  const expanded = await expandUploadedFilesToFiles(files);
+  const results = [];
+  for (let i = 0; i < expanded.length; i += 1) {
+    const item = expanded[i];
+    if (onProgress) onProgress(i + 1, expanded.length, item.filename, null);
+    const result = await extractInvoice(item.filename, item.content, item.mime);
+    results.push(result);
+  }
+  return normalizeExtractionResults(results);
 }
 
 async function runExtraction(files) {
@@ -444,10 +455,8 @@ async function runExtraction(files) {
   const wantAi = els.useAiServer.checked;
 
   if (wantAi && !apiUrl) {
-    throw new Error("Indiquez l'URL du serveur Recompta (ex. https://recompta.onrender.com).");
+    throw new Error("Indiquez l'URL du serveur Recompta (Codespace port 8000).");
   }
-
-  let serverFailed = false;
 
   if (wantAi && apiUrl) {
     try {
@@ -455,8 +464,6 @@ async function runExtraction(files) {
       if (health.ai_verified) {
         els.extractionStatus.textContent = "Préparation des fichiers…";
         const serverFiles = await expandUploadedFilesToFiles(files);
-        // En cas d'échec réseau, on bascule sur l'OCR local plutôt que de
-        // laisser l'utilisateur sans aucun résultat.
         return await extractViaServer(serverFiles, apiUrl, {
           clientIce,
           onProgress: (_c, _t, label) => {
@@ -470,34 +477,27 @@ async function runExtraction(files) {
             "Clé OpenAI invalide. Éditez backend/.env dans le Codespace puis redémarrez uvicorn."
         );
       }
+      throw new Error(
+        "OPENAI_API_KEY manquante dans le Codespace. Les scans et photos exigent l'IA Vision."
+      );
     } catch (error) {
-      if (error.message.includes("Clé OpenAI")) throw error;
-      serverFailed = true;
-      els.extractionStatus.textContent = `Serveur IA indisponible (${error.message}) — repli OCR local…`;
+      if (
+        error.message.includes("Clé OpenAI") ||
+        error.message.includes("OPENAI_API_KEY") ||
+        error.message.includes("Connexion au serveur")
+      ) {
+        throw error;
+      }
+      throw new Error(
+        `Serveur IA indisponible (${error.message}). Les scans ne peuvent pas être traités sans IA — pas de repli OCR.`
+      );
     }
   }
 
-  const localResults = await extractAllFiles(files, (current, total, name, ocrDetail) => {
-    const label = shortFilename(name);
-    els.extractionStatus.textContent = ocrDetail
-      ? `Fichier ${current}/${total} — ${label} (${ocrDetail})…`
-      : `Fichier ${current}/${total} — ${label}…`;
+  // Sans serveur IA : uniquement les PDF avec couche texte (factures natives).
+  return extractTextPdfsLocally(files, (current, total, name) => {
+    els.extractionStatus.textContent = `Fichier ${current}/${total} — ${shortFilename(name)}…`;
   });
-
-  if (!wantAi || !apiUrl || serverFailed) return localResults;
-
-  const incomplete = localResults.filter(needsAiRetry);
-  if (!incomplete.length) return localResults;
-
-  try {
-    els.extractionStatus.textContent = `Relance IA pour ${incomplete.length} fichier(s) incomplet(s)…`;
-    const aiResults = await extractViaServer(await expandUploadedFilesToFiles(files), apiUrl, {
-      clientIce,
-    });
-    return mergeWithAiRetry(localResults, aiResults);
-  } catch {
-    return localResults;
-  }
 }
 
 async function extractFiles() {
