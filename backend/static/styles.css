@@ -399,13 +399,147 @@ tr.duplicate-row td:first-child {
 
 .empty-state p { margin: 0.25rem 0; }
 
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 1rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+
+.review-table-pane {
+  min-width: 0;
+}
+
+.review-preview-pane {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f7fafd;
+  padding: 0.85rem;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.preview-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+}
+
+.preview-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.preview-nav span {
+  font-size: 0.82rem;
+  color: var(--muted);
+  min-width: 3rem;
+  text-align: center;
+}
+
+.preview-issues {
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.preview-issues-title {
+  margin: 0 0 0.35rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.preview-issues ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.preview-issue {
+  margin: 0.2rem 0;
+}
+
+.preview-issue.preview-error {
+  color: var(--danger);
+}
+
+.preview-issue.preview-warn {
+  color: var(--warn);
+}
+
+.preview-empty,
+.preview-missing {
+  margin: 0.5rem 0;
+}
+
+.preview-canvas-wrap canvas,
+.preview-canvas-wrap img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+tr.selected-row {
+  background: #eef6ff;
+}
+
+tr.selected-row td:first-child {
+  box-shadow: inset 3px 0 0 #0969da;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.view-btn {
+  background: #e8f2ff;
+  color: #0969da;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 1100px) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .review-preview-pane {
+    position: static;
+    max-height: none;
+  }
+}
+
 .table-wrap {
   display: block;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: visible;
-  margin-top: 0.5rem;
+  margin-top: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   -webkit-overflow-scrolling: touch;

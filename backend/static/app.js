@@ -1,6 +1,6 @@
 import {
   completeSupplierIdentifiers,
-  expandUploadedFilesToFiles,
+  expandUploadedFiles,
   extractInvoice,
   findDuplicateLineIndexes,
   normalizeExtractionResults,
@@ -18,6 +18,13 @@ import {
   parseBankFile,
 } from "./bank-statement-client.js";
 import {
+  bindPreviewControls,
+  cacheSourceFiles,
+  clearSourceFiles,
+  findFirstReviewLineIndex,
+  showLinePreview,
+} from "./document-preview.js";
+import {
   extractViaServer,
   fetchServerHealth,
   getApiUrl,
@@ -28,6 +35,7 @@ import {
 const state = {
   files: [],
   lines: [],
+  selectedLineIndex: null,
   bankFile: null,
   bankTransactions: [],
   bankMeta: { filename: "", bankName: "BANQUE", bankIce: "", bankIf: "" },
@@ -66,7 +74,21 @@ const els = {
   confidenceBadge: document.getElementById("confidenceBadge"),
   removeDuplicatesBtn: document.getElementById("removeDuplicatesBtn"),
   emptyState: document.getElementById("emptyState"),
+  reviewLayout: document.getElementById("reviewLayout"),
   tableWrap: document.getElementById("tableWrap"),
+  previewPanel: document.getElementById("documentPreviewPanel"),
+  previewTitle: document.getElementById("previewTitle"),
+  previewSubtitle: document.getElementById("previewSubtitle"),
+  previewNav: document.getElementById("previewNav"),
+  previewPrevPage: document.getElementById("previewPrevPage"),
+  previewNextPage: document.getElementById("previewNextPage"),
+  previewPageInfo: document.getElementById("previewPageInfo"),
+  previewIssues: document.getElementById("previewIssues"),
+  previewEmpty: document.getElementById("previewEmpty"),
+  previewMissing: document.getElementById("previewMissing"),
+  previewCanvasWrap: document.getElementById("previewCanvasWrap"),
+  previewCanvas: document.getElementById("previewCanvas"),
+  previewImage: document.getElementById("previewImage"),
   steps: document.querySelectorAll(".step"),
   bankDropZone: document.getElementById("bankDropZone"),
   bankFileInput: document.getElementById("bankFileInput"),
@@ -78,6 +100,34 @@ const els = {
   exportReviewList: document.getElementById("exportReviewList"),
   exportReviewConfirm: document.getElementById("exportReviewConfirm"),
 };
+
+const previewUi = {
+  panel: els.previewPanel,
+  title: els.previewTitle,
+  subtitle: els.previewSubtitle,
+  nav: els.previewNav,
+  prevBtn: els.previewPrevPage,
+  nextBtn: els.previewNextPage,
+  pageInfo: els.previewPageInfo,
+  issues: els.previewIssues,
+  empty: els.previewEmpty,
+  missing: els.previewMissing,
+  canvasWrap: els.previewCanvasWrap,
+  canvas: els.previewCanvas,
+  image: els.previewImage,
+};
+
+function selectLine(index) {
+  if (index == null || index < 0 || index >= state.lines.length) {
+    state.selectedLineIndex = null;
+    showLinePreview(previewUi, null);
+    renderTable();
+    return;
+  }
+  state.selectedLineIndex = index;
+  showLinePreview(previewUi, state.lines[index], index);
+  renderTable();
+}
 
 function emptyLine(sourceFile = "") {
   return {
@@ -167,7 +217,12 @@ function updateButtons() {
 
   const hasLines = state.lines.length > 0;
   els.emptyState.hidden = hasLines;
-  els.tableWrap.hidden = !hasLines;
+  els.reviewLayout.hidden = !hasLines;
+  els.previewPanel.hidden = !hasLines;
+  if (!hasLines) {
+    state.selectedLineIndex = null;
+    showLinePreview(previewUi, null);
+  }
 
   if (hasLines) setStep(3);
   else if (state.files.length > 0) setStep(2);
@@ -220,6 +275,9 @@ function renderTable() {
 
   state.lines.forEach((line, index) => {
     const tr = document.createElement("tr");
+    if (index === state.selectedLineIndex) {
+      tr.classList.add("selected-row");
+    }
     if (duplicates.has(index)) {
       tr.classList.add("duplicate-row");
       tr.title = "Doublon probable : même fournisseur, facture, taux et montant TTC.";
@@ -309,14 +367,37 @@ function renderTable() {
     });
 
     const actionTd = document.createElement("td");
+    actionTd.className = "row-actions";
+
+    const viewBtn = document.createElement("button");
+    viewBtn.type = "button";
+    viewBtn.className = "view-btn";
+    viewBtn.textContent = "Voir";
+    viewBtn.title = "Afficher la facture à côté pour revue";
+    viewBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectLine(index);
+    });
+    actionTd.appendChild(viewBtn);
+
     const deleteBtn = document.createElement("button");
     deleteBtn.textContent = "✕";
     deleteBtn.className = "delete-btn";
     deleteBtn.title = "Supprimer cette ligne";
     deleteBtn.addEventListener("click", () => {
       state.lines.splice(index, 1);
+      if (state.selectedLineIndex === index) {
+        state.selectedLineIndex = state.lines.length ? Math.min(index, state.lines.length - 1) : null;
+      } else if (state.selectedLineIndex != null && state.selectedLineIndex > index) {
+        state.selectedLineIndex -= 1;
+      }
       renderTable();
       updateButtons();
+      if (state.selectedLineIndex != null) {
+        showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+      } else {
+        showLinePreview(previewUi, null);
+      }
     });
     actionTd.appendChild(deleteBtn);
     tr.appendChild(actionTd);
@@ -480,19 +561,18 @@ async function refreshEngineBadge() {
   els.engineBadge.textContent = "Mode local — PDF texte uniquement ; scans = serveur IA";
 }
 
-async function extractTextPdfsLocally(files, onProgress) {
-  const expanded = await expandUploadedFilesToFiles(files);
+async function extractFromExpanded(expanded, onProgress) {
   const results = [];
   for (let i = 0; i < expanded.length; i += 1) {
     const item = expanded[i];
-    if (onProgress) onProgress(i + 1, expanded.length, item.filename, null);
+    if (onProgress) onProgress(i + 1, expanded.length, item.filename);
     const result = await extractInvoice(item.filename, item.content, item.mime);
     results.push(result);
   }
   return normalizeExtractionResults(results);
 }
 
-async function runExtraction(files) {
+async function runExtraction(expanded) {
   applyExtractionContext();
   const clientIce = currentClientIce();
   const apiUrl = resolvedApiUrl();
@@ -507,7 +587,9 @@ async function runExtraction(files) {
       const health = await fetchServerHealth(apiUrl);
       if (health.ai_verified) {
         els.extractionStatus.textContent = "Préparation des fichiers…";
-        const serverFiles = await expandUploadedFilesToFiles(files);
+        const serverFiles = expanded.map(
+          (item) => new File([item.content], item.filename, { type: item.mime }),
+        );
         return await extractViaServer(serverFiles, apiUrl, {
           clientIce,
           onProgress: (_c, _t, label) => {
@@ -539,7 +621,7 @@ async function runExtraction(files) {
   }
 
   // Sans serveur IA : uniquement les PDF avec couche texte (factures natives).
-  return extractTextPdfsLocally(files, (current, total, name) => {
+  return extractFromExpanded(expanded, (current, total, name) => {
     els.extractionStatus.textContent = `Fichier ${current}/${total} — ${shortFilename(name)}…`;
   });
 }
@@ -555,7 +637,9 @@ async function extractFiles() {
   const filesToProcess = [...state.files];
 
   try {
-    const results = normalizeExtractionResults(await runExtraction(filesToProcess));
+    const expanded = await expandUploadedFiles(filesToProcess);
+    cacheSourceFiles(expanded);
+    const results = normalizeExtractionResults(await runExtraction(expanded));
 
     let newLines = 0;
     let okFiles = 0;
@@ -588,6 +672,13 @@ async function extractFiles() {
     // Sur l'ensemble du tableau, imports précédents compris : une facture sans
     // ICE reprend celui déjà confirmé pour ce fournisseur.
     const completedIds = completeSupplierIdentifiers(state.lines);
+    refreshAllFieldConfidence();
+
+    const firstReview = findFirstReviewLineIndex(state.lines);
+    state.selectedLineIndex = firstReview;
+    if (firstReview != null) {
+      await showLinePreview(previewUi, state.lines[firstReview], firstReview);
+    }
 
     state.files = [];
     renderFileList();
@@ -811,8 +902,14 @@ function removeDuplicates() {
   if (!duplicates.size) return;
 
   state.lines = state.lines.filter((_line, index) => !duplicates.has(index));
+  if (state.selectedLineIndex != null && duplicates.has(state.selectedLineIndex)) {
+    state.selectedLineIndex = state.lines.length ? 0 : null;
+  }
   renderTable();
   updateButtons();
+  if (state.selectedLineIndex != null) {
+    showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+  }
 
   els.extractionStatus.textContent = `${duplicates.size} doublon(s) supprimé(s).`;
   els.extractionStatus.classList.remove("error", "warn");
@@ -822,6 +919,9 @@ function removeDuplicates() {
 function clearAll() {
   state.files = [];
   state.lines = [];
+  state.selectedLineIndex = null;
+  clearSourceFiles();
+  showLinePreview(previewUi, null);
   clearBankState();
   renderFileList();
   renderTable();
@@ -893,6 +993,7 @@ els.applyBankBtn.addEventListener("click", applyBankToLines);
 });
 
 loadApiSettings();
+bindPreviewControls(previewUi);
 loadClientSettings();
 updateFilenamePreview();
 updateButtons();
