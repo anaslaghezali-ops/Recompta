@@ -31,7 +31,7 @@ import {
   listImportJobs,
   queueInvoiceImport,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs5";
+} from "./import-jobs-client.js?v=jobs6";
 import {
   createWorkspaceSaver,
   formatFileSize,

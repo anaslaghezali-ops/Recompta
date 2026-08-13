@@ -56,6 +56,7 @@ export async function listImportJobs(dossierId, { limit = 10, activeOnly = false
 
   const { data, error } = await query;
   if (error) throw error;
+  if (activeOnly) return filterActiveImportJobs(data);
   return data || [];
 }
 
@@ -94,6 +95,67 @@ export function jobProgressPercent(job) {
   }
   if (job.status === "queued") return 0;
   return 0;
+}
+
+const STALE_IMPORT_MS = {
+  uploading: 15 * 60 * 1000,
+  queued: 30 * 60 * 1000,
+  processing: 2 * 60 * 60 * 1000,
+};
+
+function importJobTouchedAt(job) {
+  const raw = job?.updated_at || job?.started_at || job?.created_at;
+  const time = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function isImportJobStale(job, now = Date.now()) {
+  if (!job) return false;
+  const maxAge = STALE_IMPORT_MS[job.status];
+  if (!maxAge) return false;
+  const touched = importJobTouchedAt(job);
+  if (!touched) return false;
+  return now - touched > maxAge;
+}
+
+export function isImportJobActive(job, now = Date.now()) {
+  if (!job) return false;
+  if (!["uploading", "queued", "processing"].includes(job.status)) return false;
+  return !isImportJobStale(job, now);
+}
+
+export async function abandonStaleImportJob(job) {
+  if (!isImportJobStale(job)) return false;
+
+  const supabase = getSupabase();
+  if (!supabase || !job?.id) return false;
+
+  const { error } = await supabase
+    .from("import_jobs")
+    .update({
+      status: "failed",
+      error_summary: "Import interrompu ou expiré.",
+      finished_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id)
+    .in("status", ["uploading", "queued", "processing"]);
+
+  return !error;
+}
+
+async function filterActiveImportJobs(jobs) {
+  const active = [];
+  for (const job of jobs || []) {
+    if (isImportJobActive(job)) {
+      active.push(job);
+      continue;
+    }
+    if (isImportJobStale(job)) {
+      await abandonStaleImportJob(job);
+    }
+  }
+  return active;
 }
 
 export function importDocTypeLabel(docType) {
@@ -291,7 +353,7 @@ export async function fetchActiveImportMap(dossierIds) {
   if (error) throw error;
 
   const map = new Map();
-  for (const job of data || []) {
+  for (const job of await filterActiveImportJobs(data)) {
     if (!map.has(job.dossier_id)) map.set(job.dossier_id, job);
   }
   return map;
