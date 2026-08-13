@@ -26,7 +26,7 @@ const state = {
   lines: [],
   bankFile: null,
   bankTransactions: [],
-  bankMeta: { filename: "", bankName: "BANQUE" },
+  bankMeta: { filename: "", bankName: "BANQUE", bankIce: "", bankIf: "" },
 };
 
 const DESIGNATIONS = [
@@ -583,7 +583,7 @@ function exportExcel() {
 function clearBankState() {
   state.bankFile = null;
   state.bankTransactions = [];
-  state.bankMeta = { filename: "", bankName: "BANQUE" };
+  state.bankMeta = { filename: "", bankName: "BANQUE", bankIce: "", bankIf: "" };
   els.bankFileInput.value = "";
   els.bankFileInfo.hidden = true;
   els.bankFileInfo.innerHTML = "";
@@ -632,7 +632,12 @@ async function loadBankFile(file) {
       if (!transactions.length) {
         warnings.push("Aucun mouvement extrait — essayez un export CSV depuis votre banque.");
       }
-      state.bankMeta = { filename: result.filename || file.name, bankName };
+      state.bankMeta = {
+        filename: result.filename || file.name,
+        bankName,
+        bankIce: result.bank_ice || "",
+        bankIf: result.bank_if || "",
+      };
     }
 
     state.bankFile = file;
@@ -661,6 +666,8 @@ function applyBankToLines() {
   const result = applyBankStatement(state.bankTransactions, state.lines, {
     sourceFile: state.bankMeta.filename || "releve_bancaire",
     bankName: state.bankMeta.bankName || "BANQUE",
+    bankIce: state.bankMeta.bankIce || "",
+    bankIf: state.bankMeta.bankIf || "",
   });
 
   state.lines = result.lines;

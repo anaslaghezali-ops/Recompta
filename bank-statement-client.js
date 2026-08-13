@@ -255,10 +255,11 @@ function amountsMatch(a, b) {
   return Math.abs(Math.abs(a) - Math.abs(b)) <= AMOUNT_TOLERANCE;
 }
 
-function feeLineFromTransaction(txn, sourceFile, bankName = "BANQUE") {
+function feeLineFromTransaction(txn, sourceFile, bankName = "BANQUE", bankIce = "", bankIf = "") {
   const ttc = txn.absAmount;
   const ht = Math.round((ttc / 1.1) * 100) / 100;
   const tva = Math.round((ttc - ht) * 100) / 100;
+  const ice = String(bankIce || "").replace(/\D/g, "");
   return {
     source_file: sourceFile,
     fact_num: `FRAIS-${txn.date}`,
@@ -266,9 +267,9 @@ function feeLineFromTransaction(txn, sourceFile, bankName = "BANQUE") {
     m_ht: ht,
     tva,
     m_ttc: ttc,
-    if: "",
+    if: bankIf || "",
     lib_frss: bankName,
-    ice_frs: "",
+    ice_frs: ice.length === 15 ? ice : "",
     taux: 0.1,
     id_paie: 4,
     date_paie: txn.date,
@@ -285,7 +286,11 @@ function existingFeeKey(line) {
  * Applique le relevé : dates de paiement + lignes frais bancaires.
  * Retourne une copie des lignes modifiées (ne mute pas l'original).
  */
-export function applyBankStatement(transactions, lines, { sourceFile = "releve_bancaire", bankName = "BANQUE" } = {}) {
+export function applyBankStatement(
+  transactions,
+  lines,
+  { sourceFile = "releve_bancaire", bankName = "BANQUE", bankIce = "", bankIf = "" } = {},
+) {
   const updated = lines.map((line) => ({ ...line }));
   const matchedPayments = [];
   const unmatchedPayments = [];
@@ -353,7 +358,7 @@ export function applyBankStatement(transactions, lines, { sourceFile = "releve_b
       continue;
     }
     feeTransactions.push(txn);
-    const feeLine = feeLineFromTransaction(txn, sourceFile, bankName);
+    const feeLine = feeLineFromTransaction(txn, sourceFile, bankName, bankIce, bankIf);
     const key = existingFeeKey(feeLine);
     if (existingFees.has(key)) continue;
     existingFees.add(key);

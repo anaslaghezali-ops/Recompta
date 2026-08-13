@@ -20,8 +20,13 @@ MOROCCAN_DATE_PATTERNS = [
     r"(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})",
 ]
 
-ICE_PATTERN = re.compile(r"\bI\.?C\.?E\.?\s*[:\s]*(\d{15})\b", re.I)
-IF_PATTERN = re.compile(r"\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*[:\s-]*([0-9A-Za-z]+)", re.I)
+# « N° », « No », « Numéro » s'intercalent souvent entre le libellé et le numéro.
+_LABEL_NUM = r"(?:N\s*[°ºo]?\.?|Num[ée]ro)?"
+ICE_PATTERN = re.compile(rf"\bI\.?C\.?E\.?\s*{_LABEL_NUM}\s*[:\s]*(\d{{15}})\b", re.I)
+IF_PATTERN = re.compile(
+    rf"\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*{_LABEL_NUM}\s*[:\s-]*([0-9A-Za-z]+)",
+    re.I,
+)
 IF_FOOTER_PATTERN = re.compile(r"\bF\s+(\d{6,9})\b")
 # Identifiants légaux marocains à ne jamais confondre avec l'IF.
 OTHER_LEGAL_IDS_PATTERNS = (
@@ -84,19 +89,34 @@ def _parse_date(raw: str) -> date | None:
     return None
 
 
+def _pdf_pages_via_pymupdf(content: bytes) -> list[str]:
+    import pymupdf
+
+    doc = pymupdf.open(stream=content, filetype="pdf")
+    try:
+        return [page.get_text() or "" for page in doc]
+    finally:
+        doc.close()
+
+
 def extract_text_from_pdf_pages(content: bytes) -> list[str]:
-    reader = PdfReader(BytesIO(content))
-    return [(page.extract_text() or "") for page in reader.pages]
+    """pypdf échoue sur certaines polices : PyMuPDF prend alors le relais."""
+    try:
+        reader = PdfReader(BytesIO(content))
+        pages = [(page.extract_text() or "") for page in reader.pages]
+        if any(page.strip() for page in pages):
+            return pages
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        return _pdf_pages_via_pymupdf(content)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def extract_text_from_pdf(content: bytes) -> str:
-    reader = PdfReader(BytesIO(content))
-    chunks: list[str] = []
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        if text.strip():
-            chunks.append(text)
-    return "\n".join(chunks)
+    return "\n".join(page for page in extract_text_from_pdf_pages(content) if page.strip())
 
 
 KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {}

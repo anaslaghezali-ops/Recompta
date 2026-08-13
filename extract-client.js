@@ -31,8 +31,10 @@ function isExcludedIce(ice) {
   return Boolean(normalized && excludedClientIces.has(normalized));
 }
 
-const ICE_PATTERN = /\bI\.?C\.?E\.?\s*[:\s]*(\d{15})\b/i;
-const IF_PATTERN = /\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*[:\s-]*([0-9A-Za-z]+)/i;
+// « N° », « No », « Numéro » s'intercalent souvent entre le libellé et le numéro.
+const ICE_PATTERN = /\bI\.?C\.?E\.?\s*(?:N\s*[°ºo]?\.?|Num[ée]ro)?\s*[:\s]*(\d{15})\b/i;
+const IF_PATTERN =
+  /\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*(?:N\s*[°ºo]?\.?|Num[ée]ro)?\s*[:\s-]*([0-9A-Za-z]+)/i;
 const IF_FOOTER_PATTERN = /\bF\s+(\d{6,9})\b/;
 const INVOICE_NUM_PATTERN =
   /(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N[°o\.]?|:)?\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i;

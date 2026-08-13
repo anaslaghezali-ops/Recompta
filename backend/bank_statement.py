@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Optional
 
 import httpx
@@ -60,9 +61,51 @@ class BankTransaction(BaseModel):
 class BankStatementResult(BaseModel):
     filename: str
     bank_name: str = "BANQUE"
+    bank_ice: str = ""
+    bank_if: str = ""
     transactions: list[BankTransaction] = Field(default_factory=list)
     engine: str = "manual"
     warnings: list[str] = Field(default_factory=list)
+
+
+def _bank_identity(text: str) -> tuple[str, str, str]:
+    """Nom, ICE et IF de la banque, lus dans l'en-tête légal du relevé."""
+    from invoice_extractor import ICE_PATTERN, _extract_supplier_if, other_legal_ids
+
+    ice_candidates = [ice for ice in ICE_PATTERN.findall(text) if len(ice) == 15]
+    ice = max(set(ice_candidates), key=ice_candidates.count) if ice_candidates else ""
+
+    fiscal_id = _extract_supplier_if(text)
+    if fiscal_id and re.sub(r"\D", "", fiscal_id) in other_legal_ids(text):
+        fiscal_id = ""
+
+    name = ""
+    for line in text.splitlines():
+        candidate = line.strip()
+        if 3 <= len(candidate) <= 60 and re.match(r"^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9 .&'-]+$", candidate):
+            name = candidate
+            break
+
+    return name or "BANQUE", ice, fiscal_id
+
+
+async def _document_text(content: bytes, mime_type: str) -> str:
+    from invoice_extractor import (
+        extract_text_from_pdf_async,
+        ocr_image_bytes_async,
+        tesseract_available,
+    )
+
+    if mime_type == "application/pdf":
+        text = await extract_text_from_pdf_async(content)
+        if text.strip():
+            return text
+    if mime_type.startswith("image/") and tesseract_available():
+        try:
+            return await ocr_image_bytes_async(content)
+        except Exception:  # noqa: BLE001
+            return ""
+    return ""
 
 
 def _heuristic_from_text(text: str) -> list[BankTransaction]:
@@ -133,6 +176,30 @@ async def extract_bank_statement(filename: str, content: bytes, mime_type: str) 
             filename=filename,
             warnings=["Fichier vide."],
         )
+
+    result = await _extract_bank_statement_inner(filename, content, mime_type)
+
+    # L'ICE de la banque figure dans l'en-tête légal du relevé : il alimente
+    # les lignes FRAIS BANCAIRE, qui sinon partiraient sans ICE fournisseur.
+    text = await _document_text(content, mime_type)
+    if text.strip():
+        name, ice, fiscal_id = _bank_identity(text)
+        if ice:
+            result.bank_ice = ice
+        if fiscal_id:
+            result.bank_if = fiscal_id
+        if name != "BANQUE" and result.bank_name in ("", "BANQUE"):
+            result.bank_name = name
+
+    if not result.bank_ice and result.transactions:
+        result.warnings.append("ICE de la banque introuvable — à saisir manuellement.")
+
+    return result
+
+
+async def _extract_bank_statement_inner(
+    filename: str, content: bytes, mime_type: str
+) -> BankStatementResult:
 
     if mime_type == "application/pdf":
         if ai_available():
