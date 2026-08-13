@@ -266,22 +266,24 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             if not expanded:
                 raise RuntimeError("Aucune facture exploitable (PDF, image ou ZIP).")
 
-            await db.save_dossier_document(
-                dossier_id,
-                filename=filename,
-                content=content,
-                mime_type=mime_type,
-                doc_type="invoice",
-                source_id=parent_source,
-            )
+            if len(expanded) == 1:
+                relative_name, file_content, file_mime = expanded[0]
+                await db.save_dossier_document(
+                    dossier_id,
+                    filename=relative_name,
+                    content=file_content,
+                    mime_type=file_mime,
+                    doc_type="invoice",
+                    source_id=parent_source,
+                )
 
             for relative_name, file_content, file_mime in expanded:
                 display_name = _display_name(relative_name)
                 source_id = parent_source if len(expanded) == 1 else _next_source_id()
-                if display_name != filename:
+                if len(expanded) > 1:
                     await db.save_dossier_document(
                         dossier_id,
-                        filename=display_name,
+                        filename=relative_name,
                         content=file_content,
                         mime_type=file_mime,
                         doc_type="invoice",
