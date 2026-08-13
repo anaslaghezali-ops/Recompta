@@ -137,6 +137,8 @@ async def health(refresh: bool = False) -> dict:
         "ai_verified": verified,
         "ai_message": ai_message,
         "tesseract_available": tesseract_available(),
+        "import_worker_enabled": import_worker_enabled(),
+        "import_worker_poll_seconds": float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8")),
     }
 
 

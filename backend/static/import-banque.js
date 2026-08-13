@@ -9,8 +9,7 @@ import {
   normalizeBankAliasToken,
   saveBankAlias,
 } from "./bank-match-client.js";
-import { parseBankStatementViaServer } from "./api-client.js";
-import { getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js";
+import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
 import {
   JOB_STATUS_LABELS,
@@ -45,6 +44,29 @@ function setStatus(text, tone = "muted") {
   if (!els.saveStatus) return;
   els.saveStatus.textContent = text || "";
   els.saveStatus.dataset.tone = tone;
+}
+
+function setWorkerHint(message = "", tone = "muted") {
+  if (!els.workerHint) return;
+  els.workerHint.hidden = !message;
+  els.workerHint.textContent = message || "";
+  els.workerHint.dataset.tone = tone;
+}
+
+async function triggerWorkerProcessing() {
+  const apiUrl = resolvedApiUrl();
+  try {
+    const result = await ensureImportWorkerRunning(apiUrl, { limit: 1 });
+    if (!result.ok) {
+      setWorkerHint(result.message, "error");
+      return false;
+    }
+    setWorkerHint(result.message, "success");
+    return true;
+  } catch (error) {
+    setWorkerHint(error.message, "error");
+    return false;
+  }
 }
 
 function resolvedApiUrl() {
@@ -234,8 +256,10 @@ async function reloadSessionBank() {
 
 function startJobsPolling() {
   stopJobPolling?.();
+  let kickCounter = 0;
   stopJobPolling = startImportJobPolling(session.dossierId, async (jobs) => {
     if (!jobs.length) {
+      setWorkerHint("");
       const recent = await listImportJobs(session.dossierId, { limit: 1 });
       const last = recent[0];
       if (last?.status === "completed" && last.doc_type === "bank") {
@@ -244,6 +268,12 @@ function startJobsPolling() {
       await reloadSessionBank();
       await renderJobsPanel();
       return;
+    }
+    if (jobs.some((job) => job.status === "queued")) {
+      kickCounter += 1;
+      if (kickCounter === 1 || kickCounter % 4 === 0) {
+        await triggerWorkerProcessing();
+      }
     }
     els.jobsPanel.hidden = false;
     els.jobsList.innerHTML = jobs.map(renderJobRow).join("");
@@ -277,10 +307,7 @@ async function runQueue() {
     els.progressBar.style.width = "100%";
     setStatus("Import lancé — traitement en arrière-plan", "success");
 
-    const apiUrl = resolvedApiUrl();
-    if (apiUrl) {
-      kickImportJobWorker(apiUrl).catch(() => {});
-    }
+    await triggerWorkerProcessing();
 
     await renderJobsPanel();
     startJobsPolling();
@@ -466,7 +493,7 @@ export async function bootImportBanque() {
   [
     "contextBar", "saveStatus", "backLink", "dropZone", "fileInput",
     "queueBtn", "loadNowBtn", "queueHint", "progressPanel", "progressText", "progressBar",
-    "jobsPanel", "jobsList",
+    "jobsPanel", "jobsList", "workerHint",
     "txnPanel", "txnBody", "txnCount", "paymentCount", "feeCount", "lineCountHint",
     "bankFileName", "bankFileMeta", "statusMessage", "applyBtn", "apiUrl",
     "bankMatchDialog", "bankMatchTxnDate", "bankMatchTxnAmount", "bankMatchTxnLabel",
@@ -496,6 +523,10 @@ export async function bootImportBanque() {
   els.loadNowBtn?.addEventListener("click", () => loadBankFile(bankFile));
   els.applyBtn.addEventListener("click", applyRapprochement);
   await renderJobsPanel();
+  const activeJobs = await listImportJobs(session.dossierId, { limit: 1, activeOnly: true });
+  if (activeJobs.some((job) => job.status === "queued")) {
+    await triggerWorkerProcessing();
+  }
   startJobsPolling();
   els.bankMatchConfirm?.addEventListener("click", (e) => { e.preventDefault(); confirmBankMatch(); });
   els.bankMatchProposals?.addEventListener("change", updateBankMatchInvoiceDetail);

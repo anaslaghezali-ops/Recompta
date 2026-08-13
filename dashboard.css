@@ -1770,6 +1770,26 @@
   color: var(--dash-muted);
 }
 
+.imp-worker-hint {
+  margin-top: 0.45rem !important;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.8rem !important;
+  line-height: 1.35;
+}
+
+.imp-worker-hint[data-tone="error"] {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.imp-worker-hint[data-tone="success"] {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
 .imp-jobs-list {
   display: grid;
   gap: 0.5rem;
