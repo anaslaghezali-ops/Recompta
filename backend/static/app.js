@@ -22,6 +22,7 @@ import {
   cacheSourceFiles,
   clearSourceFiles,
   findFirstReviewLineIndex,
+  resolveSourceId,
   showLinePreview,
 } from "./document-preview.js";
 import {
@@ -142,6 +143,7 @@ function selectLine(index) {
 function emptyLine(sourceFile = "") {
   return {
     source_file: sourceFile,
+    source_id: "",
     fact_num: "",
     designation: "MATIERES CONSOMMABLES",
     m_ht: 0,
@@ -648,8 +650,9 @@ async function extractFiles() {
 
   try {
     const expanded = await expandUploadedFiles(filesToProcess);
-    cacheSourceFiles(expanded);
+    const idsByFilename = cacheSourceFiles(expanded);
     const results = normalizeExtractionResults(await runExtraction(expanded));
+    const firstNewIndex = state.lines.length;
 
     let newLines = 0;
     let okFiles = 0;
@@ -659,11 +662,13 @@ async function extractFiles() {
     results.forEach((result) => {
       if (result.lines?.length) {
         okFiles += 1;
+        const sourceId = resolveSourceId(idsByFilename, result.filename);
         result.lines.forEach((line) => {
           state.lines.push({
             ...emptyLine(result.filename),
             ...line,
             source_file: result.filename,
+            source_id: sourceId,
             extraction_engine: result.engine || line.extraction_engine || "",
             date_fac: line.date_fac ? String(line.date_fac).slice(0, 10) : "",
             date_paie: line.date_paie ? String(line.date_paie).slice(0, 10) : "",
@@ -684,10 +689,12 @@ async function extractFiles() {
     const completedIds = completeSupplierIdentifiers(state.lines);
     refreshAllFieldConfidence();
 
-    const firstReview = findFirstReviewLineIndex(state.lines);
-    state.selectedLineIndex = firstReview;
-    if (firstReview != null) {
-      await showLinePreview(previewUi, state.lines[firstReview], firstReview);
+    const newSlice = state.lines.slice(firstNewIndex);
+    const localReview = findFirstReviewLineIndex(newSlice);
+    state.selectedLineIndex =
+      localReview != null ? firstNewIndex + localReview : newLines ? firstNewIndex : findFirstReviewLineIndex(state.lines);
+    if (state.selectedLineIndex != null) {
+      await showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
     }
 
     state.files = [];
@@ -736,6 +743,7 @@ function downloadExcel() {
       lines: state.lines.map(
         ({
           source_file,
+          source_id,
           ice_inferred,
           if_inferred,
           field_confidence,

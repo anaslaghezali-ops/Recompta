@@ -23,6 +23,7 @@ const FIELD_LABELS = {
 
 const sourceFiles = new Map();
 const pdfDocs = new Map();
+let sourceSeq = 0;
 
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
@@ -78,43 +79,76 @@ function pdfBytes(content) {
   return content;
 }
 
-export function cacheSourceFiles(items) {
-  sourceFiles.clear();
-  pdfDocs.clear();
+export function addSourceFiles(items) {
+  const idsByFilename = new Map();
   for (const item of items || []) {
-    const key = normalizePath(item.filename);
-    sourceFiles.set(key, {
-      filename: key,
+    const filename = normalizePath(item.filename);
+    const id = `src-${++sourceSeq}`;
+    sourceFiles.set(id, {
+      id,
+      filename,
       content: item.content,
       mime: item.mime || "application/octet-stream",
     });
+    idsByFilename.set(filename, id);
   }
+  return idsByFilename;
+}
+
+/** Conserve les documents déjà extraits ; ajoute le lot courant. */
+export function cacheSourceFiles(items) {
+  return addSourceFiles(items);
+}
+
+export function resolveSourceId(idsByFilename, filename) {
+  const key = normalizePath(filename);
+  if (!key || !idsByFilename?.size) return "";
+  if (idsByFilename.has(key)) return idsByFilename.get(key);
+  const base = key.split("/").pop();
+  const matches = [];
+  for (const [name, id] of idsByFilename) {
+    if (name === key || name.endsWith(`/${key}`) || name.split("/").pop() === base) {
+      matches.push(id);
+    }
+  }
+  return matches[0] || "";
 }
 
 export function clearSourceFiles() {
   sourceFiles.clear();
   pdfDocs.clear();
+  sourceSeq = 0;
 }
 
-export function hasSourceFile(filename) {
-  return Boolean(getSourceFile(filename));
+export function hasSourceFile(lineOrFilename, sourceId = "") {
+  return Boolean(getSourceFile(lineOrFilename, sourceId));
 }
 
-export function getSourceFile(filename) {
+export function getSourceFile(lineOrFilename, sourceId = "") {
+  const id =
+    (typeof lineOrFilename === "object" && lineOrFilename ? lineOrFilename.source_id : "") || sourceId;
+  if (id && sourceFiles.has(id)) return sourceFiles.get(id);
+
+  const filename =
+    typeof lineOrFilename === "object" ? lineOrFilename?.source_file : lineOrFilename;
   const key = normalizePath(filename);
-  if (sourceFiles.has(key)) return sourceFiles.get(key);
+  if (!key) return null;
+
+  let found = null;
+  for (const value of sourceFiles.values()) {
+    if (value.filename === key) found = value;
+  }
+  if (found) return found;
 
   const base = key.split("/").pop();
-  for (const [storedKey, value] of sourceFiles) {
-    if (storedKey === key || storedKey.endsWith(`/${key}`) || storedKey.split("/").pop() === base) {
-      return value;
-    }
+  for (const value of sourceFiles.values()) {
+    if (value.filename.split("/").pop() === base) found = value;
   }
-  return null;
+  return found;
 }
 
 async function openPdfDoc(sourceFile) {
-  const cacheKey = sourceFile.filename;
+  const cacheKey = sourceFile.id || sourceFile.filename;
   if (pdfDocs.has(cacheKey)) return pdfDocs.get(cacheKey);
   const doc = await pdfjsLib.getDocument({ data: pdfBytes(sourceFile.content) }).promise;
   pdfDocs.set(cacheKey, doc);
@@ -184,7 +218,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
   }
   if (ui.issues) renderLineIssues(ui.issues, line);
 
-  const source = getSourceFile(line.source_file);
+  const source = getSourceFile(line);
   if (!source) {
     if (ui.missing) {
       ui.missing.hidden = false;
@@ -200,9 +234,11 @@ export async function showLinePreview(ui, line, lineIndex = null) {
   if (ui.missing) ui.missing.hidden = true;
   if (ui.canvasWrap) ui.canvasWrap.hidden = false;
 
-  ui._previewState = ui._previewState || { page: 1, filename: "", zoom: ZOOM_DEFAULT };
+  ui._previewState = ui._previewState || { page: 1, filename: "", sourceId: "", zoom: ZOOM_DEFAULT };
   if (ui._previewState.zoom == null) ui._previewState.zoom = ZOOM_DEFAULT;
-  if (ui._previewState.filename !== source.filename) {
+  const sourceId = source.id || source.filename;
+  if (ui._previewState.sourceId !== sourceId) {
+    ui._previewState.sourceId = sourceId;
     ui._previewState.filename = source.filename;
     ui._previewState.page = 1;
     ui._previewState.pdf = null;
