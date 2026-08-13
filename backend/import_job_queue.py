@@ -55,7 +55,7 @@ async def upload_import_queue_file(
     response.raise_for_status()
 
 
-async def complete_invoice_job_upload(
+async def complete_job_upload(
     job_id: int,
     *,
     filename: str,
