@@ -147,9 +147,9 @@ export function aggregateActiveImportJobs(jobs) {
 }
 
 const STALE_IMPORT_MS = {
-  uploading: 15 * 60 * 1000,
-  queued: 30 * 60 * 1000,
-  processing: 2 * 60 * 60 * 1000,
+  uploading: 5 * 60 * 1000,
+  queued: 2 * 60 * 1000,
+  processing: 20 * 60 * 1000,
 };
 
 function importJobTouchedAt(job) {
@@ -161,10 +161,16 @@ function importJobTouchedAt(job) {
 export function isImportJobStale(job, now = Date.now()) {
   if (!job) return false;
   const touched = importJobTouchedAt(job);
-  if (!touched) return false;
+  if (!touched) return true;
 
   if (job.status === "uploading" && (job.uploaded_files || 0) === 0) {
-    return now - touched > 5 * 60 * 1000;
+    return now - touched > 90 * 1000;
+  }
+  if (job.status === "queued" && (job.processed_files || 0) === 0) {
+    return now - touched > 2 * 60 * 1000;
+  }
+  if (job.status === "processing" && (job.processed_files || 0) === 0) {
+    return now - touched > 8 * 60 * 1000;
   }
 
   const maxAge = STALE_IMPORT_MS[job.status];

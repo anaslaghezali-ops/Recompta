@@ -1879,6 +1879,11 @@
   color: #1e3a8a;
 }
 
+.dash-import-banner[hidden],
+.ws-import-banner[hidden] {
+  display: none !important;
+}
+
 .dash-import-banner i,
 .ws-import-banner i {
   width: 20px;
