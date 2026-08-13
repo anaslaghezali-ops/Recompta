@@ -1462,3 +1462,30 @@ export async function extractAllFiles(files, onProgress) {
 
   return normalizeExtractionResults(results);
 }
+
+/** Même nom fournisseur (insensible à la casse, espaces en trop). */
+export function supplierNamesMatch(a, b) {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+/** Nombre de lignes (hors index exclu) avec ce nom fournisseur. */
+export function countLinesWithSupplier(lines, name, excludeIndex = -1) {
+  return (lines || []).filter(
+    (line, index) => index !== excludeIndex && supplierNamesMatch(line.lib_frss, name),
+  ).length;
+}
+
+/**
+ * Remplace l'ancien nom fournisseur par le nouveau sur toutes les lignes concernées.
+ * Renvoie les lignes modifiées.
+ */
+export function applySupplierRename(lines, oldName, newName) {
+  const updated = [];
+  for (const line of lines || []) {
+    if (!supplierNamesMatch(line.lib_frss, oldName)) continue;
+    line.lib_frss = newName;
+    line.supplier_from_folder = false;
+    updated.push(line);
+  }
+  return updated;
+}

@@ -1,10 +1,13 @@
 import {
+  applySupplierRename,
   completeSupplierIdentifiers,
+  countLinesWithSupplier,
   expandUploadedFiles,
   extractInvoice,
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
+  supplierNamesMatch,
 } from "./extract-client.js";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
@@ -110,6 +113,9 @@ const els = {
   exportReviewIntro: document.getElementById("exportReviewIntro"),
   exportReviewList: document.getElementById("exportReviewList"),
   exportReviewConfirm: document.getElementById("exportReviewConfirm"),
+  supplierRenameDialog: document.getElementById("supplierRenameDialog"),
+  supplierRenameIntro: document.getElementById("supplierRenameIntro"),
+  supplierRenameAll: document.getElementById("supplierRenameAll"),
 };
 
 const previewUi = {
@@ -132,6 +138,25 @@ const previewUi = {
   canvas: els.previewCanvas,
   image: els.previewImage,
 };
+
+let pendingSupplierRename = null;
+
+function openSupplierRenameDialog(oldName, newName, otherCount) {
+  pendingSupplierRename = { oldName, newName };
+  els.supplierRenameIntro.textContent =
+    `Remplacer « ${oldName} » par « ${newName} » sur ${otherCount} autre(s) ligne(s) ?`;
+  els.supplierRenameDialog.showModal();
+}
+
+function applyPendingSupplierRename() {
+  if (!pendingSupplierRename) return 0;
+  const { oldName, newName } = pendingSupplierRename;
+  const updated = applySupplierRename(state.lines, oldName, newName);
+  for (const line of updated) markFieldVerified(line, "lib_frss");
+  pendingSupplierRename = null;
+  els.supplierRenameDialog.close();
+  return updated.length;
+}
 
 function syncPreviewLayout() {
   const open = state.lines.length > 0 && state.previewOpen;
@@ -372,6 +397,11 @@ function renderTable() {
       }
 
       if (!field.readonly) {
+        if (field.key === "lib_frss") {
+          input.addEventListener("focus", () => {
+            input.dataset.prevSupplier = line.lib_frss ?? "";
+          });
+        }
         input.addEventListener("change", () => {
           if (field.type === "number") {
             line[field.key] = Number(input.value) || 0;
@@ -383,6 +413,19 @@ function renderTable() {
             input.value = line.ice_frs;
           } else if (field.key === "if") {
             line.if = input.value;
+          } else if (field.key === "lib_frss") {
+            const oldName = String(input.dataset.prevSupplier ?? line.lib_frss ?? "").trim();
+            const newName = String(input.value ?? "").trim();
+            line.lib_frss = newName;
+            line.supplier_from_folder = false;
+            markFieldVerified(line, field.key);
+            renderTable();
+            updateButtons();
+            if (oldName && newName && !supplierNamesMatch(oldName, newName)) {
+              const others = countLinesWithSupplier(state.lines, oldName, index);
+              if (others > 0) openSupplierRenameDialog(oldName, newName, others);
+            }
+            return;
           } else {
             line[field.key] = input.value;
           }
@@ -1053,6 +1096,17 @@ els.applyBankBtn.addEventListener("click", applyBankToLines);
 loadApiSettings();
 bindPreviewControls(previewUi);
 els.previewCloseBtn?.addEventListener("click", () => closeLinePreview());
+els.supplierRenameAll?.addEventListener("click", () => {
+  applyPendingSupplierRename();
+  renderTable();
+  updateButtons();
+  if (state.previewOpen && state.selectedLineIndex != null) {
+    showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+  }
+});
+els.supplierRenameDialog?.addEventListener("close", () => {
+  pendingSupplierRename = null;
+});
 loadClientSettings();
 updateFilenamePreview();
 updateButtons();
