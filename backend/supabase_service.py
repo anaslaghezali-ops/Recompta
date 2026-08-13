@@ -248,8 +248,12 @@ class SupabaseService:
 
         import re
         import secrets
+        import unicodedata
 
-        safe = re.sub(r"[^\w.\- ()àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]", "_", (filename or "document").split("/")[-1])[:180]
+        base = (filename or "document").split("/")[-1]
+        ascii_name = unicodedata.normalize("NFD", base).encode("ascii", "ignore").decode("ascii")
+        safe = re.sub(r"[^a-zA-Z0-9._-]+", "_", ascii_name)
+        safe = re.sub(r"_+", "_", safe).strip("_")[:180] or "document"
         storage_path = f"dossier/{dossier_id}/{int(datetime.now(timezone.utc).timestamp() * 1000)}-{secrets.token_hex(4)}_{safe}"
         encoded = quote(storage_path, safe="/")
 
