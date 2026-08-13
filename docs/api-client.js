@@ -197,3 +197,13 @@ export async function parseBankStatementViaServer(file, apiUrl) {
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }
+
+export async function kickImportJobWorker(apiUrl, { limit = 1 } = {}) {
+  if (!apiUrl) return null;
+  const response = await fetchOrExplain(
+    `${apiUrl.replace(/\/$/, "")}/api/import-jobs/process?limit=${limit}`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw await errorFromResponse(response);
+  return response.json();
+}
