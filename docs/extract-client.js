@@ -1501,6 +1501,60 @@ export function countLinesWithFieldValue(lines, fieldKey, value, excludeIndex = 
   ).length;
 }
 
+function fieldValueIsEmpty(fieldKey, value) {
+  if (fieldKey === "ice_frs") return !String(value || "").replace(/\D/g, "");
+  return !String(value || "").trim();
+}
+
+/**
+ * Lignes du même fournisseur pouvant recevoir une valeur (IF/ICE) :
+ * champ vide si oldValue vide, sinon même valeur que oldValue.
+ */
+export function countSupplierFieldTargets(lines, fieldKey, supplierName, oldValue, excludeIndex = -1) {
+  const supplierKey = supplierNameKey(supplierName);
+  if (!supplierKey) return 0;
+  return (lines || []).filter((line, index) => {
+    if (index === excludeIndex) return false;
+    if (supplierNameKey(line.lib_frss) !== supplierKey) return false;
+    if (fieldValueIsEmpty(fieldKey, oldValue)) return fieldValueIsEmpty(fieldKey, line[fieldKey]);
+    return fieldValuesMatch(fieldKey, line[fieldKey], oldValue);
+  }).length;
+}
+
+function applyFieldValueToLine(line, fieldKey, newValue) {
+  if (fieldKey === "lib_frss") {
+    line.lib_frss = newValue;
+    line.supplier_from_folder = false;
+  } else if (fieldKey === "ice_frs") {
+    line.ice_frs = newValue;
+    line.ice_inferred = false;
+  } else if (fieldKey === "if") {
+    line.if = newValue;
+    line.if_inferred = false;
+  } else {
+    line[fieldKey] = newValue;
+  }
+}
+
+/**
+ * Propage une valeur IF/ICE aux autres factures du même fournisseur.
+ */
+export function applySupplierFieldValueBulk(lines, fieldKey, supplierName, oldValue, newValue) {
+  const supplierKey = supplierNameKey(supplierName);
+  const updated = [];
+  for (const line of lines || []) {
+    if (supplierNameKey(line.lib_frss) !== supplierKey) continue;
+    if (fieldValueIsEmpty(fieldKey, oldValue)) {
+      if (!fieldValueIsEmpty(fieldKey, line[fieldKey])) continue;
+    } else if (!fieldValuesMatch(fieldKey, line[fieldKey], oldValue)) {
+      continue;
+    }
+    applyFieldValueToLine(line, fieldKey, newValue);
+    updated.push(line);
+  }
+  return updated;
+}
+
 /** @deprecated utiliser countLinesWithFieldValue */
 export function countLinesWithSupplier(lines, name, excludeIndex = -1) {
   return countLinesWithFieldValue(lines, "lib_frss", name, excludeIndex);
@@ -1514,18 +1568,7 @@ export function applyFieldValueBulk(lines, fieldKey, oldValue, newValue) {
   const updated = [];
   for (const line of lines || []) {
     if (!fieldValuesMatch(fieldKey, line[fieldKey], oldValue)) continue;
-    if (fieldKey === "lib_frss") {
-      line.lib_frss = newValue;
-      line.supplier_from_folder = false;
-    } else if (fieldKey === "ice_frs") {
-      line.ice_frs = newValue;
-      line.ice_inferred = false;
-    } else if (fieldKey === "if") {
-      line.if = newValue;
-      line.if_inferred = false;
-    } else {
-      line[fieldKey] = newValue;
-    }
+    applyFieldValueToLine(line, fieldKey, newValue);
     updated.push(line);
   }
   return updated;
