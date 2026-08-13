@@ -57,6 +57,21 @@
 
 L'IA seule ne suffit pas à 100 % : biais d'entraînement (HT avant TTC), scans flous, mises en page infinies. La couche mathématique corrige **sans connaître le fournisseur** — c'est la garantie SaaS.
 
+## Traitement en volume
+
+Un cabinet importe couramment 50 à 200 factures d'un coup. Une requête unique
+contenant tous les fichiers dépasserait les délais du navigateur et du proxy.
+
+| Niveau | Mécanisme |
+|--------|-----------|
+| Navigateur | ZIP développés localement, envoi par lots de 4 fichiers |
+| Serveur | 4 extractions simultanées par lot (`EXTRACTION_CONCURRENCY`) |
+| Résilience | Une facture illisible n'interrompt ni son lot ni les suivants |
+| Progression | Compteur `X/Y fichier(s)` mis à jour après chaque lot |
+
+Si le serveur devient injoignable en cours de route, l'envoi s'arrête
+immédiatement au lieu d'épuiser les lots restants.
+
 ## Choix du modèle IA
 
 Deux niveaux, escalade automatique quand la validation mathématique échoue.
