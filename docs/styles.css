@@ -10,6 +10,8 @@
   --success: #0d7a4e;
   --warn: #9a6700;
   --shadow: 0 8px 24px rgba(15, 28, 46, 0.07);
+  --layout-max: 1100px;
+  --layout-max-review: min(1720px, calc(100vw - 2.5rem));
 }
 
 * { box-sizing: border-box; }
@@ -37,7 +39,7 @@ body {
 }
 
 .hero-content {
-  max-width: 1100px;
+  max-width: var(--layout-max);
   margin: 0 auto 1.5rem;
 }
 
@@ -69,7 +71,7 @@ h2 {
 }
 
 .steps {
-  max-width: 1100px;
+  max-width: var(--layout-max);
   margin: 0 auto;
   display: flex;
   gap: 0.5rem;
@@ -111,12 +113,17 @@ h2 {
 
 .container {
   width: 100%;
-  max-width: 1100px;
+  max-width: var(--layout-max);
   margin: 0 auto;
   padding: 1.25rem 1.5rem 3rem;
   display: grid;
   gap: 1rem;
   min-width: 0;
+}
+
+/* Étape vérification : utiliser toute la largeur utile (tableau + scan côte à côte). */
+.container.container--review {
+  max-width: var(--layout-max-review);
 }
 
 .card {
@@ -401,10 +408,21 @@ tr.duplicate-row td:first-child {
 
 .review-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 46%);
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 46%);
   gap: 1rem;
   align-items: start;
   margin-top: 0.5rem;
+}
+
+.container--review .review-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(440px, 48%);
+  gap: 1.25rem;
+}
+
+@media (min-width: 1400px) {
+  .container--review .review-layout {
+    grid-template-columns: minmax(0, 52%) minmax(480px, 48%);
+  }
 }
 
 .review-table-pane {
@@ -508,11 +526,17 @@ tr.duplicate-row td:first-child {
 .preview-canvas-wrap {
   overflow: auto;
   max-height: calc(100vh - 14rem);
+  min-height: 280px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
   cursor: grab;
   overscroll-behavior: contain;
+}
+
+.container--review .preview-canvas-wrap {
+  max-height: calc(100vh - 9rem);
+  min-height: 420px;
 }
 
 .preview-canvas-wrap.is-panning {
@@ -550,7 +574,7 @@ tr.selected-row td:first-child {
   font-size: 0.78rem;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1000px) {
   .review-layout {
     grid-template-columns: 1fr;
   }
@@ -558,6 +582,11 @@ tr.selected-row td:first-child {
   .review-preview-pane {
     position: static;
     max-height: none;
+  }
+
+  .container--review .preview-canvas-wrap {
+    min-height: 320px;
+    max-height: 70vh;
   }
 }
 
@@ -619,6 +648,22 @@ td:nth-child(8) input,
 td:nth-child(9) input { max-width: 5.5rem; }
 td:nth-child(10) select { max-width: 4.5rem; }
 td:nth-child(13) select { max-width: 3.5rem; }
+
+.container--review td input,
+.container--review td select {
+  max-width: 11rem;
+}
+
+.container--review td:nth-child(1) input { max-width: 8.5rem; }
+.container--review td:nth-child(2) input { max-width: 10rem; }
+.container--review td:nth-child(3) input { max-width: 12rem; }
+.container--review td:nth-child(4) input { max-width: 9.5rem; }
+.container--review td:nth-child(6) select { max-width: 13rem; }
+.container--review td:nth-child(7) input,
+.container--review td:nth-child(8) input,
+.container--review td:nth-child(9) input { max-width: 6.5rem; }
+.container--review td:nth-child(10) select { max-width: 5rem; }
+.container--review td:nth-child(13) select { max-width: 4rem; }
 
 .delete-btn {
   background: #fde8e8;

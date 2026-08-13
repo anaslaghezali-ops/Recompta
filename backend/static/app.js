@@ -50,6 +50,7 @@ const DESIGNATIONS = [
 ];
 
 const els = {
+  container: document.querySelector("main.container"),
   clientName: document.getElementById("clientName"),
   clientIce: document.getElementById("clientIce"),
   period: document.getElementById("period"),
@@ -228,6 +229,7 @@ function updateButtons() {
   }
 
   const hasLines = state.lines.length > 0;
+  els.container?.classList.toggle("container--review", hasLines);
   els.emptyState.hidden = hasLines;
   els.reviewLayout.hidden = !hasLines;
   els.previewPanel.hidden = !hasLines;
