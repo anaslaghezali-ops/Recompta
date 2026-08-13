@@ -125,7 +125,7 @@ export async function redirectAfterLogin(userId) {
   if (await isSuperAdmin(userId)) return "admin.html";
   const membership = await getUserCabinetMembership();
   if (membership) return "dossiers.html";
-  return "index.html";
+  return "production.html";
 }
 
 export { SUPABASE_URL } from "./supabase-config.js?v=pbyoxfxngfutoiqjirkx-1";

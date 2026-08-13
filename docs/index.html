@@ -3,279 +3,200 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recompta — Déclaration TVA</title>
-  <link rel="stylesheet" href="styles.css?v=auth1" />
+  <meta name="description" content="Recompta — Plateforme de production TVA pour cabinets comptables au Maroc. Portefeuille clients, extraction IA, rapprochement bancaire et export DED TVA." />
+  <title>Recompta — Production TVA pour cabinets comptables</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="landing.css?v=1" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <header class="hero">
-    <div class="hero-top">
-      <div class="hero-content">
-        <p class="eyebrow">Recompta</p>
-        <h1>Déclaration TVA automatisée</h1>
-        <p class="subtitle">
-          Importez vos ZIP ou factures scannées, vérifiez les lignes, téléchargez le Excel DED TVA.
-          Fonctionne directement dans le navigateur — aucune installation.
-        </p>
+  <nav class="lp-nav" aria-label="Navigation principale">
+    <div class="lp-nav-inner">
+      <a href="index.html" class="lp-brand">
+        <span class="lp-brand-mark">R</span>
+        Recompta
+      </a>
+      <div class="lp-nav-links" id="navLinks">
+        <a href="#fonctionnalites">Fonctionnalités</a>
+        <a href="#parcours">Parcours</a>
+        <a href="production.html">Outil TVA</a>
       </div>
-      <div class="hero-auth" id="heroAuth">
-        <a href="login.html" class="hero-auth-link">Connexion</a>
+      <div class="lp-nav-actions">
+        <a href="login.html" class="lp-btn lp-btn-ghost">Connexion</a>
+        <a href="login.html" class="lp-btn lp-btn-primary" id="navCta">Accéder</a>
+        <button type="button" class="lp-mobile-toggle" id="mobileToggle" aria-label="Menu">
+          <i data-lucide="menu"></i>
+        </button>
       </div>
     </div>
-    <div class="steps" aria-label="Étapes">
-      <div class="step active" data-step="1"><span>1</span> Paramètres</div>
-      <div class="step" data-step="2"><span>2</span> Import</div>
-      <div class="step" data-step="3"><span>3</span> Vérification</div>
-      <div class="step" data-step="4"><span>4</span> Export</div>
+  </nav>
+
+  <header class="lp-hero">
+    <div>
+      <p class="lp-hero-eyebrow">Cabinet comptable · Maroc</p>
+      <h1>La production TVA de vos clients, centralisée.</h1>
+      <p class="lp-hero-lead">
+        Recompta aide les cabinets à prioriser leurs dossiers, piloter chaque période TVA
+        et produire des déclarations fiables — du relevé bancaire à l'export Excel DED TVA.
+      </p>
+      <div class="lp-hero-cta">
+        <a href="login.html" class="lp-btn lp-btn-primary">Connexion cabinet</a>
+        <a href="#fonctionnalites" class="lp-btn lp-btn-outline">Découvrir</a>
+      </div>
+      <p class="lp-hero-note">Compte fourni par votre administrateur · Données hébergées de façon sécurisée</p>
+    </div>
+    <div class="lp-hero-visual" aria-hidden="true">
+      <div class="lp-preview">
+        <div class="lp-preview-top">
+          <span class="lp-preview-dot"></span>
+          <span class="lp-preview-dot"></span>
+          <span class="lp-preview-dot"></span>
+        </div>
+        <div class="lp-preview-kpis">
+          <div class="lp-preview-kpi"><span>Clients actifs</span><strong>24</strong></div>
+          <div class="lp-preview-kpi"><span>Exceptions IA</span><strong>7</strong></div>
+          <div class="lp-preview-kpi"><span>TVA en retard</span><strong>2</strong></div>
+        </div>
+        <div class="lp-preview-rows">
+          <div class="lp-preview-row">
+            <span class="bar danger"></span>
+            <span class="name">Société Atlas SARL</span>
+            <span class="tag">Urgent</span>
+          </div>
+          <div class="lp-preview-row">
+            <span class="bar warn"></span>
+            <span class="name">Nour Distribution</span>
+            <span class="tag">À valider</span>
+          </div>
+          <div class="lp-preview-row">
+            <span class="bar accent"></span>
+            <span class="name">Bureau Conseil 360</span>
+            <span class="tag">En cours</span>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
-  <main class="container">
-    <section class="card dossier-context" id="dossierContext" hidden>
-      <div class="section-header">
-        <div>
-          <h2 id="dossierClientTitle">Dossier client</h2>
-          <p class="hint" id="dossierPeriodLabel"></p>
-        </div>
-        <a href="dossiers.html" class="secondary small" id="dossierBackLink">← Retour au dossier</a>
-        <p class="hint" id="saveStatus" style="margin:0.35rem 0 0;font-size:0.78rem;"></p>
+  <section class="lp-section" id="fonctionnalites">
+    <div class="lp-section-inner">
+      <div class="lp-section-header">
+        <h2>Tout le workflow TVA, dans un seul produit</h2>
+        <p>Conçu pour la réalité des cabinets : multi-clients, échéances serrées, contrôles IA et exports conformes.</p>
       </div>
-    </section>
+      <div class="lp-features">
+        <article class="lp-feature">
+          <div class="lp-feature-icon"><i data-lucide="layout-grid"></i></div>
+          <h3>Portefeuille clients</h3>
+          <p>Visualisez en un coup d'œil les dossiers prioritaires, les retards TVA et les prochaines actions.</p>
+        </article>
+        <article class="lp-feature">
+          <div class="lp-feature-icon"><i data-lucide="gauge"></i></div>
+          <h3>Workspace par client</h3>
+          <p>Cockpit de production centré sur la période active, avec pipeline et historique des déclarations.</p>
+        </article>
+        <article class="lp-feature">
+          <div class="lp-feature-icon"><i data-lucide="sparkles"></i></div>
+          <h3>Extraction IA</h3>
+          <p>Importez PDF scannés, ZIP et images. L'IA extrait les lignes et signale les anomalies à corriger.</p>
+        </article>
+        <article class="lp-feature">
+          <div class="lp-feature-icon"><i data-lucide="landmark"></i></div>
+          <h3>Rapprochement bancaire</h3>
+          <p>Relevé CSV, Excel ou PDF : dates de paiement et frais bancaires renseignés automatiquement.</p>
+        </article>
+        <article class="lp-feature">
+          <div class="lp-feature-icon"><i data-lucide="shield-check"></i></div>
+          <h3>Contrôle & validation</h3>
+          <p>ICE, IF, doublons, confiance IA — chaque ligne est vérifiée avant l'export.</p>
+        </article>
+        <article class="lp-feature">
+          <div class="lp-feature-icon"><i data-lucide="file-spreadsheet"></i></div>
+          <h3>Export DED TVA</h3>
+          <p>Générez le fichier Excel prêt pour la déclaration TVA marocaine, en un clic.</p>
+        </article>
+      </div>
+    </div>
+  </section>
 
-    <section class="card">
-      <h2>Paramètres du client</h2>
-      <div class="grid two">
-        <label>Nom du client <input id="clientName" type="text" placeholder="Nom du client" /></label>
-        <label>Période (MMAAAA) <input id="period" type="text" placeholder="MMYYYY" maxlength="6" /></label>
+  <section class="lp-section lp-workflow" id="parcours">
+    <div class="lp-section-inner">
+      <div class="lp-section-header">
+        <h2>Un parcours clair, de A à Z</h2>
+        <p>Chaque écran a un rôle précis dans la chaîne de production comptable.</p>
       </div>
-      <label>ICE de votre société (client)
-        <input id="clientIce" type="text" minlength="15" maxlength="15" inputmode="numeric" pattern="[0-9]{15}" placeholder="15 chiffres exactement" />
-      </label>
-      <p class="hint">15 chiffres exactement. Cet ICE ne sera jamais utilisé comme ICE fournisseur.</p>
-      <p class="hint" id="filenamePreview">Fichier généré : …</p>
-      <p class="engine-badge tesseract" id="engineBadge">Serveur IA requis pour les scans</p>
-    </section>
+      <div class="lp-steps">
+        <article class="lp-step">
+          <span class="lp-step-num">1</span>
+          <h3>Portefeuille</h3>
+          <p>Identifiez sur quels clients travailler aujourd'hui grâce aux priorités, KPIs et filtres de production.</p>
+        </article>
+        <article class="lp-step">
+          <span class="lp-step-num">2</span>
+          <h3>Workspace client</h3>
+          <p>Pilotez la période active : progression, pipeline TVA, échéance et accès direct à la production.</p>
+        </article>
+        <article class="lp-step">
+          <span class="lp-step-num">3</span>
+          <h3>Production TVA</h3>
+          <p>Importez, contrôlez, rapprochez et exportez — avec sauvegarde automatique dans le cloud.</p>
+        </article>
+      </div>
+    </div>
+  </section>
 
-    <section class="card">
-      <h2>Extraction IA (Codespace)</h2>
-      <p class="hint">
-        Les <strong>PDF scannés et photos</strong> passent uniquement par l'IA Vision (Codespace).
-        Les PDF natifs (texte selectable) peuvent aussi être lus localement. Pas de repli OCR Tesseract.
-      </p>
-      <label class="checkbox-row">
-        <input id="useAiServer" type="checkbox" checked />
-        Utiliser l'IA Vision pour les scans et photos
-      </label>
-      <label>URL publique du Codespace (port 8000)
-        <input id="apiServerUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" />
-      </label>
-      <div class="actions">
-        <button id="testServerBtn" class="secondary small" type="button">Tester la connexion</button>
-      </div>
-      <p class="hint" id="apiSetupHint">
-        Dans le Codespace : lancez <code>uvicorn</code> → onglet Ports → 8000 → <strong>Public</strong> → copiez l'URL ici.
-        Guide : <a href="https://github.com/anaslaghezali-ops/Recompta/blob/main/CODESPACE.md" target="_blank" rel="noopener">CODESPACE.md</a>
-      </p>
-    </section>
+  <section class="lp-cta">
+    <div class="lp-cta-box">
+      <h2>Prêt à structurer votre production TVA ?</h2>
+      <p>Connectez-vous avec le compte de votre cabinet pour accéder au portefeuille clients.</p>
+      <a href="login.html" class="lp-btn lp-btn-primary">Se connecter</a>
+    </div>
+  </section>
 
-    <section class="card">
-      <div class="section-header">
-        <h2>Importer les factures</h2>
-        <button id="clearBtn" class="secondary small" type="button" hidden>Tout effacer</button>
+  <footer class="lp-footer">
+    <div class="lp-footer-inner">
+      <span>© 2026 Recompta</span>
+      <div class="lp-footer-links">
+        <a href="login.html">Connexion</a>
+        <a href="production.html">Outil TVA solo</a>
+        <a href="https://github.com/anaslaghezali-ops/Recompta" target="_blank" rel="noopener">GitHub</a>
       </div>
-      <div class="upload-zone" id="dropZone">
-        <input id="fileInput" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.zip" />
-        <div class="upload-icon">📁</div>
-        <p class="upload-title">Glissez vos fichiers ici</p>
-        <p class="upload-hint">ZIP, PDF ou images scannées</p>
-      </div>
-      <div id="fileList" class="file-list" hidden></div>
-      <div class="actions">
-        <button id="extractBtn" class="primary" disabled>
-          <span class="btn-label">Extraire les factures</span>
-          <span class="spinner" hidden></span>
-        </button>
-        <button id="addLineBtn" class="secondary" type="button">+ Ligne manuelle</button>
-      </div>
-      <div id="extractionStatus" class="status"></div>
-      <ul id="warningList" class="warning-list" hidden></ul>
-    </section>
+    </div>
+  </footer>
 
-    <section class="card">
-      <div class="section-header">
-        <h2>Lignes extraites</h2>
-        <div class="badges">
-          <span id="lineCount" class="badge">0 ligne(s)</span>
-          <span id="fileCount" class="badge muted">0 fichier(s)</span>
-          <span id="duplicateBadge" class="badge danger" hidden>0 doublon(s)</span>
-          <span id="confidenceBadge" class="badge warn" hidden>0 à relire</span>
-          <button id="removeDuplicatesBtn" class="secondary small" type="button" hidden>
-            Supprimer les doublons
-          </button>
-        </div>
-      </div>
-      <p class="hint">Cliquez <strong>Voir</strong> pour afficher une facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau. En modifiant <strong>Fournisseur</strong>, <strong>ICE</strong> ou <strong>IF</strong>, vous pouvez appliquer la correction à toutes les lignes qui avaient la même valeur.</p>
-      <div id="emptyState" class="empty-state">
-        <p>Aucune ligne pour l'instant.</p>
-      </div>
-      <div id="reviewLayout" class="review-layout" hidden>
-        <div class="review-table-pane">
-          <div class="table-wrap" id="tableWrap">
-            <table id="linesTable">
-              <thead>
-                <tr>
-                  <th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
-                  <th>Désignation</th><th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
-                  <th>Date fact.</th><th>Date paie</th><th>Paie</th><th></th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-        <aside id="documentPreviewPanel" class="review-preview-pane" hidden>
-          <div class="preview-header">
-            <div>
-              <h3 id="previewTitle">Document</h3>
-              <p id="previewSubtitle" class="hint preview-subtitle"></p>
-            </div>
-            <div class="preview-toolbar">
-              <div class="preview-toolbar-row">
-                <div id="previewZoom" class="preview-zoom" hidden>
-                  <button id="previewZoomOut" class="secondary small" type="button" aria-label="Dézoomer">−</button>
-                  <span id="previewZoomLabel">100%</span>
-                  <button id="previewZoomIn" class="secondary small" type="button" aria-label="Zoomer">+</button>
-                  <button id="previewZoomReset" class="secondary small" type="button" title="Réinitialiser le zoom">100%</button>
-                </div>
-                <button
-                  id="previewCloseBtn"
-                  class="secondary small preview-close-btn"
-                  type="button"
-                  aria-label="Fermer l'aperçu"
-                  title="Fermer l'aperçu"
-                >
-                  ✕
-                </button>
-              </div>
-              <div id="previewNav" class="preview-nav" hidden>
-                <button id="previewPrevPage" class="secondary small" type="button" aria-label="Page précédente">‹</button>
-                <span id="previewPageInfo">1 / 1</span>
-                <button id="previewNextPage" class="secondary small" type="button" aria-label="Page suivante">›</button>
-              </div>
-            </div>
-          </div>
-          <div id="previewIssues" class="preview-issues" hidden></div>
-          <p id="previewEmpty" class="hint preview-empty">Cliquez « Voir » sur une ligne pour afficher la facture.</p>
-          <p id="previewMissing" class="hint warn preview-missing" hidden></p>
-          <div id="previewCanvasWrap" class="preview-canvas-wrap" hidden>
-            <canvas id="previewCanvas"></canvas>
-            <img id="previewImage" alt="Aperçu facture" hidden />
-          </div>
-        </aside>
-      </div>
-    </section>
+  <script type="module">
+    import { getSession, isSuperAdmin, getUserCabinetMembership } from "./auth-client.js?v=auth5";
 
-    <section class="card">
-      <div class="section-header">
-        <h2>Relevé bancaire</h2>
-      </div>
-      <p class="hint">
-        Importez le relevé pour renseigner automatiquement les <strong>dates de paiement</strong>
-        (rapprochement par montant TTC) et ajouter les <strong>frais bancaires</strong> (commissions, agios).
-      </p>
-      <div class="upload-zone bank-upload" id="bankDropZone">
-        <input id="bankFileInput" type="file" accept=".csv,.txt,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.webp" />
-        <div class="upload-icon">🏦</div>
-        <p class="upload-title">Glissez votre relevé ici</p>
-        <p class="upload-hint">CSV, Excel ou PDF (IA via Codespace)</p>
-      </div>
-      <div id="bankFileInfo" class="file-list" hidden></div>
-      <div class="actions">
-        <button id="applyBankBtn" class="secondary" type="button" disabled>Appliquer dates &amp; frais</button>
-      </div>
-      <div id="bankStatus" class="status"></div>
-    </section>
+    if (window.lucide?.createIcons) window.lucide.createIcons();
 
-    <section class="card export-card">
-      <div class="export-inner">
-        <div>
-          <h2>Exporter le fichier DED TVA</h2>
-          <p class="hint">Format Excel prêt pour la déclaration TVA marocaine. Les points à relire s'affichent avant le téléchargement — l'export n'est jamais bloqué.</p>
-        </div>
-        <button id="exportBtn" class="primary large" disabled>Télécharger Excel</button>
-      </div>
-    </section>
-  </main>
+    document.getElementById("mobileToggle")?.addEventListener("click", () => {
+      document.getElementById("navLinks")?.classList.toggle("open");
+    });
 
-  <dialog id="exportReviewDialog" class="review-dialog">
-    <form method="dialog">
-      <h2>Vérification avant export</h2>
-      <p id="exportReviewIntro" class="hint"></p>
-      <ul id="exportReviewList"></ul>
-      <div class="dialog-actions">
-        <button value="cancel" class="secondary" type="submit">Annuler</button>
-        <button id="exportReviewConfirm" class="primary" type="button">J'ai vérifié, exporter</button>
-      </div>
-    </form>
-  </dialog>
+    try {
+      const session = await getSession();
+      if (session?.user) {
+        const admin = await isSuperAdmin(session.user.id);
+        const membership = admin ? null : await getUserCabinetMembership();
+        const cta = document.getElementById("navCta");
+        const heroCta = document.querySelector(".lp-hero-cta .lp-btn-primary");
 
-  <dialog id="fieldBulkDialog" class="review-dialog">
-    <form method="dialog">
-      <h2 id="fieldBulkTitle">Valeur modifiée</h2>
-      <p id="fieldBulkIntro" class="hint"></p>
-      <div class="dialog-actions">
-        <button value="cancel" class="secondary" type="submit">Cette ligne seulement</button>
-        <button id="fieldBulkApplyAll" class="primary" type="button">Appliquer à toutes les lignes</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="bankMatchDialog" class="review-dialog bank-match-dialog">
-    <form method="dialog" id="bankMatchForm">
-      <h2 id="bankMatchTitle">Rapprochement à confirmer</h2>
-      <p id="bankMatchIntro" class="hint">Vérifiez la ligne du relevé et choisissez les factures correspondantes.</p>
-
-      <section class="bank-match-txn" aria-labelledby="bankMatchTxnHeading">
-        <h3 id="bankMatchTxnHeading">Ligne du relevé bancaire</h3>
-        <table class="bank-match-txn-table">
-          <tbody>
-            <tr>
-              <th scope="row">Date</th>
-              <td id="bankMatchTxnDate"></td>
-            </tr>
-            <tr>
-              <th scope="row">Montant</th>
-              <td id="bankMatchTxnAmount" class="bank-match-txn-amount"></td>
-            </tr>
-            <tr>
-              <th scope="row">Libellé</th>
-              <td id="bankMatchTxnLabel" class="bank-match-txn-label"></td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <h3 class="bank-match-proposals-heading">Factures proposées</h3>
-      <div id="bankMatchProposals" class="bank-match-proposals" role="radiogroup" aria-labelledby="bankMatchProposalsHeading"></div>
-
-      <section id="bankMatchInvoiceDetail" class="bank-match-invoices" hidden aria-labelledby="bankMatchInvoiceHeading">
-        <h3 id="bankMatchInvoiceHeading">Détail des factures sélectionnées</h3>
-        <ul id="bankMatchInvoiceList" class="bank-match-invoice-list"></ul>
-      </section>
-
-      <label id="bankMatchLearnWrap" class="checkbox-row bank-match-learn" hidden>
-        <input id="bankMatchLearnAlias" type="checkbox" checked />
-        Mémoriser ce libellé bancaire pour ce fournisseur (prochains relevés)
-      </label>
-      <div class="dialog-actions">
-        <button value="skip" class="secondary" type="submit">Ignorer ce virement</button>
-        <button id="bankMatchConfirm" class="primary" type="button">Valider le rapprochement</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js?v=auth1"></script>
+        if (admin) {
+          cta.textContent = "Administration";
+          cta.href = "admin.html";
+          if (heroCta) { heroCta.textContent = "Administration"; heroCta.href = "admin.html"; }
+        } else if (membership) {
+          cta.textContent = "Mon portefeuille";
+          cta.href = "dossiers.html";
+          if (heroCta) { heroCta.textContent = "Mon portefeuille"; heroCta.href = "dossiers.html"; }
+        } else {
+          cta.textContent = "Outil TVA";
+          cta.href = "production.html";
+        }
+      }
+    } catch { /* visiteur non connecté */ }
+  </script>
 </body>
 </html>

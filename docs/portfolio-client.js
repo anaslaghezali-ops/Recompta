@@ -76,34 +76,34 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey 
   if (bank.length === 0) {
     return {
       label: "Importer le relevé bancaire",
-      href: `index.html?dossier=${dossier.id}`,
+      href: `production.html?dossier=${dossier.id}`,
       action: "bank",
     };
   }
   if (lines.length === 0) {
     return {
       label: "Importer les factures achats",
-      href: `index.html?dossier=${dossier.id}`,
+      href: `production.html?dossier=${dossier.id}`,
       action: "purchases",
     };
   }
   if (anomalyCount > 0) {
     return {
       label: `Corriger ${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}`,
-      href: `index.html?dossier=${dossier.id}`,
+      href: `production.html?dossier=${dossier.id}`,
       action: "fix",
     };
   }
   if (statusKey === "in_review") {
     return {
       label: "Valider et exporter",
-      href: `index.html?dossier=${dossier.id}`,
+      href: `production.html?dossier=${dossier.id}`,
       action: "export",
     };
   }
   return {
     label: "Poursuivre la production",
-    href: `index.html?dossier=${dossier.id}`,
+    href: `production.html?dossier=${dossier.id}`,
     action: "continue",
   };
 }
