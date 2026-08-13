@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Production TVA</title>
-  <link rel="stylesheet" href="styles.css?v=auth1" />
+  <link rel="stylesheet" href="styles.css?v=dedupe1" />
 </head>
 <body>
   <header class="hero">
@@ -109,8 +109,8 @@
           <span id="fileCount" class="badge muted">0 fichier(s)</span>
           <span id="duplicateBadge" class="badge danger" hidden>0 doublon(s)</span>
           <span id="confidenceBadge" class="badge warn" hidden>0 à relire</span>
-          <button id="removeDuplicatesBtn" class="secondary small" type="button" hidden>
-            Supprimer les doublons
+          <button id="removeDuplicatesBtn" class="danger small" type="button" hidden>
+            Supprimer tous les doublons
           </button>
         </div>
       </div>
@@ -278,6 +278,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js?v=review1"></script>
+  <script type="module" src="app.js?v=dedupe1"></script>
 </body>
 </html>
