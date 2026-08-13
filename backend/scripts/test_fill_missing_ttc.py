@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TTC reconstitué depuis HT + TVA, et ICE/IF marqués comme inférés."""
+"""TTC reconstitué, montants impossibles, TVA 0 %."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models import InvoiceLine
+from models import InvoiceLine, normalize_taux
 from normalize_results import complete_supplier_identifiers
-from vat_intelligence import fill_missing_ttc
+from vat_intelligence import fill_missing_ttc, sanitize_impossible_amounts
 
 
 def line(**kwargs) -> InvoiceLine:
@@ -43,8 +43,6 @@ def main() -> int:
     mixed_fill = fill_missing_ttc(line(m_ht=-686.44, tva=969.44, m_ttc=0.0))
     assert mixed_fill.m_ttc == 0.0, mixed_fill.m_ttc
 
-    from vat_intelligence import sanitize_impossible_amounts
-
     rate_as_ht = sanitize_impossible_amounts(
         line(m_ht=-20.0, tva=-1134.0, m_ttc=-5670.0),
         is_avoir=True,
@@ -71,6 +69,23 @@ def main() -> int:
     blended = sanitize_impossible_amounts(line(m_ht=100.0, tva=17.5, m_ttc=117.5))
     assert blended.m_ht == 100.0 and blended.tva == 17.5
 
+    zero = InvoiceLine(fact_num="VIANDE", m_ht=2500.0, tva=0.0, m_ttc=2500.0, taux=0.0)
+    assert zero.taux == 0.0
+    kept = sanitize_impossible_amounts(zero)
+    assert kept.taux == 0.0
+    assert kept.m_ht == 2500.0 and kept.tva == 0.0 and kept.m_ttc == 2500.0
+
+    assert (
+        InvoiceLine.model_validate(
+            {"fact_num": "F0", "m_ht": 800.0, "tva": 0.0, "m_ttc": 800.0, "taux": 0.0}
+        ).taux
+        == 0.0
+    )
+    assert normalize_taux(0) == 0.0
+    assert normalize_taux(0.0) == 0.0
+
+    filled_zero = fill_missing_ttc(line(m_ht=800.0, tva=0.0, m_ttc=0.0, taux=0.0))
+    assert filled_zero.m_ttc == 800.0
 
     known = line(
         fact_num="A",

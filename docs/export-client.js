@@ -117,17 +117,20 @@ export function collectExportReview(lines, { clientIce = "", duplicateIndexes = 
       issues.push({ level: "warn", text: `${label} — numéro de facture vide` });
     }
 
-    if (taux !== 0.1 && taux !== 0.2) {
+    if (taux !== 0 && taux !== 0.1 && taux !== 0.2) {
       issues.push({
         level: "warn",
-        text: `${label} — taux ${Number.isFinite(taux) ? `${taux * 100}%` : "?"} hors 10 / 20 %`,
+        text: `${label} — taux ${Number.isFinite(taux) ? `${taux * 100}%` : "?"} hors 0 / 10 / 20 %`,
       });
     }
 
     if (resolvedCodeTva(line) == null) {
       issues.push({
-        level: "warn",
-        text: `${label} — CODE TVA non déduit pour ${line.designation || "?"} à ${(taux || 0) * 100}%`,
+        level: taux === 0 ? "info" : "warn",
+        text:
+          taux === 0
+            ? `${label} — TVA 0 % (exonéré) : CODE TVA à renseigner si votre DED l'exige`
+            : `${label} — CODE TVA non déduit pour ${line.designation || "?"} à ${(taux || 0) * 100}%`,
       });
     }
 
@@ -165,7 +168,7 @@ export function exportDedTvaExcel({ clientName, period, lines }) {
       line.if ?? "",
       line.lib_frss ?? "",
       normalizeIce(line.ice_frs),
-      Number(line.taux) || 0.2,
+      Number.isFinite(Number(line.taux)) ? Number(line.taux) : 0.2,
       Number(line.id_paie) || 4,
       excelDate(line.date_paie),
       excelDate(line.date_fac),

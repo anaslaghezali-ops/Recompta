@@ -122,7 +122,7 @@ async def reference() -> dict:
             "TELEPHONIE",
             "FRAIS BANCAIRE",
         ],
-        "taux": [0.1, 0.2],
+        "taux": [0.0, 0.1, 0.2],
         "id_paie": [1, 4],
         "code_tva_mapping": {
             "MATIERES CONSOMMABLES @ 20%": 146,
@@ -216,12 +216,6 @@ async def import_bank_statement(
 async def export_excel(request: ExportRequest) -> Response:
     if not request.lines:
         raise HTTPException(status_code=400, detail="Aucune ligne à exporter")
-
-    for line in request.lines:
-        try:
-            line.resolved_code_tva()
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     content = export_to_bytes(request)
     filename = export_filename(request.client_name, request.period)

@@ -138,8 +138,9 @@ function updateButtons() {
 
 function recalcTva(line) {
   const ht = Number(line.m_ht) || 0;
-  const taux = Number(line.taux) || 0.2;
-  line.tva = Math.round(ht * taux * 100) / 100;
+  const taux = Number(line.taux);
+  const rate = Number.isFinite(taux) ? taux : 0.2;
+  line.tva = Math.round(ht * rate * 100) / 100;
   line.m_ttc = Math.round((ht + line.tva) * 100) / 100;
 }
 
@@ -193,7 +194,7 @@ function renderTable() {
       { key: "m_ht", type: "number", step: "0.01" },
       { key: "tva", type: "number", step: "0.01", readonly: true },
       { key: "m_ttc", type: "number", step: "0.01", readonly: true },
-      { key: "taux", type: "select", options: ["0.1", "0.2"] },
+      { key: "taux", type: "select", options: ["0", "0.1", "0.2"] },
       { key: "date_fac", type: "date" },
       { key: "date_paie", type: "date" },
       { key: "id_paie", type: "select", options: ["1", "4"] },

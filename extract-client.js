@@ -561,8 +561,12 @@ export function fillMissingTtc(line) {
   const ht = Number(line.m_ht) || 0;
   const tva = Number(line.tva) || 0;
   const ttc = Number(line.m_ttc) || 0;
-  if (Math.abs(ttc) >= 0.01 || Math.abs(ht) < 0.01 || Math.abs(tva) < 0.01) return line;
+  if (Math.abs(ttc) >= 0.01 || Math.abs(ht) < 0.01) return line;
   if (signsAreMixed(ht, tva, ttc)) return line;
+  if (Math.abs(tva) < 0.01) {
+    if (Number(line.taux) === 0) return { ...line, m_ttc: Math.round(ht * 100) / 100 };
+    return line;
+  }
   if (Math.abs(tva) > Math.abs(ht) + 0.05) return line;
   return { ...line, m_ttc: Math.round((ht + tva) * 100) / 100 };
 }
@@ -579,7 +583,8 @@ function magnitudesCoherent(ht, tva, ttc, taux) {
   const absTtc = Math.abs(ttc);
   if (absHt < 0.01 && absTtc < 0.01) return false;
   if (Math.abs(absHt + absTva - absTtc) > 0.05) return false;
-  if (absHt > 0.01 && (taux === 0.1 || taux === 0.2)) {
+  if (absHt > 0.01 && (taux === 0 || taux === 0.1 || taux === 0.2)) {
+    if (taux === 0) return absTva <= 0.05 && Math.abs(absHt - absTtc) <= 0.05;
     return Math.abs(absTva / absHt - taux) <= 0.025;
   }
   return true;
@@ -606,6 +611,14 @@ function htIsActuallyTheRate(ht, tva, ttc) {
   return rate;
 }
 
+function isZeroRateLine(ht, tva, ttc) {
+  const absHt = Math.abs(ht);
+  const absTva = Math.abs(tva);
+  const absTtc = Math.abs(ttc);
+  if (absHt < 0.01) return false;
+  return absTva <= 0.05 && Math.abs(absHt - absTtc) <= 0.05;
+}
+
 function rebuildFromTtc(line, ttcAbs, taux, sign) {
   const htAbs = Math.round((ttcAbs / (1 + taux)) * 100) / 100;
   const tvaAbs = Math.round((ttcAbs - htAbs) * 100) / 100;
@@ -623,7 +636,13 @@ export function sanitizeImpossibleAmounts(line, isAvoir = false) {
   const ht = Math.abs(Number(line.m_ht) || 0) * sign;
   const tva = Math.abs(Number(line.tva) || 0) * sign;
   const ttc = Math.abs(Number(line.m_ttc) || 0) * sign;
-  const taux = Number(line.taux) === 0.1 || Number(line.taux) === 0.2 ? Number(line.taux) : 0.2;
+  const taux = Number(line.taux) === 0 || Number(line.taux) === 0.1 || Number(line.taux) === 0.2
+    ? Number(line.taux)
+    : 0.2;
+
+  if (isZeroRateLine(ht, tva, ttc)) {
+    return { ...line, m_ht: ht, tva, m_ttc: ttc, taux: 0 };
+  }
 
   const rateFromHt = htIsActuallyTheRate(ht, tva, ttc);
   if (rateFromHt != null) {
@@ -772,7 +791,8 @@ export function normalizeExtractionResults(results) {
 }
 
 function guessTaux(ht, tva) {
-  if (ht && tva && Math.abs(ht) > 0) {
+  if (ht && Math.abs(ht) > 0) {
+    if (!tva || Math.abs(tva) < 0.05) return 0;
     const ratio = Math.round((Math.abs(tva) / Math.abs(ht)) * 100) / 100;
     if (ratio === 0.1 || ratio === 0.2) return ratio;
     if (ratio >= 0.08 && ratio <= 0.12) return 0.1;
@@ -936,10 +956,17 @@ function extractAchibestTvaTable(text) {
     if (taux === null || ht === null || tva === null) continue;
     if (Math.abs(ht) < 0.01 && Math.abs(tva) < 0.01) continue;
     const tauxNorm = taux > 1 ? taux / 100 : taux;
-    if (tauxNorm !== 0.1 && tauxNorm !== 0.2) continue;
+    if (tauxNorm !== 0 && tauxNorm !== 0.1 && tauxNorm !== 0.2) continue;
     if (Math.abs(ht) > 0) {
       const ratio = Math.round((Math.abs(tva) / Math.abs(ht)) * 100) / 100;
-      if (ratio !== 0.1 && ratio !== 0.2 && !(ratio >= 0.08 && ratio <= 0.12) && !(ratio >= 0.18 && ratio <= 0.22)) {
+      if (
+        ratio !== 0 &&
+        ratio !== 0.1 &&
+        ratio !== 0.2 &&
+        !(ratio >= 0.08 && ratio <= 0.12) &&
+        !(ratio >= 0.18 && ratio <= 0.22) &&
+        !(Math.abs(tva) < 0.05 && Math.abs(ratio) < 0.02)
+      ) {
         continue;
       }
     }

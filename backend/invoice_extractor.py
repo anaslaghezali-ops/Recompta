@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Iterable
 
 import httpx
+from pydantic import ValidationError
 from pypdf import PdfReader
 
-from models import Designation, ExtractionResult, InvoiceLine
+from models import Designation, ExtractionResult, InvoiceLine, normalize_taux, taux_from_amounts
 
 MOROCCAN_DATE_PATTERNS = [
     r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})",
@@ -322,15 +323,7 @@ def _needs_ai_upgrade(result: ExtractionResult) -> bool:
 
 
 def _guess_taux(ht: float | None, tva: float | None) -> float:
-    if ht and tva and abs(ht) > 0:
-        ratio = round(abs(tva) / abs(ht), 2)
-        if ratio in (0.1, 0.2):
-            return ratio
-        if 0.08 <= ratio <= 0.12:
-            return 0.1
-        if 0.18 <= ratio <= 0.22:
-            return 0.2
-    return 0.2
+    return taux_from_amounts(ht, tva)
 
 
 def _extract_supplier_name(text: str) -> str:
@@ -503,11 +496,15 @@ def _extract_achibest_tva_table(text: str) -> list[dict[str, float]]:
         if abs(ht) < 0.01 and abs(tva) < 0.01:
             continue
         taux_norm = taux / 100 if taux > 1 else taux
-        if taux_norm not in (0.1, 0.2):
+        if taux_norm not in (0.0, 0.1, 0.2):
             continue
         if abs(ht) > 0:
             ratio = round(abs(tva) / abs(ht), 2)
-            if ratio not in (0.1, 0.2) and not (0.08 <= ratio <= 0.12 or 0.18 <= ratio <= 0.22):
+            if (
+                ratio not in (0.0, 0.1, 0.2)
+                and not (0.08 <= ratio <= 0.12 or 0.18 <= ratio <= 0.22)
+                and not (abs(tva) < 0.05 and abs(ratio) < 0.02)
+            ):
                 continue
         sign = -1 if ht < 0 or tva < 0 else 1
         ht_val = abs(ht) * sign
@@ -831,13 +828,15 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
    - « 1284,00 TTC  20%  214,00 » → m_ttc=1284, tva=214, m_ht=1070, taux=0.2
    - « Taux | Montant HT | TVA » → première colonne montant = HT
    - Totaux pied de page « Total HT / Total Taxes / Total TTC » → utiliser ces totaux
+   - TVA 0 % (exonéré : viande, lait, pain, etc.) : tva=0, m_ht=m_ttc, taux=0
 
 3. **Auto-vérification mathématique** avant de répondre, pour chaque ligne :
    - m_ht + tva ≈ m_ttc (±0,05 MAD)
-   - tva / m_ht ≈ taux (±2 %)  OU  tva / m_ttc ≈ taux/(1+taux)
+   - Si taux = 0 : tva = 0 et m_ht ≈ m_ttc
+   - Sinon tva / m_ht ≈ taux (±2 %)  OU  tva / m_ttc ≈ taux/(1+taux)
    - Si ça ne colle pas : tu as confondu HT et TTC → recalcule (HT = TTC − TVA)
 
-4. **Plusieurs taux** (10 % et 20 %) : une entrée JSON par taux, avec les montants de la ventilation.
+4. **Plusieurs taux** (0 %, 10 % et 20 %) : une entrée JSON par taux, avec les montants de la ventilation.
 
 5. **Plusieurs factures dans un même document** (scan groupé de plusieurs pages) :
    traite-les TOUTES. Une entrée par (facture, taux), avec le fact_num propre à
@@ -869,6 +868,7 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
   Un « Bon de livraison » cité sur une facture de marchandises ne la transforme
   PAS en prestation : ce sont bien des matières consommables.
 - id_paie : 1 (comptant) ou 4 (virement) — défaut 4
+- taux : 0 (exonéré, TVA = 0), 0.1 (10 %) ou 0.2 (20 %). Ne jamais renvoyer un autre taux.
 - date_fac : date d'émission de la facture
 - date_paie : TOUJOURS null. Une facture ne prouve pas son paiement ; cette
   date est renseignée plus tard par rapprochement avec le relevé bancaire.
@@ -990,6 +990,42 @@ async def _post_chat_completion(api_key: str, payload: dict) -> dict:
         return response.json()
 
 
+def _as_optional_float(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_ai_lines(raw_lines: object) -> tuple[list[InvoiceLine], list[str]]:
+    """Une ligne invalide ne doit pas faire échouer tout le document."""
+    lines: list[InvoiceLine] = []
+    warnings: list[str] = []
+    if not isinstance(raw_lines, list):
+        return lines, warnings
+
+    for item in raw_lines:
+        if not isinstance(item, dict):
+            continue
+        data = dict(item)
+        try:
+            data["taux"] = normalize_taux(data.get("taux"))
+        except (TypeError, ValueError):
+            data["taux"] = _guess_taux(
+                _as_optional_float(data.get("m_ht")),
+                _as_optional_float(data.get("tva")),
+            )
+        try:
+            lines.append(InvoiceLine.model_validate(data))
+        except ValidationError as exc:
+            fact = data.get("fact_num") or "?"
+            detail = exc.errors()[0].get("msg", str(exc)) if exc.errors() else str(exc)
+            warnings.append(f"Ligne {fact} ignorée : {detail}")
+    return lines, warnings
+
+
 async def _extract_with_openai_images(
     filename: str, images: list[tuple[bytes, str]], model: str | None = None
 ) -> ExtractionResult:
@@ -1028,13 +1064,15 @@ async def _extract_with_openai_images(
     body = await _post_chat_completion(api_key, payload)
     content_json = json.loads(body["choices"][0]["message"]["content"])
 
-    lines = [InvoiceLine.model_validate(item) for item in content_json.get("lines", [])]
+    lines, line_warnings = _parse_ai_lines(content_json.get("lines", []))
+    warnings = list(content_json.get("warnings") or [])
+    warnings.extend(line_warnings)
     result = ExtractionResult(
         filename=filename,
         lines=lines,
-        confidence="high",
+        confidence="high" if lines else "low",
         engine="ai",
-        warnings=content_json.get("warnings", []),
+        warnings=warnings,
     )
 
     from vat_intelligence import apply_vat_reconciliation, result_needs_escalation

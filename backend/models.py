@@ -46,6 +46,39 @@ def normalize_designation_label(value: object) -> Designation:
     return Designation.MATIERES_CONSOMMABLES
 
 
+# 0 % = exonéré (viande, lait, pain, etc.), 10 %, 20 %
+ALLOWED_TAUX = (0.0, 0.1, 0.2)
+
+
+def normalize_taux(value: object) -> float:
+    """Accepte 0 / 0.1 / 0.2, ou 0 / 10 / 20 écrits en pourcentage."""
+    if value is None or value == "":
+        raise ValueError("Taux TVA manquant")
+    try:
+        rate = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Taux TVA invalide") from exc
+    if abs(rate) > 1:
+        rate = rate / 100.0
+    for allowed in ALLOWED_TAUX:
+        if abs(rate - allowed) <= 0.015:
+            return allowed
+    raise ValueError("Le taux TVA doit être 0 % (exonéré), 10 % ou 20 %")
+
+
+def taux_from_amounts(ht: float | None, tva: float | None) -> float:
+    """Déduit 0 / 10 / 20 % à partir de HT et TVA."""
+    if ht is None or abs(ht) < 0.01:
+        return 0.2
+    if tva is None or abs(tva) < 0.05:
+        return 0.0
+    ratio = abs(tva) / abs(ht)
+    for allowed in (0.1, 0.2):
+        if abs(ratio - allowed) <= 0.025:
+            return allowed
+    return 0.2
+
+
 # Mapping observé dans les fichiers DED TVA marocains
 CODE_TVA_BY_DESIGNATION_TAUX: dict[tuple[Designation, float], int] = {
     (Designation.MATIERES_CONSOMMABLES, 0.2): 146,
@@ -77,7 +110,7 @@ class InvoiceLine(BaseModel):
         False,
         description="IF repris d'une autre facture du même fournisseur, pas lu sur cette pièce",
     )
-    taux: float = Field(0.2, description="Taux TVA (0.1 ou 0.2)")
+    taux: float = Field(0.2, description="Taux TVA (0 exonéré, 0.1 ou 0.2)")
     id_paie: int = Field(4, description="Mode de paiement (1 ou 4)")
     date_paie: Optional[date] = None
     date_fac: Optional[date] = None
@@ -91,12 +124,10 @@ class InvoiceLine(BaseModel):
     def normalize_designation(cls, value: object) -> Designation:
         return normalize_designation_label(value)
 
-    @field_validator("taux")
+    @field_validator("taux", mode="before")
     @classmethod
-    def validate_taux(cls, value: float) -> float:
-        if value not in (0.1, 0.2):
-            raise ValueError("Le taux TVA doit être 0.1 (10%) ou 0.2 (20%)")
-        return value
+    def validate_taux(cls, value: object) -> float:
+        return normalize_taux(value)
 
     @field_validator("ice_frs")
     @classmethod
@@ -108,15 +139,10 @@ class InvoiceLine(BaseModel):
             return ""
         return digits
 
-    def resolved_code_tva(self) -> int:
+    def resolved_code_tva(self) -> Optional[int]:
         if self.code_tva is not None:
             return self.code_tva
-        inferred = infer_code_tva(self.designation, self.taux)
-        if inferred is None:
-            raise ValueError(
-                f"Impossible de déduire le CODE TVA pour {self.designation.value} à {self.taux * 100}%"
-            )
-        return inferred
+        return infer_code_tva(self.designation, self.taux)
 
 
 class ExportRequest(BaseModel):

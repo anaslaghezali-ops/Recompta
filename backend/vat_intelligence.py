@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from models import ExtractionResult, InvoiceLine
+from models import ALLOWED_TAUX, ExtractionResult, InvoiceLine
 
 TTC_VENTILATION_PATTERN = re.compile(
     r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)",
@@ -30,7 +27,7 @@ def parse_ttc_ventilation(text: str) -> list[dict[str, float]]:
         if ttc is None or taux is None or tva is None:
             continue
         taux_norm = taux / 100 if taux > 1 else taux
-        if taux_norm not in (0.1, 0.2):
+        if taux_norm not in ALLOWED_TAUX:
             continue
         ht = round(ttc - tva, 2)
         items.append({"m_ht": ht, "tva": tva, "m_ttc": ttc, "taux": taux_norm})
@@ -63,11 +60,15 @@ def parse_rate_ht_tva_table(text: str) -> list[dict[str, float]]:
         if abs(ht) < 0.01 and abs(tva) < 0.01:
             continue
         taux_norm = taux / 100 if taux > 1 else taux
-        if taux_norm not in (0.1, 0.2):
+        if taux_norm not in ALLOWED_TAUX:
             continue
         if abs(ht) > 0:
             ratio = round(abs(tva) / abs(ht), 2)
-            if ratio not in (0.1, 0.2) and not (0.08 <= ratio <= 0.12 or 0.18 <= ratio <= 0.22):
+            if (
+                ratio not in (0.0, 0.1, 0.2)
+                and not (0.08 <= ratio <= 0.12 or 0.18 <= ratio <= 0.22)
+                and not (abs(tva) < 0.05 and abs(ratio) < 0.02)
+            ):
                 continue
         sign = -1 if ht < 0 or tva < 0 else 1
         ht_val = abs(ht) * sign
@@ -214,7 +215,9 @@ def line_is_coherent(line: InvoiceLine) -> bool:
         return False
     if abs(ht + tva - ttc) > max(0.05, ttc * 0.01):
         return False
-    if ht > 0.01 and line.taux in (0.1, 0.2):
+    if ht > 0.01 and line.taux in ALLOWED_TAUX:
+        if line.taux == 0.0:
+            return tva <= 0.05 and abs(ht - ttc) <= 0.05
         return abs(tva / ht - line.taux) <= 0.025
     return True
 
@@ -239,7 +242,9 @@ def _magnitudes_coherent(ht: float, tva: float, ttc: float, taux: float) -> bool
         return False
     if abs(abs_ht + abs_tva - abs_ttc) > 0.05:
         return False
-    if abs_ht > 0.01 and taux in (0.1, 0.2):
+    if abs_ht > 0.01 and taux in ALLOWED_TAUX:
+        if taux == 0.0:
+            return abs_tva <= 0.05 and abs(abs_ht - abs_ttc) <= 0.05
         return abs(abs_tva / abs_ht - taux) <= 0.025
     return True
 
@@ -272,6 +277,13 @@ def _ht_is_actually_the_rate(ht: float, tva: float, ttc: float) -> float | None:
     return rate
 
 
+def _is_zero_rate_line(ht: float, tva: float, ttc: float) -> bool:
+    abs_ht, abs_tva, abs_ttc = abs(ht), abs(tva), abs(ttc)
+    if abs_ht < 0.01:
+        return False
+    return abs_tva <= 0.05 and abs(abs_ht - abs_ttc) <= 0.05
+
+
 def _rebuild_from_ttc(line: InvoiceLine, ttc_abs: float, taux: float, sign: int) -> InvoiceLine:
     ht_abs = round(ttc_abs / (1 + taux), 2)
     tva_abs = round(ttc_abs - ht_abs, 2)
@@ -290,7 +302,12 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
     """
     sign = -1 if is_avoir else 1
     ht, tva, ttc = abs(line.m_ht) * sign, abs(line.tva) * sign, abs(line.m_ttc) * sign
-    taux = line.taux if line.taux in (0.1, 0.2) else 0.2
+    taux = line.taux if line.taux in ALLOWED_TAUX else 0.2
+
+    if _is_zero_rate_line(ht, tva, ttc):
+        line.m_ht, line.tva, line.m_ttc = ht, tva, ttc
+        line.taux = 0.0
+        return line
 
     rate_from_ht = _ht_is_actually_the_rate(ht, tva, ttc)
     if rate_from_ht is not None:
@@ -329,9 +346,13 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
 def fill_missing_ttc(line: InvoiceLine) -> InvoiceLine:
     """Si le TTC n'est pas lisible, HT + TVA suffisent à le reconstituer."""
     ht, tva, ttc = line.m_ht, line.tva, line.m_ttc
-    if abs(ttc) >= 0.01 or abs(ht) < 0.01 or abs(tva) < 0.01:
+    if abs(ttc) >= 0.01 or abs(ht) < 0.01:
         return line
     if _signs_are_mixed(ht, tva, ttc):
+        return line
+    if abs(tva) < 0.01:
+        if line.taux == 0.0:
+            line.m_ttc = round(ht, 2)
         return line
     if abs(tva) > abs(ht) + 0.05:
         return line
