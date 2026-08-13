@@ -1432,3 +1432,329 @@
   .dash-month-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dash-search { min-width: 0; flex: 1; }
 }
+
+/* Import pages */
+.imp-page { max-width: 1100px; }
+
+.imp-context-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: var(--dash-radius-lg);
+  margin-bottom: 0.85rem;
+  box-shadow: var(--dash-shadow);
+}
+
+.imp-context-item { font-size: 0.8rem; color: var(--dash-muted); }
+.imp-context-label {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dash-subtle);
+  margin-bottom: 0.1rem;
+}
+.imp-context-item strong { color: var(--dash-text); font-weight: 700; }
+
+.imp-save-status {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--dash-muted);
+  align-self: center;
+}
+.imp-save-status[data-tone="success"] { color: var(--dash-success); }
+.imp-save-status[data-tone="pending"] { color: var(--dash-warn); }
+
+.imp-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.imp-card {
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: var(--dash-radius-lg);
+  padding: 1rem 1.1rem;
+  box-shadow: var(--dash-shadow);
+}
+
+.imp-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dash-muted);
+}
+
+.imp-dropzone {
+  border: 2px dashed var(--dash-border-strong);
+  border-radius: var(--dash-radius-lg);
+  background: var(--dash-surface-2);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.imp-dropzone:hover,
+.imp-dropzone.is-dragover {
+  border-color: var(--dash-accent);
+  background: var(--dash-accent-soft);
+}
+
+.imp-dropzone-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 0.75rem;
+  border-radius: 12px;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  display: grid;
+  place-items: center;
+  color: var(--dash-accent);
+}
+
+.imp-dropzone h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.imp-dropzone p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+
+.imp-dropzone input { display: none; }
+
+.imp-file-queue {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.imp-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  background: var(--dash-surface-2);
+}
+
+.imp-file-meta { flex: 1; min-width: 0; }
+.imp-file-meta strong {
+  display: block;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.imp-file-meta span { font-size: 0.72rem; color: var(--dash-muted); }
+
+.imp-settings label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dash-muted);
+  margin-bottom: 0.65rem;
+}
+.imp-settings input[type="url"],
+.imp-settings input[type="text"] {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.imp-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--dash-text);
+  margin: 0.5rem 0;
+}
+
+.imp-engine-badge {
+  display: inline-flex;
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: var(--dash-neutral-soft);
+  color: var(--dash-neutral);
+}
+.imp-engine-badge.is-ok { background: var(--dash-success-soft); color: var(--dash-success); }
+.imp-engine-badge.is-warn { background: var(--dash-warn-soft); color: var(--dash-warn); }
+
+.imp-progress {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--dash-surface-2);
+  border: 1px solid var(--dash-border);
+}
+.imp-progress-track {
+  height: 4px;
+  background: var(--dash-neutral-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.45rem;
+}
+.imp-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--dash-accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.imp-progress p { margin: 0; font-size: 0.8rem; color: var(--dash-muted); }
+
+.imp-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.imp-stat {
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: var(--dash-radius);
+  padding: 0.65rem 0.75rem;
+}
+.imp-stat span {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dash-subtle);
+}
+.imp-stat strong {
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.imp-table-wrap {
+  overflow: auto;
+  max-height: 420px;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+}
+
+.imp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.imp-table th {
+  position: sticky;
+  top: 0;
+  background: var(--dash-surface-2);
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dash-subtle);
+  border-bottom: 1px solid var(--dash-border);
+}
+.imp-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--dash-border);
+  vertical-align: middle;
+}
+.imp-line-row.is-duplicate { background: #fff7ed; }
+.imp-line-source { max-width: 8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.imp-mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+.imp-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.imp-conf-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+.imp-conf-ok { background: var(--dash-success-soft); color: var(--dash-success); }
+.imp-conf-warn { background: var(--dash-warn-soft); color: var(--dash-warn); }
+.imp-conf-danger { background: var(--dash-danger-soft); color: var(--dash-danger); }
+
+.imp-status {
+  margin-top: 0.65rem;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+.imp-status.is-success { color: var(--dash-success); font-weight: 600; }
+.imp-status.is-warn { color: var(--dash-warn); font-weight: 600; }
+.imp-status.is-error { color: var(--dash-danger); font-weight: 600; }
+
+.imp-txn-label { max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.imp-txn-type {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+.imp-txn-payment { background: var(--dash-accent-soft); color: var(--dash-accent); }
+.imp-txn-fee { background: var(--dash-neutral-soft); color: var(--dash-neutral); }
+.imp-muted-cell { color: var(--dash-muted); font-size: 0.78rem; text-align: center; }
+
+.imp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.imp-bank-file {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  background: var(--dash-surface-2);
+  margin-bottom: 0.75rem;
+}
+.imp-bank-file strong { display: block; font-size: 0.85rem; }
+.imp-bank-file span { font-size: 0.75rem; color: var(--dash-muted); }
+
+/* Bank match dialog (import banque) */
+.bank-match-option {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+}
+.bank-match-option:has(input:checked) {
+  border-color: var(--dash-accent);
+  background: var(--dash-accent-soft);
+}
+.bank-match-txn-table { width: 100%; font-size: 0.82rem; margin-bottom: 0.75rem; }
+.bank-match-txn-table th { text-align: left; color: var(--dash-muted); padding: 0.25rem 0.5rem 0.25rem 0; }
+.bank-match-txn-amount { font-weight: 700; }
+
+@media (max-width: 900px) {
+  .imp-grid { grid-template-columns: 1fr; }
+  .imp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

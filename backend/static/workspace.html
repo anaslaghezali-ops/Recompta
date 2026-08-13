@@ -32,7 +32,7 @@
             <i data-lucide="calendar-plus"></i> Nouvelle période
           </button>
           <button type="button" class="dash-btn dash-btn-primary" id="openProductionBtn" hidden>
-            <i data-lucide="play"></i> Ouvrir la production
+            <i data-lucide="play"></i> Continuer
           </button>
         </div>
       </header>
@@ -224,8 +224,12 @@
       periodError.textContent = message || "";
     }
 
-    function openDossierTool(dossierId) {
-      window.location.href = `production.html?dossier=${dossierId}`;
+    function openDossierTool(dossierId, href) {
+      if (href) {
+        window.location.href = href;
+        return;
+      }
+      if (dossierId) window.location.href = `import-achats.html?dossier=${dossierId}`;
     }
 
     function setTab(tab) {
@@ -364,13 +368,17 @@
         `Dernière activité : ${cockpit.lastActivityLabel}`;
 
       openProductionBtn.onclick = () => {
-        if (selectedDossierId) openDossierTool(selectedDossierId);
+        if (cockpit.nextAction?.href) {
+          window.location.href = cockpit.nextAction.href;
+        } else if (selectedDossierId) {
+          openDossierTool(selectedDossierId);
+        }
       };
 
       const quickActions = [
-        { icon: "landmark", label: "Banque", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-input", label: "Achats", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "file-input", label: "Achats", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
         { icon: "file-spreadsheet", label: "Export TVA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
       ];
 

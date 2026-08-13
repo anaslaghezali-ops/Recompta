@@ -25,7 +25,10 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 
 1. Connexion → **dossiers.html** (portefeuille clients — dashboard)
 2. Carte client → **workspace.html** (calendrier TVA annuel + actions rapides)
-3. Clic sur un mois ou « Déclaration TVA » → `production.html?dossier=…`
+3. Clic sur un mois → **workspace.html** (cockpit) → imports dédiés :
+   - `import-banque.html?dossier=…` — relevé bancaire
+   - `import-achats.html?dossier=…` — factures achats
+   - `production.html?dossier=…` — outil complet (tests / export)
 
 ## Mode solo (sans compte)
 
