@@ -85,6 +85,14 @@ export function collectExportReview(lines, { clientIce = "", duplicateIndexes = 
       });
     }
 
+    const signed = [ht, tva, ttc].filter((value) => Math.abs(value) >= 0.01);
+    const signs = new Set(signed.map((value) => (value > 0 ? 1 : -1)));
+    if (signs.size > 1) {
+      issues.push({ level: "warn", text: `${label} — signes HT / TVA / TTC incohérents` });
+    } else if (Math.abs(ht) >= 0.01 && Math.abs(tva) > Math.abs(ht) + 0.05) {
+      issues.push({ level: "warn", text: `${label} — TVA supérieure au HT (impossible à 10/20 %)` });
+    }
+
     if (!ice) {
       issues.push({ level: "warn", text: `${label} — ICE fournisseur manquant` });
     } else if (ice.length !== 15) {

@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 from models import ExtractionResult, InvoiceLine
-from vat_intelligence import apply_vat_reconciliation, fill_missing_ttc
+from vat_intelligence import apply_vat_reconciliation, fill_missing_ttc, sanitize_impossible_amounts
 
 # Rétrocompatibilité imports internes
 from vat_intelligence import parse_ttc_ventilation  # noqa: F401
@@ -237,8 +237,14 @@ def normalize_extraction_results(
     normalized: list[ExtractionResult] = []
     for result in results:
         item = apply_avoir_signs(result.model_copy(deep=True))
+        is_avoir = is_avoir_document(item.filename, item.raw_text)
+        if not is_avoir and item.lines:
+            is_avoir = any(is_avoir_document("", "", line.fact_num) for line in item.lines)
         item = apply_vat_reconciliation(item)
-        item.lines = [fill_missing_ttc(line) for line in consolidate_lines(item.lines)]
+        item.lines = [
+            fill_missing_ttc(sanitize_impossible_amounts(line, is_avoir))
+            for line in consolidate_lines(item.lines)
+        ]
         # La date de paiement ne vient que du relevé bancaire : une facture ne
         # prouve pas son règlement, même si l'IA propose une date.
         for line in item.lines:

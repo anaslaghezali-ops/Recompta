@@ -40,6 +40,38 @@ def main() -> int:
     incomplete = fill_missing_ttc(line(m_ht=100.0, tva=0.0, m_ttc=0.0))
     assert incomplete.m_ttc == 0.0, incomplete.m_ttc
 
+    mixed_fill = fill_missing_ttc(line(m_ht=-686.44, tva=969.44, m_ttc=0.0))
+    assert mixed_fill.m_ttc == 0.0, mixed_fill.m_ttc
+
+    from vat_intelligence import sanitize_impossible_amounts
+
+    rate_as_ht = sanitize_impossible_amounts(
+        line(m_ht=-20.0, tva=-1134.0, m_ttc=-5670.0),
+        is_avoir=True,
+    )
+    assert rate_as_ht.m_ttc == -5670.0, rate_as_ht.m_ttc
+    assert rate_as_ht.m_ht == -4725.0, rate_as_ht.m_ht
+    assert rate_as_ht.tva == -945.0, rate_as_ht.tva
+
+    mixed = sanitize_impossible_amounts(
+        line(m_ht=-686.44, tva=969.44, m_ttc=283.0),
+        is_avoir=False,
+    )
+    assert mixed.m_ht > 0 and mixed.tva > 0 and mixed.m_ttc > 0
+    assert abs(mixed.m_ht + mixed.tva - mixed.m_ttc) <= 0.05, (mixed.m_ht, mixed.tva, mixed.m_ttc)
+    assert abs(mixed.tva / mixed.m_ht - 0.2) <= 0.025
+    assert abs(mixed.m_ttc - 969.44) <= 0.05, mixed.m_ttc
+
+    carrefour = sanitize_impossible_amounts(line(m_ht=150.0, tva=30.0, m_ttc=180.0))
+    assert carrefour.m_ht == 150.0 and carrefour.tva == 30.0 and carrefour.m_ttc == 180.0
+
+    small = sanitize_impossible_amounts(line(m_ht=20.0, tva=4.0, m_ttc=24.0))
+    assert small.m_ht == 20.0 and small.tva == 4.0
+
+    blended = sanitize_impossible_amounts(line(m_ht=100.0, tva=17.5, m_ttc=117.5))
+    assert blended.m_ht == 100.0 and blended.tva == 17.5
+
+
     known = line(
         fact_num="A",
         lib_frss="EAT MEAT",

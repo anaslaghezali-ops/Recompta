@@ -525,20 +525,35 @@ function applyTtcVentilationFixes(result) {
   // seule facture, on ne réécrit donc pas les lignes à partir d'un modèle.
   if (ventilation.length && result.lines?.length && distinctInvoices.size <= 1) {
     const template = result.lines[0];
-    const lines = ventilation.map((item) => ({
-      ...template,
-      m_ht: item.m_ht,
-      tva: item.tva,
-      m_ttc: item.m_ttc,
-      taux: item.taux,
-    }));
+    const isAvoir =
+      isAvoirDocument(text, result.filename) ||
+      isAvoirDocument("", "", template.fact_num);
+    const lines = ventilation.map((item) =>
+      fillMissingTtc(
+        sanitizeImpossibleAmounts(
+          {
+            ...template,
+            m_ht: item.m_ht,
+            tva: item.tva,
+            m_ttc: item.m_ttc,
+            taux: item.taux,
+          },
+          isAvoir,
+        ),
+      ),
+    );
     return { ...result, lines, warnings };
   }
 
   // Corrections appuyées sur le document : silencieuses, le tableau montre le résultat.
   const footerHt = extractFooterTotals(text).ht ?? null;
   const aligned = alignLinesWithFooterTotals(result.lines || [], text);
-  const lines = aligned.map((line) => fillMissingTtc(fixTtcMislabeledLine(line, text, footerHt)));
+  const isAvoir =
+    isAvoirDocument(text, result.filename) ||
+    (result.lines || []).some((line) => isAvoirDocument("", "", line.fact_num));
+  const lines = aligned.map((line) =>
+    fillMissingTtc(sanitizeImpossibleAmounts(fixTtcMislabeledLine(line, text, footerHt), isAvoir)),
+  );
   return { ...result, lines, warnings };
 }
 
@@ -546,10 +561,99 @@ export function fillMissingTtc(line) {
   const ht = Number(line.m_ht) || 0;
   const tva = Number(line.tva) || 0;
   const ttc = Number(line.m_ttc) || 0;
-  if (Math.abs(ttc) < 0.01 && Math.abs(ht) >= 0.01 && Math.abs(tva) >= 0.01) {
-    return { ...line, m_ttc: Math.round((ht + tva) * 100) / 100 };
+  if (Math.abs(ttc) >= 0.01 || Math.abs(ht) < 0.01 || Math.abs(tva) < 0.01) return line;
+  if (signsAreMixed(ht, tva, ttc)) return line;
+  if (Math.abs(tva) > Math.abs(ht) + 0.05) return line;
+  return { ...line, m_ttc: Math.round((ht + tva) * 100) / 100 };
+}
+
+function signsAreMixed(ht, tva, ttc) {
+  const vals = [ht, tva, ttc].filter((v) => Math.abs(v) >= 0.01);
+  if (vals.length < 2) return false;
+  return new Set(vals.map((v) => (v > 0 ? 1 : -1))).size > 1;
+}
+
+function magnitudesCoherent(ht, tva, ttc, taux) {
+  const absHt = Math.abs(ht);
+  const absTva = Math.abs(tva);
+  const absTtc = Math.abs(ttc);
+  if (absHt < 0.01 && absTtc < 0.01) return false;
+  if (Math.abs(absHt + absTva - absTtc) > 0.05) return false;
+  if (absHt > 0.01 && (taux === 0.1 || taux === 0.2)) {
+    return Math.abs(absTva / absHt - taux) <= 0.025;
   }
-  return line;
+  return true;
+}
+
+function isBlendedMultiRate(ht, tva) {
+  if (Math.abs(ht) < 0.01 || Math.abs(tva) < 0.01) return false;
+  const rate = Math.abs(tva) / Math.abs(ht);
+  const in10 = rate >= 0.085 && rate <= 0.115;
+  const in20 = rate >= 0.185 && rate <= 0.215;
+  return rate >= 0.085 && rate <= 0.215 && !in10 && !in20;
+}
+
+function htIsActuallyTheRate(ht, tva, ttc) {
+  const absHt = Math.abs(ht);
+  const absTva = Math.abs(tva);
+  const absTtc = Math.abs(ttc);
+  let rate = null;
+  if (Math.abs(absHt - 20) <= 0.011 || Math.abs(absHt - 0.2) <= 1e-6) rate = 0.2;
+  else if (Math.abs(absHt - 10) <= 0.011 || Math.abs(absHt - 0.1) <= 1e-6) rate = 0.1;
+  if (rate == null) return null;
+  if (absHt > 0.01 && absTva / absHt <= 0.25) return null;
+  if (absTtc < 50 && absTva < 50) return null;
+  return rate;
+}
+
+function rebuildFromTtc(line, ttcAbs, taux, sign) {
+  const htAbs = Math.round((ttcAbs / (1 + taux)) * 100) / 100;
+  const tvaAbs = Math.round((ttcAbs - htAbs) * 100) / 100;
+  return {
+    ...line,
+    m_ht: htAbs * sign,
+    tva: tvaAbs * sign,
+    m_ttc: Math.round(ttcAbs * 100) / 100 * sign,
+    taux,
+  };
+}
+
+export function sanitizeImpossibleAmounts(line, isAvoir = false) {
+  const sign = isAvoir ? -1 : 1;
+  const ht = Math.abs(Number(line.m_ht) || 0) * sign;
+  const tva = Math.abs(Number(line.tva) || 0) * sign;
+  const ttc = Math.abs(Number(line.m_ttc) || 0) * sign;
+  const taux = Number(line.taux) === 0.1 || Number(line.taux) === 0.2 ? Number(line.taux) : 0.2;
+
+  const rateFromHt = htIsActuallyTheRate(ht, tva, ttc);
+  if (rateFromHt != null) {
+    let ttcAbs = Math.abs(ttc);
+    if (ttcAbs < 50 && Math.abs(tva) > 50) {
+      ttcAbs = Math.round((Math.abs(tva) / rateFromHt) * 100) / 100;
+    }
+    return rebuildFromTtc(line, ttcAbs, rateFromHt, sign);
+  }
+
+  const unified = { ...line, m_ht: ht, tva, m_ttc: ttc };
+  if (magnitudesCoherent(ht, tva, ttc, taux)) return unified;
+  if (isBlendedMultiRate(ht, tva) && Math.abs(Math.abs(ht) + Math.abs(tva) - Math.abs(ttc)) <= 0.05) {
+    return unified;
+  }
+
+  const ordered = [Math.abs(ht), Math.abs(tva), Math.abs(ttc)].sort((a, b) => b - a);
+  const [largest, mid, small] = ordered;
+  if (largest > 0.01 && Math.abs(mid + small - largest) <= 0.05 && mid > 0.01) {
+    const ratio = small / mid;
+    if (Math.abs(ratio - 0.1) <= 0.025) {
+      return { ...line, m_ht: mid * sign, tva: small * sign, m_ttc: largest * sign, taux: 0.1 };
+    }
+    if (Math.abs(ratio - 0.2) <= 0.025) {
+      return { ...line, m_ht: mid * sign, tva: small * sign, m_ttc: largest * sign, taux: 0.2 };
+    }
+  }
+
+  if (largest > 0.01) return rebuildFromTtc(line, largest, taux, sign);
+  return unified;
 }
 
 function shouldConsolidateGroup(group) {
@@ -611,7 +715,12 @@ export function normalizeExtractionResults(results) {
     const withTtc = applyTtcVentilationFixes(withIf);
     return {
       ...withTtc,
-      lines: consolidateLines(withTtc.lines || []).map(fillMissingTtc),
+      lines: consolidateLines(withTtc.lines || []).map((line) => {
+        const isAvoir =
+          isAvoirDocument(withTtc.raw_text || "", withTtc.filename) ||
+          isAvoirDocument("", "", line.fact_num);
+        return fillMissingTtc(sanitizeImpossibleAmounts(line, isAvoir));
+      }),
       warnings: [...new Set(withTtc.warnings || [])],
     };
   });

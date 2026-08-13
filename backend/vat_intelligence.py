@@ -226,18 +226,130 @@ def result_needs_escalation(result: ExtractionResult) -> bool:
     return any(not line_is_coherent(line) for line in result.lines)
 
 
+def _signs_are_mixed(ht: float, tva: float, ttc: float) -> bool:
+    vals = [v for v in (ht, tva, ttc) if abs(v) >= 0.01]
+    if len(vals) < 2:
+        return False
+    return len({1 if v > 0 else -1 for v in vals}) > 1
+
+
+def _magnitudes_coherent(ht: float, tva: float, ttc: float, taux: float) -> bool:
+    abs_ht, abs_tva, abs_ttc = abs(ht), abs(tva), abs(ttc)
+    if abs_ht < 0.01 and abs_ttc < 0.01:
+        return False
+    if abs(abs_ht + abs_tva - abs_ttc) > 0.05:
+        return False
+    if abs_ht > 0.01 and taux in (0.1, 0.2):
+        return abs(abs_tva / abs_ht - taux) <= 0.025
+    return True
+
+
+def _is_blended_multi_rate(ht: float, tva: float) -> bool:
+    """Taux global entre 10 % et 20 % : facture multi-taux, ne pas « corriger »."""
+    if abs(ht) < 0.01 or abs(tva) < 0.01:
+        return False
+    rate = abs(tva) / abs(ht)
+    in_10 = 0.085 <= rate <= 0.115
+    in_20 = 0.185 <= rate <= 0.215
+    return 0.085 <= rate <= 0.215 and not in_10 and not in_20
+
+
+def _ht_is_actually_the_rate(ht: float, tva: float, ttc: float) -> float | None:
+    """OCR/IA a mis 10 ou 20 (le taux) dans le HT, et TTC × taux dans la TVA."""
+    abs_ht, abs_tva, abs_ttc = abs(ht), abs(tva), abs(ttc)
+    rate: float | None = None
+    if abs(abs_ht - 20) <= 0.011 or abs(abs_ht - 0.2) <= 1e-6:
+        rate = 0.2
+    elif abs(abs_ht - 10) <= 0.011 or abs(abs_ht - 0.1) <= 1e-6:
+        rate = 0.1
+    if rate is None:
+        return None
+    # Une vraie petite ligne à 20 MAD HT a TVA/HT ≈ 10/20 %. Celle-ci non.
+    if abs_ht > 0.01 and abs_tva / abs_ht <= 0.25:
+        return None
+    if abs_ttc < 50 and abs_tva < 50:
+        return None
+    return rate
+
+
+def _rebuild_from_ttc(line: InvoiceLine, ttc_abs: float, taux: float, sign: int) -> InvoiceLine:
+    ht_abs = round(ttc_abs / (1 + taux), 2)
+    tva_abs = round(ttc_abs - ht_abs, 2)
+    line.m_ht = ht_abs * sign
+    line.tva = tva_abs * sign
+    line.m_ttc = round(ttc_abs, 2) * sign
+    line.taux = taux
+    return line
+
+
+def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> InvoiceLine:
+    """Interdit HT/TVA de signes opposés, TVA > HT, et HT = 10 ou 20 (le taux).
+
+    Ne touche pas une ligne déjà cohérente (ex. Carrefour 150/30/180) ni une
+    facture multi-taux résumée (taux global entre 10 % et 20 %).
+    """
+    sign = -1 if is_avoir else 1
+    ht, tva, ttc = abs(line.m_ht) * sign, abs(line.tva) * sign, abs(line.m_ttc) * sign
+    taux = line.taux if line.taux in (0.1, 0.2) else 0.2
+
+    rate_from_ht = _ht_is_actually_the_rate(ht, tva, ttc)
+    if rate_from_ht is not None:
+        ttc_abs = abs(ttc)
+        if ttc_abs < 50 and abs(tva) > 50:
+            ttc_abs = round(abs(tva) / rate_from_ht, 2)
+        return _rebuild_from_ttc(line, ttc_abs, rate_from_ht, sign)
+
+    line.m_ht, line.tva, line.m_ttc = ht, tva, ttc
+    if _magnitudes_coherent(ht, tva, ttc, taux):
+        return line
+    if _is_blended_multi_rate(ht, tva) and abs(abs(ht) + abs(tva) - abs(ttc)) <= 0.05:
+        return line
+
+    abs_ht, abs_tva, abs_ttc = abs(ht), abs(tva), abs(ttc)
+    ordered = sorted((abs_ht, abs_tva, abs_ttc), reverse=True)
+    largest, mid, small = ordered
+    if largest > 0.01 and abs(mid + small - largest) <= 0.05:
+        cand_ht, cand_tva, cand_ttc = mid, small, largest
+        if cand_ht > 0.01:
+            ratio = cand_tva / cand_ht
+            if abs(ratio - 0.1) <= 0.025:
+                line.m_ht, line.tva, line.m_ttc = cand_ht * sign, cand_tva * sign, cand_ttc * sign
+                line.taux = 0.1
+                return line
+            if abs(ratio - 0.2) <= 0.025:
+                line.m_ht, line.tva, line.m_ttc = cand_ht * sign, cand_tva * sign, cand_ttc * sign
+                line.taux = 0.2
+                return line
+
+    if largest > 0.01:
+        return _rebuild_from_ttc(line, largest, taux, sign)
+    return line
+
+
 def fill_missing_ttc(line: InvoiceLine) -> InvoiceLine:
     """Si le TTC n'est pas lisible, HT + TVA suffisent à le reconstituer."""
-    if abs(line.m_ttc) < 0.01 and abs(line.m_ht) >= 0.01 and abs(line.tva) >= 0.01:
-        line.m_ttc = round(line.m_ht + line.tva, 2)
+    ht, tva, ttc = line.m_ht, line.tva, line.m_ttc
+    if abs(ttc) >= 0.01 or abs(ht) < 0.01 or abs(tva) < 0.01:
+        return line
+    if _signs_are_mixed(ht, tva, ttc):
+        return line
+    if abs(tva) > abs(ht) + 0.05:
+        return line
+    line.m_ttc = round(ht + tva, 2)
     return line
+
+
+def _result_is_avoir(result: ExtractionResult) -> bool:
+    blob = f"{result.filename}\n{result.raw_text or ''}".lower()
+    if "avoir" in blob:
+        return True
+    return any("avoir" in (line.fact_num or "").lower() for line in result.lines)
 
 
 def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     """Réconciliation TVA générique post-extraction (IA ou OCR)."""
-    from models import InvoiceLine
-
     text = result.raw_text or ""
+    is_avoir = _result_is_avoir(result)
     ventilation = extract_vat_lines_from_text(text)
     distinct_invoices = {line.fact_num for line in result.lines if line.fact_num}
 
@@ -256,6 +368,7 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
             )
             for item in ventilation
         ]
+        result.lines = [sanitize_impossible_amounts(line, is_avoir) for line in result.lines]
         result.lines = [fill_missing_ttc(line) for line in result.lines]
         return result
 
@@ -264,6 +377,7 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     footer_ht, _footer_tva, _footer_ttc = extract_footer_totals(text)
     result.lines = align_lines_with_footer_totals(result.lines, text)
     result.lines = [reconcile_line_amounts(line, text, footer_ht) for line in result.lines]
+    result.lines = [sanitize_impossible_amounts(line, is_avoir) for line in result.lines]
 
     # Un taux global entre 10 % et 20 % trahit une facture multi-taux résumée
     # en une seule ligne : le comptable doit la ventiler lui-même.
