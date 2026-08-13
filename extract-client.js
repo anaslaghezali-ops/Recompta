@@ -334,8 +334,8 @@ function folderKey(filename) {
 const FOLDER_SUPPLIERS = {
   achibest: { lib_frss: "ACHIBEST", ice: "000229475000050", if: "1102277" },
   eatmeat: { lib_frss: "EATMEAT", ice: "002540001000040", if: "45978904" },
-  mose: { lib_frss: "MOSE Food" },
-  "mose food": { lib_frss: "MOSE Food" },
+  mose: { lib_frss: "MOSE Food", ice: "000161664000072", if: "14427958" },
+  "mose food": { lib_frss: "MOSE Food", ice: "000161664000072", if: "14427958" },
 };
 
 function supplierHintFromPath(filename) {
@@ -395,6 +395,63 @@ function applySupplierPathHints(filename, line) {
   if (hint.if) line.if = hint.if;
 }
 
+function isTtcMislabeledAsHt(mHt, tva, taux) {
+  const ht = Math.abs(Number(mHt));
+  const tv = Math.abs(Number(tva));
+  const rate = Number(taux);
+  if (ht < 0.01 || tv < 0.01 || (rate !== 0.1 && rate !== 0.2)) return false;
+  const ratio = tv / ht;
+  const asHtRate = Math.abs(ratio - rate) <= 0.025;
+  const asTtcRate = Math.abs(ratio - rate / (1 + rate)) <= 0.025;
+  if (!asTtcRate || asHtRate) return false;
+  const recomputedHt = ht - tv;
+  if (recomputedHt <= 0) return false;
+  return Math.abs(tv / recomputedHt - rate) <= 0.025;
+}
+
+function fixTtcMislabeledLine(line) {
+  if (!isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux)) return line;
+  const sign = Number(line.m_ht) < 0 ? -1 : 1;
+  const ttcAbs = Math.abs(Number(line.m_ht));
+  const tvaAbs = Math.abs(Number(line.tva));
+  const htAbs = Math.round((ttcAbs - tvaAbs) * 100) / 100;
+  return {
+    ...line,
+    m_ht: htAbs * sign,
+    tva: tvaAbs * sign,
+    m_ttc: Math.round(ttcAbs * 100) / 100 * sign,
+  };
+}
+
+function applyTtcVentilationFixes(result) {
+  const text = result.raw_text || "";
+  const ventilation = extractTvaVentilation(text);
+  const warnings = [...(result.warnings || [])];
+
+  if (ventilation.length && result.lines?.length) {
+    const template = result.lines[0];
+    const lines = ventilation.map((item) => ({
+      ...template,
+      m_ht: item.m_ht,
+      tva: item.tva,
+      m_ttc: item.m_ttc,
+      taux: item.taux,
+    }));
+    warnings.push(`Ventilation TTC corrigée (${lines.length} ligne(s) — montants TTC convertis en HT).`);
+    return { ...result, lines, warnings };
+  }
+
+  let changed = false;
+  const lines = (result.lines || []).map((line) => {
+    const before = `${line.m_ht}|${line.tva}|${line.m_ttc}`;
+    const fixed = fixTtcMislabeledLine(line);
+    if (`${fixed.m_ht}|${fixed.tva}|${fixed.m_ttc}` !== before) changed = true;
+    return fixed;
+  });
+  if (changed) warnings.push("Montants TTC de la ventilation convertis en HT.");
+  return { ...result, lines, warnings };
+}
+
 function shouldConsolidateGroup(group) {
   if (group.length <= 1) return false;
   const hasZeroTva = group.some((line) => Math.abs(Number(line.tva)) < 1e-9);
@@ -448,12 +505,11 @@ function consolidateLines(lines) {
 }
 
 export function normalizeExtractionResults(results) {
-  const normalized = results.map((result) =>
-    applyAvoirSigns({
-      ...result,
-      lines: consolidateLines(result.lines || []),
-    }),
-  );
+  const normalized = results.map((result) => {
+    const withAvoir = applyAvoirSigns({ ...result, lines: result.lines || [] });
+    const withTtc = applyTtcVentilationFixes(withAvoir);
+    return { ...withTtc, lines: consolidateLines(withTtc.lines || []) };
+  });
 
   const groups = new Map();
   for (const result of normalized) {
@@ -649,7 +705,7 @@ function extractAchibestTvaTable(text) {
 
 function extractTvaVentilation(text) {
   const items = [];
-  const pattern = /(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%\s+([\d.,]+)/gi;
+  const pattern = /(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)/gi;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     const ttc = parseAmount(match[1]);
