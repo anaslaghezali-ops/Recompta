@@ -2,11 +2,290 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="refresh" content="0; url=docs/dossiers.html" />
-  <title>Recompta — Dossiers</title>
-  <script>location.replace("docs/dossiers.html");</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recompta — Portefeuille clients</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css?v=dash1" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <p><a href="docs/dossiers.html">Ouvrir les dossiers clients</a></p>
+  <div class="dash-app" id="dashApp">
+    <div id="sidebarMount"></div>
+    <div class="dash-main">
+      <header class="dash-topbar">
+        <div class="dash-topbar-left">
+          <button type="button" class="dash-mobile-toggle dash-btn dash-btn-ghost" id="mobileNavToggle" aria-label="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <h1>Portefeuille clients</h1>
+            <p id="topbarSubtitle">Vue d'ensemble de vos dossiers TVA</p>
+          </div>
+        </div>
+        <div class="dash-topbar-actions">
+          <label class="dash-search">
+            <i data-lucide="search"></i>
+            <input id="searchInput" type="search" placeholder="Rechercher un client ou ICE…" />
+          </label>
+          <button type="button" class="dash-btn" id="refreshBtn">
+            <i data-lucide="refresh-cw"></i> Actualiser
+          </button>
+          <button type="button" class="dash-btn dash-btn-primary" id="openNewClientBtn">
+            <i data-lucide="plus"></i> Nouveau client
+          </button>
+        </div>
+      </header>
+
+      <main class="dash-content">
+        <div class="dash-kpi-row" id="kpiRow">
+          <div class="dash-kpi"><div class="dash-kpi-label">Clients</div><div class="dash-kpi-value" id="kpiClients">—</div></div>
+          <div class="dash-kpi"><div class="dash-kpi-label">Périodes ouvertes</div><div class="dash-kpi-value" id="kpiOpen">—</div></div>
+          <div class="dash-kpi"><div class="dash-kpi-label">En revue</div><div class="dash-kpi-value" id="kpiReview">—</div></div>
+          <div class="dash-kpi"><div class="dash-kpi-label">À déclarer</div><div class="dash-kpi-value" id="kpiDraft">—</div></div>
+        </div>
+
+        <div class="dash-toolbar">
+          <div class="dash-toolbar-filters" id="statusFilters">
+            <button type="button" class="dash-filter-chip active" data-filter="all">Tous</button>
+            <button type="button" class="dash-filter-chip" data-filter="active">En cours</button>
+            <button type="button" class="dash-filter-chip" data-filter="review">En revue</button>
+            <button type="button" class="dash-filter-chip" data-filter="new">Nouveaux</button>
+          </div>
+        </div>
+
+        <div id="listHint" class="dash-empty" hidden>
+          <i data-lucide="users" style="width:32px;height:32px;color:#94a3b8;"></i>
+          <h3>Aucun client</h3>
+          <p>Ajoutez votre premier client pour commencer le suivi TVA.</p>
+          <button type="button" class="dash-btn dash-btn-primary" id="emptyNewClientBtn" style="margin-top:1rem;">
+            <i data-lucide="plus"></i> Nouveau client
+          </button>
+        </div>
+
+        <div id="clientsGrid" class="dash-client-grid" hidden></div>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="newClientDialog" class="dash-modal">
+    <form method="dialog" id="newClientForm" class="dash-modal-inner dash-form">
+      <h3>Nouveau client</h3>
+      <p class="hint">Raison sociale et ICE de la société déclarante (15 chiffres).</p>
+      <label>Nom du client
+        <input id="clientName" type="text" required minlength="2" placeholder="Société ABC" />
+      </label>
+      <label>ICE
+        <input id="clientIce" type="text" required minlength="15" maxlength="15" inputmode="numeric" placeholder="003641228000030" />
+      </label>
+      <p class="dash-error" id="clientError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="cancelClientBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary">Créer le client</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { signOut } from "./auth-client.js?v=auth5";
+    import {
+      computeClientStats,
+      createClient,
+      formatRelativeTime,
+      listClientsWithDossiers,
+      requireCabinetSession,
+    } from "./dossiers-client.js?v=dash2";
+    import {
+      bindSidebarMobile,
+      escapeHtml,
+      initLucide,
+      renderBadge,
+      sidebarHtml,
+    } from "./dashboard-ui.js?v=dash1";
+
+    const sidebarMount = document.getElementById("sidebarMount");
+    const clientsGrid = document.getElementById("clientsGrid");
+    const listHint = document.getElementById("listHint");
+    const searchInput = document.getElementById("searchInput");
+    const newClientDialog = document.getElementById("newClientDialog");
+    const newClientForm = document.getElementById("newClientForm");
+    const clientName = document.getElementById("clientName");
+    const clientIce = document.getElementById("clientIce");
+    const clientError = document.getElementById("clientError");
+
+    let cabinetId = null;
+    let allClients = [];
+    let activeFilter = "all";
+    let searchQuery = "";
+
+    function showClientError(message) {
+      clientError.hidden = !message;
+      clientError.textContent = message || "";
+    }
+
+    function openWorkspace(clientId) {
+      window.location.href = `workspace.html?client=${clientId}`;
+    }
+
+    function matchesFilter(client, stats) {
+      if (activeFilter === "all") return true;
+      if (activeFilter === "new") return stats.periodCount === 0;
+      if (activeFilter === "review") return stats.statusKey === "in_review";
+      if (activeFilter === "active") return stats.openCount > 0;
+      return true;
+    }
+
+    function matchesSearch(client) {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return client.name.toLowerCase().includes(q) || client.ice.includes(q);
+    }
+
+    function updateKpis(clients) {
+      const statsList = clients.map((c) => computeClientStats(c));
+      document.getElementById("kpiClients").textContent = String(clients.length);
+      document.getElementById("kpiOpen").textContent = String(
+        statsList.reduce((sum, s) => sum + s.openCount, 0),
+      );
+      document.getElementById("kpiReview").textContent = String(
+        statsList.filter((s) => s.statusKey === "in_review").length,
+      );
+      document.getElementById("kpiDraft").textContent = String(
+        statsList.filter((s) => s.statusKey === "draft" && s.periodCount > 0).length,
+      );
+    }
+
+    function renderClients() {
+      const filtered = allClients.filter((client) => {
+        const stats = computeClientStats(client);
+        return matchesFilter(client, stats) && matchesSearch(client);
+      });
+
+      updateKpis(allClients);
+
+      if (!allClients.length) {
+        listHint.hidden = false;
+        clientsGrid.hidden = true;
+        initLucide();
+        return;
+      }
+
+      if (!filtered.length) {
+        listHint.hidden = false;
+        listHint.querySelector("h3").textContent = "Aucun résultat";
+        listHint.querySelector("p").textContent = "Modifiez la recherche ou le filtre.";
+        clientsGrid.hidden = true;
+        initLucide();
+        return;
+      }
+
+      listHint.hidden = true;
+      clientsGrid.hidden = false;
+      clientsGrid.innerHTML = filtered.map((client) => {
+        const stats = computeClientStats(client);
+        return `
+          <article class="dash-client-card">
+            <div class="dash-client-card-top">
+              <div>
+                <h3>${escapeHtml(client.name)}</h3>
+                <div class="dash-client-ice">ICE ${escapeHtml(client.ice)}</div>
+              </div>
+              ${renderBadge(stats.statusKey, stats.statusLabel)}
+            </div>
+            <dl class="dash-client-meta">
+              <div><dt>Périodes</dt><dd>${stats.periodCount} ouverte${stats.periodCount > 1 ? "s" : ""}</dd></div>
+              <div><dt>Dernière activité</dt><dd>${escapeHtml(formatRelativeTime(stats.lastActivity))}</dd></div>
+              <div><dt>Dernière période</dt><dd>${escapeHtml(stats.lastPeriod || "—")}</dd></div>
+              <div><dt>En cours</dt><dd>${stats.openCount}</dd></div>
+            </dl>
+            <div class="dash-client-card-footer">
+              <span style="font-size:0.75rem;color:var(--dash-muted);">Dossier TVA mensuel</span>
+              <button type="button" class="dash-btn dash-btn-primary dash-btn-sm" data-open-client="${client.id}">
+                Ouvrir <i data-lucide="arrow-right"></i>
+              </button>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      clientsGrid.querySelectorAll("[data-open-client]").forEach((btn) => {
+        btn.addEventListener("click", () => openWorkspace(btn.dataset.openClient));
+      });
+      initLucide();
+    }
+
+    async function refreshClients() {
+      const clients = await listClientsWithDossiers(cabinetId);
+      allClients = clients;
+      renderClients();
+    }
+
+    function openNewClientModal() {
+      showClientError("");
+      clientName.value = "";
+      clientIce.value = "";
+      newClientDialog.showModal();
+      clientName.focus();
+    }
+
+    const membership = await requireCabinetSession();
+    if (membership) {
+      cabinetId = membership.cabinet_id;
+      sidebarMount.innerHTML = sidebarHtml({
+        cabinetName: membership.cabinet.name,
+        active: "portfolio",
+      });
+      document.getElementById("topbarSubtitle").textContent =
+        `${membership.cabinet.name} — ${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}`;
+      bindSidebarMobile();
+      document.getElementById("signOutBtn")?.addEventListener("click", async () => {
+        await signOut();
+        window.location.href = "login.html";
+      });
+      await refreshClients();
+      initLucide();
+    }
+
+    document.getElementById("openNewClientBtn").addEventListener("click", openNewClientModal);
+    document.getElementById("emptyNewClientBtn")?.addEventListener("click", openNewClientModal);
+    document.getElementById("cancelClientBtn").addEventListener("click", () => newClientDialog.close());
+    document.getElementById("refreshBtn").addEventListener("click", refreshClients);
+
+    searchInput.addEventListener("input", () => {
+      searchQuery = searchInput.value.trim();
+      renderClients();
+    });
+
+    document.getElementById("statusFilters").addEventListener("click", (event) => {
+      const chip = event.target.closest("[data-filter]");
+      if (!chip) return;
+      activeFilter = chip.dataset.filter;
+      document.querySelectorAll(".dash-filter-chip").forEach((el) => {
+        el.classList.toggle("active", el.dataset.filter === activeFilter);
+      });
+      renderClients();
+    });
+
+    clientIce.addEventListener("input", () => {
+      clientIce.value = clientIce.value.replace(/\D/g, "").slice(0, 15);
+    });
+
+    newClientForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showClientError("");
+      try {
+        const created = await createClient(cabinetId, {
+          name: clientName.value,
+          ice: clientIce.value,
+        });
+        newClientDialog.close();
+        await refreshClients();
+        openWorkspace(created.id);
+      } catch (error) {
+        showClientError(error.message || "Impossible de créer le client.");
+      }
+    });
+  </script>
 </body>
 </html>
