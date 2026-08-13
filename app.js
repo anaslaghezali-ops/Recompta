@@ -39,6 +39,7 @@ const state = {
   files: [],
   lines: [],
   selectedLineIndex: null,
+  previewOpen: false,
   bankFile: null,
   bankTransactions: [],
   bankMeta: { filename: "", bankName: "BANQUE", bankIce: "", bankIf: "" },
@@ -52,6 +53,7 @@ const DESIGNATIONS = [
 ];
 
 const els = {
+  container: document.querySelector("main.container"),
   clientName: document.getElementById("clientName"),
   clientIce: document.getElementById("clientIce"),
   period: document.getElementById("period"),
@@ -80,6 +82,7 @@ const els = {
   reviewLayout: document.getElementById("reviewLayout"),
   tableWrap: document.getElementById("tableWrap"),
   previewPanel: document.getElementById("documentPreviewPanel"),
+  previewCloseBtn: document.getElementById("previewCloseBtn"),
   previewTitle: document.getElementById("previewTitle"),
   previewSubtitle: document.getElementById("previewSubtitle"),
   previewNav: document.getElementById("previewNav"),
@@ -130,16 +133,34 @@ const previewUi = {
   image: els.previewImage,
 };
 
-function selectLine(index) {
+function syncPreviewLayout() {
+  const open = state.lines.length > 0 && state.previewOpen;
+  els.reviewLayout?.classList.toggle("review-layout--preview-open", open);
+  if (els.previewPanel) els.previewPanel.hidden = !open;
+}
+
+function closeLinePreview({ clearSelection = false } = {}) {
+  state.previewOpen = false;
+  if (clearSelection) state.selectedLineIndex = null;
+  showLinePreview(previewUi, null);
+  syncPreviewLayout();
+  renderTable();
+}
+
+function openLinePreview(index) {
   if (index == null || index < 0 || index >= state.lines.length) {
-    state.selectedLineIndex = null;
-    showLinePreview(previewUi, null);
-    renderTable();
+    closeLinePreview({ clearSelection: true });
     return;
   }
+  state.previewOpen = true;
   state.selectedLineIndex = index;
+  syncPreviewLayout();
   showLinePreview(previewUi, state.lines[index], index);
   renderTable();
+}
+
+function selectLine(index) {
+  openLinePreview(index);
 }
 
 function emptyLine(sourceFile = "") {
@@ -230,13 +251,15 @@ function updateButtons() {
   }
 
   const hasLines = state.lines.length > 0;
+  els.container?.classList.toggle("container--review", hasLines);
   els.emptyState.hidden = hasLines;
   els.reviewLayout.hidden = !hasLines;
-  els.previewPanel.hidden = !hasLines;
   if (!hasLines) {
     state.selectedLineIndex = null;
+    state.previewOpen = false;
     showLinePreview(previewUi, null);
   }
+  syncPreviewLayout();
 
   if (hasLines) setStep(3);
   else if (state.files.length > 0) setStep(2);
@@ -386,11 +409,15 @@ function renderTable() {
     const viewBtn = document.createElement("button");
     viewBtn.type = "button";
     viewBtn.className = "view-btn";
-    viewBtn.textContent = "Voir";
-    viewBtn.title = "Afficher la facture à côté pour revue";
+    const previewingThisLine = state.previewOpen && state.selectedLineIndex === index;
+    viewBtn.textContent = previewingThisLine ? "Masquer" : "Voir";
+    viewBtn.title = previewingThisLine
+      ? "Fermer l'aperçu document"
+      : "Afficher la facture à côté pour revue";
     viewBtn.addEventListener("click", (event) => {
       event.stopPropagation();
-      selectLine(index);
+      if (previewingThisLine) closeLinePreview();
+      else openLinePreview(index);
     });
     actionTd.appendChild(viewBtn);
 
@@ -402,16 +429,18 @@ function renderTable() {
       state.lines.splice(index, 1);
       if (state.selectedLineIndex === index) {
         state.selectedLineIndex = state.lines.length ? Math.min(index, state.lines.length - 1) : null;
+        if (state.previewOpen) {
+          if (state.selectedLineIndex != null) {
+            showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+          } else {
+            closeLinePreview();
+          }
+        }
       } else if (state.selectedLineIndex != null && state.selectedLineIndex > index) {
         state.selectedLineIndex -= 1;
       }
       renderTable();
       updateButtons();
-      if (state.selectedLineIndex != null) {
-        showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
-      } else {
-        showLinePreview(previewUi, null);
-      }
     });
     actionTd.appendChild(deleteBtn);
     tr.appendChild(actionTd);
@@ -703,9 +732,7 @@ async function extractFiles() {
     const localReview = findFirstReviewLineIndex(newSlice);
     state.selectedLineIndex =
       localReview != null ? firstNewIndex + localReview : newLines ? firstNewIndex : findFirstReviewLineIndex(state.lines);
-    if (state.selectedLineIndex != null) {
-      await showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
-    }
+    state.previewOpen = false;
 
     state.files = [];
     renderFileList();
@@ -935,8 +962,10 @@ function removeDuplicates() {
   }
   renderTable();
   updateButtons();
-  if (state.selectedLineIndex != null) {
+  if (state.previewOpen && state.selectedLineIndex != null) {
     showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+  } else if (!state.lines.length) {
+    closeLinePreview({ clearSelection: true });
   }
 
   els.extractionStatus.textContent = `${duplicates.size} doublon(s) supprimé(s).`;
@@ -948,6 +977,7 @@ function clearAll() {
   state.files = [];
   state.lines = [];
   state.selectedLineIndex = null;
+  state.previewOpen = false;
   clearSourceFiles();
   showLinePreview(previewUi, null);
   clearBankState();
@@ -1022,6 +1052,7 @@ els.applyBankBtn.addEventListener("click", applyBankToLines);
 
 loadApiSettings();
 bindPreviewControls(previewUi);
+els.previewCloseBtn?.addEventListener("click", () => closeLinePreview());
 loadClientSettings();
 updateFilenamePreview();
 updateButtons();

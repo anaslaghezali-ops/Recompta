@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Déclaration TVA</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=wide2" />
 </head>
 <body>
   <header class="hero">
@@ -97,7 +97,7 @@
           </button>
         </div>
       </div>
-      <p class="hint">Cliquez <strong>Voir</strong> sur une ligne. Sur le document : molette pour zoomer, cliquer-glisser pour déplacer.</p>
+      <p class="hint">Cliquez <strong>Voir</strong> pour afficher une facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau sans défilement latéral.</p>
       <div id="emptyState" class="empty-state">
         <p>Aucune ligne pour l'instant.</p>
       </div>
@@ -123,6 +123,15 @@
               <p id="previewSubtitle" class="hint preview-subtitle"></p>
             </div>
             <div class="preview-toolbar">
+              <button
+                id="previewCloseBtn"
+                class="secondary small preview-close-btn"
+                type="button"
+                aria-label="Fermer l'aperçu"
+                title="Fermer l'aperçu"
+              >
+                ✕
+              </button>
               <div id="previewNav" class="preview-nav" hidden>
                 <button id="previewPrevPage" class="secondary small" type="button" aria-label="Page précédente">‹</button>
                 <span id="previewPageInfo">1 / 1</span>
