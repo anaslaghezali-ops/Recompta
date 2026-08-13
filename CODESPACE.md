@@ -11,7 +11,7 @@
 
 ## Configuration une seule fois
 
-### 1. Créer backend/.env avec votre clé OpenAI
+### 1. Créer backend/.env
 
 ```bash
 cd backend
@@ -19,10 +19,21 @@ cp .env.example .env
 nano .env
 ```
 
-Contenu (votre vraie clé) :
-```
+Contenu minimal :
+
+```env
 OPENAI_API_KEY=sk-votre-clé-ici
+SUPABASE_SERVICE_ROLE_KEY=eyJ...votre-clé-service-role...
 ```
+
+| Variable | Où la trouver |
+|---|---|
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → projet **Recompta** → **Project Settings** → **API Keys** → **`service_role` secret** |
+
+> **Important** : la clé `service_role` est **secrète** — elle ne va que dans `backend/.env` sur le Codespace, **jamais** dans GitHub Pages ni dans le code committé.
+>
+> Elle sert au **worker d'import asynchrone** (lire les fichiers en Storage, écrire les lignes extraites en base). Sans elle, la mise en file d'attente fonctionne mais le traitement en arrière-plan ne démarre pas.
 
 Vérification :
 ```bash
