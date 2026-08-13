@@ -331,7 +331,7 @@ async function testServerConnection() {
   els.testServerBtn.disabled = true;
   els.testServerBtn.textContent = "Test…";
   try {
-    const health = await fetchServerHealth(apiUrl);
+    const health = await fetchServerHealth(apiUrl, { refresh: true });
     if (health.ai_verified) {
       els.apiSetupHint.textContent = "Connexion OK — clé OpenAI valide. Utilisez cette page normalement.";
       els.apiSetupHint.classList.remove("warn");
