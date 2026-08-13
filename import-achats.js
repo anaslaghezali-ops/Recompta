@@ -16,13 +16,22 @@ import {
   extractViaServer,
   fetchServerHealth,
   getApiUrl,
+  kickImportJobWorker,
   saveApiUrl,
 } from "./api-client.js";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
 } from "./field-confidence.js";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
+import {
+  JOB_STATUS_LABELS,
+  jobProgressPercent,
+  listImportJobs,
+  queueInvoiceImport,
+  startImportJobPolling,
+} from "./import-jobs-client.js?v=jobs3";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -38,6 +47,7 @@ let session = null;
 let saver = null;
 let pendingFiles = [];
 let extracting = false;
+let stopJobPolling = null;
 
 function emptyLine(sourceFile = "") {
   return {
@@ -166,10 +176,12 @@ function renderFileQueue() {
   if (!pendingFiles.length) {
     els.fileQueue.hidden = true;
     els.fileQueue.innerHTML = "";
+    els.queueBtn.disabled = true;
     els.extractBtn.disabled = true;
     return;
   }
   els.fileQueue.hidden = false;
+  els.queueBtn.disabled = extracting;
   els.extractBtn.disabled = extracting;
   els.fileQueue.innerHTML = pendingFiles.map((file, index) => `
     <div class="imp-file-row">
@@ -237,6 +249,131 @@ function addFiles(fileList) {
   renderFileQueue();
 }
 
+async function runQueue() {
+  if (!pendingFiles.length || extracting) return;
+  extracting = true;
+  els.queueBtn.disabled = true;
+  els.extractBtn.disabled = true;
+  els.progressPanel.hidden = false;
+  els.progressText.textContent = "Préparation de l'import…";
+  els.progressBar.style.width = "5%";
+
+  try {
+    const result = await queueInvoiceImport({
+      dossierId: session.dossierId,
+      files: pendingFiles,
+      options: {
+        api_url: resolvedApiUrl(),
+        use_ai: Boolean(els.useAi?.checked),
+        client_ice: session.context.clientIce,
+      },
+      onProgress: (message, percent) => {
+        els.progressText.textContent = message;
+        els.progressBar.style.width = `${percent}%`;
+      },
+    });
+
+    pendingFiles = [];
+    renderFileQueue();
+
+    const skippedNote = result.skipped
+      ? ` (${result.skipped} fichier(s) ignoré(s))`
+      : "";
+    els.progressText.textContent =
+      `${result.uploaded} fichier(s) en file d'attente.${skippedNote} Vous pouvez quitter cette page.`;
+    els.progressBar.style.width = "100%";
+    setStatus("Import lancé — traitement en arrière-plan", "success");
+
+    const apiUrl = resolvedApiUrl();
+    if (apiUrl) {
+      kickImportJobWorker(apiUrl).catch(() => {});
+    }
+
+    await renderJobsPanel();
+    startJobsPolling();
+  } catch (error) {
+    els.progressText.textContent = `Erreur : ${error.message}`;
+    els.progressBar.style.width = "0%";
+    setStatus(error.message, "error");
+  } finally {
+    extracting = false;
+    els.queueBtn.disabled = !pendingFiles.length;
+    els.extractBtn.disabled = !pendingFiles.length;
+    initLucide();
+  }
+}
+
+function formatJobDate(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderJobRow(job) {
+  const progress = jobProgressPercent(job);
+  const statusLabel = JOB_STATUS_LABELS[job.status] || job.status;
+  const tone = job.status === "failed" ? "danger"
+    : job.status === "completed" ? "success"
+      : job.status === "processing" ? "accent" : "muted";
+
+  return `
+    <div class="imp-job-row">
+      <div class="imp-job-main">
+        <strong>Import factures — ${formatJobDate(job.created_at)}</strong>
+        <span>${escapeHtml(statusLabel)} · ${job.processed_files}/${job.total_files} traités${job.failed_files ? ` · ${job.failed_files} erreur(s)` : ""}</span>
+      </div>
+      <div class="imp-job-progress">
+        <div class="imp-progress-track"><div class="imp-progress-fill imp-job-fill-${tone}" style="width:${progress}%"></div></div>
+        <span>${progress}%</span>
+      </div>
+    </div>
+  `;
+}
+
+async function renderJobsPanel() {
+  const jobs = await listImportJobs(session.dossierId, { limit: 8 });
+  const active = jobs.filter((job) => ["uploading", "queued", "processing"].includes(job.status));
+  const display = active.length ? active : jobs.slice(0, 3);
+
+  if (!display.length) {
+    els.jobsPanel.hidden = true;
+    els.jobsList.innerHTML = "";
+    return;
+  }
+
+  els.jobsPanel.hidden = false;
+  els.jobsList.innerHTML = display.map(renderJobRow).join("");
+  initLucide();
+}
+
+function startJobsPolling() {
+  stopJobPolling?.();
+  stopJobPolling = startImportJobPolling(session.dossierId, async (jobs) => {
+    if (!jobs.length) {
+      await reloadSessionLines();
+      await renderJobsPanel();
+      return;
+    }
+    els.jobsPanel.hidden = false;
+    els.jobsList.innerHTML = jobs.map(renderJobRow).join("");
+    initLucide();
+  });
+}
+
+async function reloadSessionLines() {
+  const workspace = await loadDossierWorkspace(session.dossierId);
+  session.lines = workspace?.lines || [];
+  session.updatedAt = workspace?.updated_at || session.updatedAt;
+  renderLinesTable();
+  if (session.lines.length) {
+    setStatus(`Dernière sauvegarde : ${new Date(session.updatedAt || Date.now()).toLocaleString("fr-FR")}`, "success");
+  }
+}
+
 async function runExtract() {
   if (!pendingFiles.length || extracting) return;
   extracting = true;
@@ -302,6 +439,7 @@ async function runExtract() {
     els.progressBar.style.width = "0%";
   } finally {
     extracting = false;
+    els.queueBtn.disabled = !pendingFiles.length;
     els.extractBtn.disabled = !pendingFiles.length;
     initLucide();
   }
@@ -331,7 +469,8 @@ function bindDropZone(zone, input) {
 export async function bootImportAchats() {
   [
     "contextBar", "saveStatus", "backLink", "dropZone", "fileInput", "fileQueue",
-    "extractBtn", "progressPanel", "progressText", "progressBar", "linesPanel",
+    "queueBtn", "extractBtn", "queueHint", "jobsPanel", "jobsList",
+    "progressPanel", "progressText", "progressBar", "linesPanel",
     "linesBody", "lineCount", "anomalyCount", "fileCount", "duplicateCount",
     "apiUrl", "useAi", "engineBadge", "testApiBtn",
   ].forEach((id) => { els[id] = document.getElementById(id); });
@@ -353,7 +492,10 @@ export async function bootImportAchats() {
   }
 
   bindDropZone(els.dropZone, els.fileInput);
+  els.queueBtn.addEventListener("click", runQueue);
   els.extractBtn.addEventListener("click", runExtract);
+  await renderJobsPanel();
+  startJobsPolling();
   els.apiUrl?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.useAi?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.testApiBtn?.addEventListener("click", async () => {

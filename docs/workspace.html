@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=docs1" />
+  <link rel="stylesheet" href="dashboard.css?v=docs2" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -43,6 +43,15 @@
         <div class="ws-period-bar" id="periodBar" hidden>
           <label for="periodSelect">Période active</label>
           <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période"></select>
+        </div>
+
+        <div class="ws-import-banner" id="importBanner" hidden>
+          <i data-lucide="loader-circle"></i>
+          <div class="ws-import-banner-text">
+            <strong id="importBannerTitle">Import en cours</strong>
+            <p id="importBannerText">—</p>
+          </div>
+          <a href="#" id="importBannerLink" class="dash-btn dash-btn-sm">Voir l'import</a>
         </div>
 
         <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
@@ -130,6 +139,7 @@
           </div>
         </div>
 
+
         <div id="documentsView" hidden>
           <section class="ws-section">
             <div class="ws-docs-header">
@@ -212,7 +222,15 @@
       listDossierDocuments,
     } from "./dossier-documents.js?v=doc1";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace1";
+    import {
+      formatActiveImportLabel,
+      importJobPageUrl,
+      JOB_STATUS_LABELS,
+      listImportJobs,
+      showImportCompletionToast,
+      startImportCompletionWatcher,
+    } from "./import-jobs-client.js?v=jobs3";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -244,6 +262,9 @@
     let selectedYear = new Date().getFullYear();
     let selectedDossierId = null;
     let activeTab = "cockpit";
+    let importPollTimer = null;
+    let hadActiveImport = false;
+    let stopCompletionWatcher = null;
     let documentsCache = [];
     let documentFilter = "all";
 
@@ -252,30 +273,65 @@
       periodError.textContent = message || "";
     }
 
-    function openDossierTool(dossierId, href) {
-      if (href) {
-        window.location.href = href;
+    async function renderImportBanner() {
+      const banner = document.getElementById("importBanner");
+      if (!selectedDossierId) {
+        banner.hidden = true;
         return;
       }
-      if (dossierId) window.location.href = `import-achats.html?dossier=${dossierId}`;
+
+      let jobs = [];
+      try {
+        jobs = await listImportJobs(selectedDossierId, { limit: 1, activeOnly: true });
+      } catch {
+        banner.hidden = true;
+        return;
+      }
+
+      const job = jobs[0];
+      if (!job) {
+        if (hadActiveImport) {
+          hadActiveImport = false;
+          await reloadCockpit(selectedDossierId);
+        }
+        banner.hidden = true;
+        stopImportPolling();
+        return;
+      }
+
+      hadActiveImport = true;
+      banner.hidden = false;
+      document.getElementById("importBannerTitle").textContent =
+        JOB_STATUS_LABELS[job.status] || "Import en cours";
+      document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
+      document.getElementById("importBannerLink").href = importJobPageUrl(job, selectedDossierId);
+      startImportPolling();
+      initLucide();
     }
 
-    function setTab(tab) {
-      activeTab = tab;
-      document.querySelectorAll("#viewTabs [data-tab]").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.tab === tab);
+    function startCompletionWatcher() {
+      stopCompletionWatcher?.();
+      const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
+      if (!dossierIds.length) return;
+      stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
+        showImportCompletionToast(job, { dossierName: client?.name || "" });
+        if (job.dossier_id === selectedDossierId) {
+          reloadCockpit(selectedDossierId).catch(() => {});
+        }
       });
-      document.getElementById("cockpitView").hidden = tab !== "cockpit";
-      document.getElementById("documentsView").hidden = tab !== "documents";
-      document.getElementById("historyView").hidden = tab !== "history";
-      if (tab === "history") {
-        renderYearTabs();
-        renderMonthGrid();
-      }
-      if (tab === "documents") {
-        renderDocuments();
-      }
-      initLucide();
+    }
+
+    function startImportPolling() {
+      if (importPollTimer) return;
+      importPollTimer = setInterval(() => {
+        renderImportBanner().catch(() => {});
+      }, 8000);
+    }
+
+    function stopImportPolling() {
+      if (!importPollTimer) return;
+      clearInterval(importPollTimer);
+      importPollTimer = null;
     }
 
     function renderDocumentsList() {
@@ -370,6 +426,33 @@
         emptyEl.hidden = false;
         emptyEl.textContent = "Impossible de charger les documents. Vérifiez la migration Supabase.";
       }
+    }
+
+
+    function openDossierTool(dossierId, href) {
+      if (href) {
+        window.location.href = href;
+        return;
+      }
+      if (dossierId) window.location.href = `import-achats.html?dossier=${dossierId}`;
+    }
+
+    function setTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll("#viewTabs [data-tab]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === tab);
+      });
+      document.getElementById("cockpitView").hidden = tab !== "cockpit";
+      document.getElementById("documentsView").hidden = tab !== "documents";
+      document.getElementById("historyView").hidden = tab !== "history";
+      if (tab === "history") {
+        renderYearTabs();
+        renderMonthGrid();
+      }
+      if (tab === "documents") {
+        renderDocuments();
+      }
+      initLucide();
     }
 
     function renderProgressRing(progress) {
@@ -639,6 +722,7 @@
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
       await renderTimeline();
+      await renderImportBanner();
       if (activeTab === "documents") await renderDocuments();
     }
 
@@ -676,25 +760,26 @@
 
           renderClientHeader();
           await reloadCockpit(dossierParam);
+          startCompletionWatcher();
           initLucide();
         }
       }
     }
 
+    document.getElementById("docFilters")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-filter]");
+      if (!btn) return;
+      documentFilter = btn.dataset.filter;
+      document.querySelectorAll("#docFilters [data-filter]").forEach((el) => {
+        el.classList.toggle("active", el.dataset.filter === documentFilter);
+      });
+      renderDocumentsList();
+    });
+
     document.getElementById("viewTabs").addEventListener("click", (event) => {
       const tab = event.target.closest("[data-tab]");
       if (!tab) return;
       setTab(tab.dataset.tab);
-    });
-
-    document.getElementById("docFilters").addEventListener("click", (event) => {
-      const filterBtn = event.target.closest("[data-filter]");
-      if (!filterBtn) return;
-      documentFilter = filterBtn.dataset.filter;
-      document.querySelectorAll("#docFilters [data-filter]").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.filter === documentFilter);
-      });
-      renderDocumentsList();
     });
 
     periodSelect?.addEventListener("change", async () => {

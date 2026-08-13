@@ -1754,6 +1754,215 @@
 .bank-match-txn-table th { text-align: left; color: var(--dash-muted); padding: 0.25rem 0.5rem 0.25rem 0; }
 .bank-match-txn-amount { font-weight: 700; }
 
+.imp-queue-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--dash-muted);
+}
+
+.imp-jobs-header {
+  margin-bottom: 0.75rem;
+}
+
+.imp-jobs-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+
+.imp-jobs-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.imp-job-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  background: var(--dash-surface-2);
+}
+
+.imp-job-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.imp-job-main strong {
+  display: block;
+  font-size: 0.84rem;
+}
+
+.imp-job-main span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--dash-muted);
+}
+
+.imp-job-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 140px;
+}
+
+.imp-job-progress .imp-progress-track {
+  flex: 1;
+  height: 6px;
+}
+
+.imp-job-progress span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--dash-muted);
+  min-width: 2.2rem;
+  text-align: right;
+}
+
+.imp-job-fill-accent { background: var(--dash-accent); }
+.imp-job-fill-success { background: #10b981; }
+.imp-job-fill-danger { background: #ef4444; }
+.imp-job-fill-muted { background: #94a3b8; }
+
+.dash-import-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #dbeafe;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-portfolio-row.has-import .dash-portfolio-row-accent {
+  background: linear-gradient(180deg, #3b82f6, #60a5fa);
+}
+
+.dash-import-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.dash-import-banner i,
+.ws-import-banner i {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  animation: dash-spin 1.2s linear infinite;
+}
+
+.dash-import-banner p,
+.ws-import-banner p {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: #1d4ed8;
+}
+
+.ws-import-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.ws-import-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-import-banner-text strong {
+  display: block;
+  color: #1e3a8a;
+}
+
+@keyframes dash-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.import-toast-container {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: min(420px, calc(100vw - 2rem));
+}
+
+.import-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #dbeafe;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+  animation: import-toast-in 0.25s ease;
+}
+
+.import-toast.is-leaving {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.import-toast-success { border-left: 4px solid #10b981; }
+.import-toast-error { border-left: 4px solid #ef4444; }
+
+.import-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-toast-body strong {
+  display: block;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.import-toast-body p {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.import-toast-link {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dash-accent);
+  text-decoration: none;
+  padding-top: 0.1rem;
+}
+
+@keyframes import-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Documents dossier */
 .ws-docs-header {
   display: flex;

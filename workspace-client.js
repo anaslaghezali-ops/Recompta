@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio1";
+} from "./portfolio-client.js?v=portfolio3";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -73,7 +73,7 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
       desc: hasBank ? `${bank.length} opération${bank.length > 1 ? "s" : ""}` : "Importer le relevé",
       icon: "landmark",
       status: stepStatus(bankDone, bankCurrent),
-      href: dossier ? `production.html?dossier=${dossier.id}` : null,
+      href: dossier ? `import-banque.html?dossier=${dossier.id}` : null,
     },
     {
       key: "purchases",
@@ -81,7 +81,7 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
       desc: hasLines ? `${lines.length} ligne${lines.length > 1 ? "s" : ""}` : "Importer les factures",
       icon: "file-input",
       status: stepStatus(purchasesDone, purchasesCurrent),
-      href: dossier ? `production.html?dossier=${dossier.id}` : null,
+      href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
     },
     {
       key: "review",
@@ -89,7 +89,7 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
       desc: anomalyCount > 0 ? `${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}` : "Vérification automatique",
       icon: "sparkles",
       status: stepStatus(reviewDone, reviewCurrent),
-      href: dossier ? `production.html?dossier=${dossier.id}` : null,
+      href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
     },
     {
       key: "validate",

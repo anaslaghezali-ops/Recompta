@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=portfolio1" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs3" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -64,6 +64,14 @@
             <div class="dash-kpi-label">TVA en retard</div>
             <div class="dash-kpi-value" id="kpiLate">—</div>
             <div class="dash-kpi-hint">Échéance dépassée</div>
+          </div>
+        </div>
+
+        <div class="dash-portfolio-banner dash-import-banner" id="importBanner" hidden>
+          <i data-lucide="loader-circle"></i>
+          <div>
+            <strong id="importBannerTitle">Imports en cours</strong>
+            <p id="importBannerText">—</p>
           </div>
         </div>
 
@@ -137,7 +145,13 @@
       computePortfolioKpis,
       listPortfolioRows,
       matchesPortfolioFilter,
-    } from "./portfolio-client.js?v=portfolio1";
+    } from "./portfolio-client.js?v=portfolio3";
+    import {
+      fetchActiveImportMap,
+      formatActiveImportLabel,
+      showImportCompletionToast,
+      startImportCompletionWatcher,
+    } from "./import-jobs-client.js?v=jobs3";
 
     const portfolioRows = document.getElementById("portfolioRows");
     const portfolioList = document.getElementById("portfolioList");
@@ -164,6 +178,62 @@
     let allRows = [];
     let activeFilter = "all";
     let searchQuery = "";
+    let importPollTimer = null;
+    let stopCompletionWatcher = null;
+
+    function updateImportBanner(rows) {
+      const banner = document.getElementById("importBanner");
+      const active = rows.filter((row) => row.importJob);
+      if (!active.length) {
+        banner.hidden = true;
+        return;
+      }
+      banner.hidden = false;
+      document.getElementById("importBannerTitle").textContent =
+        active.length === 1 ? "Import en cours" : `${active.length} imports en cours`;
+      document.getElementById("importBannerText").textContent = active
+        .map((row) => `${row.name} — ${formatActiveImportLabel(row.importJob)}`)
+        .join(" · ");
+      initLucide();
+    }
+
+    function scheduleImportPolling(rows) {
+      const hasActive = rows.some((row) => row.importJob);
+      if (!hasActive) {
+        if (importPollTimer) {
+          clearInterval(importPollTimer);
+          importPollTimer = null;
+        }
+        return;
+      }
+      if (importPollTimer) return;
+      importPollTimer = setInterval(async () => {
+        try {
+          const dossierIds = allRows.map((row) => row.dossierId).filter(Boolean);
+          const importMap = await fetchActiveImportMap(dossierIds);
+          allRows = allRows.map((row) => ({
+            ...row,
+            importJob: row.dossierId ? importMap.get(row.dossierId) || null : null,
+          }));
+          renderPortfolio();
+        } catch {
+          /* ignore transient poll errors */
+        }
+      }, 8000);
+    }
+
+    function startCompletionWatcher() {
+      stopCompletionWatcher?.();
+      const dossierIds = allRows.map((row) => row.dossierId).filter(Boolean);
+      if (!dossierIds.length) return;
+      const nameByDossier = new Map(
+        allRows.filter((row) => row.dossierId).map((row) => [row.dossierId, row.name]),
+      );
+      stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
+        showImportCompletionToast(job, { dossierName: nameByDossier.get(job.dossier_id) || "" });
+        refreshClients().catch(() => {});
+      });
+    }
 
     function showClientError(message) {
       clientError.hidden = !message;
@@ -201,6 +271,13 @@
 
       document.getElementById("kpiExceptionsWrap").classList.toggle("dash-kpi-warn", kpis.aiExceptions > 0);
       document.getElementById("kpiLateWrap").classList.toggle("dash-kpi-alert", kpis.tvaLate > 0);
+
+      const subtitle = document.getElementById("topbarSubtitle");
+      if (kpis.activeImports > 0) {
+        subtitle.textContent = `${kpis.activeImports} import(s) en cours — traitement en arrière-plan`;
+      } else {
+        subtitle.textContent = "Sur quels clients travailler aujourd'hui ?";
+      }
     }
 
     function priorityClass(row) {
@@ -219,13 +296,17 @@
       const periodText = row.periodLabel || "—";
       const opsText = row.operationCount > 0 ? String(row.operationCount) : "—";
       const anomalyText = row.anomalyCount > 0 ? String(row.anomalyCount) : "—";
+      const importBadge = row.importJob
+        ? `<span class="dash-import-badge" title="${escapeHtml(formatActiveImportLabel(row.importJob))}">${escapeHtml(formatActiveImportLabel(row.importJob))}</span>`
+        : "";
 
       return `
-        <article class="dash-portfolio-row ${priorityClass(row)}" data-client-id="${escapeHtml(row.clientId)}" tabindex="0">
+        <article class="dash-portfolio-row ${priorityClass(row)} ${row.importJob ? "has-import" : ""}" data-client-id="${escapeHtml(row.clientId)}" tabindex="0">
           <div class="dash-portfolio-row-accent" aria-hidden="true"></div>
           <div class="dash-portfolio-client">
             <strong class="dash-portfolio-name">${escapeHtml(row.name)}</strong>
             <span class="dash-portfolio-ice">ICE ${escapeHtml(row.ice)}</span>
+            ${importBadge}
           </div>
           <div class="dash-portfolio-col period">${escapeHtml(periodText)}</div>
           <div class="dash-portfolio-col progress">
@@ -259,6 +340,7 @@
             <span class="dash-portfolio-mobile-chip">${escapeHtml(row.lastActivityLabel)}</span>
             <span class="dash-portfolio-mobile-chip">→ <strong>${escapeHtml(row.nextAction?.label || "—")}</strong></span>
             <span class="dash-portfolio-mobile-chip">${renderBadge(row.statusKey, row.statusLabel)}</span>
+            ${row.importJob ? `<span class="dash-portfolio-mobile-chip dash-import-badge">${escapeHtml(formatActiveImportLabel(row.importJob))}</span>` : ""}
           </div>
         </article>
       `;
@@ -316,6 +398,8 @@
       portfolioList.hidden = false;
       portfolioRows.innerHTML = filtered.map(renderRow).join("");
       bindRowEvents();
+      updateImportBanner(allRows);
+      scheduleImportPolling(allRows);
       initLucide();
     }
 
@@ -327,6 +411,7 @@
       try {
         allRows = await listPortfolioRows(cabinetId);
         renderPortfolio();
+        startCompletionWatcher();
       } catch (error) {
         portfolioRows.innerHTML = `<div class="dash-portfolio-loading">Erreur : ${escapeHtml(error.message || "chargement impossible")}</div>`;
       }
