@@ -233,3 +233,43 @@ export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
     pollSeconds: health.import_worker_poll_seconds,
   };
 }
+
+export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
+  const base = (apiUrl || "").replace(/\/$/, "");
+  if (!base || !jobId || !file) {
+    return Promise.reject(new Error("Paramètres d'envoi invalides."));
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable || !onProgress) return;
+      const percent = 12 + Math.round((event.loaded / event.total) * 83);
+      onProgress(`Envoi — ${file.name}`, percent);
+    });
+
+    xhr.addEventListener("load", () => {
+      let body = {};
+      try {
+        body = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        body = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body);
+        return;
+      }
+      const detail = body.detail || xhr.responseText || `Erreur serveur (${xhr.status})`;
+      reject(new Error(detail));
+    });
+
+    xhr.addEventListener("error", () => reject(new Error(UNREACHABLE_HINT)));
+    xhr.addEventListener("abort", () => reject(new Error("Envoi annulé.")));
+
+    xhr.open("POST", `${base}/api/import-jobs/${jobId}/upload`);
+    xhr.send(formData);
+  });
+}

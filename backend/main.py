@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from admin_saas import router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
+from import_job_queue import complete_invoice_job_upload
 from import_job_worker import process_pending_import_jobs
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
@@ -261,6 +262,44 @@ async def import_bank_statement(
     upload_name = file.filename or "releve_bancaire"
     mime_type = file.content_type or "application/octet-stream"
     return await extract_bank_statement(upload_name, content, mime_type)
+
+
+@app.post("/api/import-jobs/{job_id}/upload")
+async def upload_import_job_file(
+    job_id: int,
+    file: Annotated[UploadFile, File(...)],
+) -> dict:
+    """Reçoit le fichier depuis le navigateur et le place en file d'attente Supabase."""
+    if not import_worker_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Fichier vide.")
+
+    filename = file.filename or "document"
+    mime_type = file.content_type or "application/octet-stream"
+    try:
+        job = await complete_invoice_job_upload(
+            job_id,
+            filename=filename,
+            content=content,
+            mime_type=mime_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    try:
+        await process_pending_import_jobs(max_jobs=3)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"job": job}
 
 
 @app.post("/api/import-jobs/process")

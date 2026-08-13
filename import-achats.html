@@ -55,7 +55,7 @@
                 <i data-lucide="sparkles"></i> Extraction immédiate
               </button>
             </div>
-            <p class="imp-queue-hint" id="queueHint">Un ZIP est envoyé en un seul fichier. Dès la fin de l'envoi, vous pouvez quitter — le serveur décompresse et traite les factures.</p>
+            <p class="imp-queue-hint" id="queueHint">Au clic, l'envoi démarre via le serveur Codespace. Ouvrez le workspace dans un autre onglet pour suivre — gardez cet onglet ouvert pendant l'envoi du fichier.</p>
             <div class="imp-progress" id="progressPanel" hidden>
               <p id="progressText">—</p>
               <div class="imp-progress-track"><div class="imp-progress-fill" id="progressBar"></div></div>
@@ -113,7 +113,7 @@
     </div>
   </div>
 
-  <script type="module" src="import-achats.js?v=imp4"></script>
+  <script type="module" src="import-achats.js?v=imp5"></script>
   <script type="module">
     document.getElementById("backBtn").addEventListener("click", (e) => {
       e.preventDefault();
