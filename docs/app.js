@@ -790,15 +790,15 @@ async function initCabinetAccess() {
     return;
   }
 
-  applyDossierContext(context);
-  initWorkspacePersistence();
-  await loadPersistedWorkspace();
-  if (isAnomaliesReviewView()) {
-    setStep(3);
-    const hint = document.getElementById("anomalyViewHint");
-    if (hint) hint.hidden = false;
-    document.getElementById("reviewSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  const view = params.get("view");
+  const reviewParams = new URLSearchParams({
+    client: context.clientId,
+    dossier: dossierId,
+    tab: "review",
+  });
+  if (view) reviewParams.set("view", view);
+  window.location.replace(`workspace.html?${reviewParams.toString()}`);
+  return;
 }
 
 function persistClientIce() {

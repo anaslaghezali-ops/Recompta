@@ -76,7 +76,6 @@ export async function findDossierDocumentByIdentity(dossierId, filename) {
   const supabase = getSupabase();
   if (!supabase || !dossierId || !filename) return null;
 
-  const targetKeys = documentIdentityKeys(filename);
   const { data, error } = await supabase
     .from("dossier_documents")
     .select("id, dossier_id, doc_type, original_filename, storage_path, mime_type, size_bytes, source_id, created_at")

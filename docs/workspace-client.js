@@ -40,11 +40,12 @@ export function formatDeadlineLabel(daysLeft, year, month) {
   return `Échéance dans ${daysLeft} j — ${dateStr}`;
 }
 
-export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey }) {
+export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey, clientId = null, pendingAnalysis = 0 }) {
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
   const hasBank = bank.length > 0;
   const hasLines = lines.length > 0;
+  const hasDocuments = hasLines || pendingAnalysis > 0;
   const isExported = statusKey === "exported";
   const isReview = statusKey === "in_review";
 
@@ -55,16 +56,23 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
   }
 
   const bankDone = hasBank;
-  const purchasesDone = hasLines;
+  const purchasesDone = hasDocuments;
+  const analysisDone = hasLines;
   const reviewDone = hasLines && anomalyCount === 0;
-  const validateDone = isExported || (isReview && anomalyCount === 0);
   const exportDone = isExported;
 
   const bankCurrent = !hasBank && !isExported;
-  const purchasesCurrent = hasBank && !hasLines && !isExported;
+  const purchasesCurrent = hasBank && !hasDocuments && !isExported;
+  const analysisCurrent = hasDocuments && !hasLines && !isExported;
   const reviewCurrent = hasLines && anomalyCount > 0 && !isExported;
-  const validateCurrent = hasLines && anomalyCount === 0 && isReview && !isExported;
   const exportCurrent = hasLines && anomalyCount === 0 && !isExported && !isReview;
+
+  const wsReview = clientId && dossier
+    ? `workspace.html?client=${clientId}&dossier=${dossier.id}&tab=review`
+    : null;
+  const wsAnomalies = clientId && dossier
+    ? `workspace.html?client=${clientId}&dossier=${dossier.id}&tab=review&view=anomalies`
+    : null;
 
   return [
     {
@@ -80,24 +88,26 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
       label: "Factures achats",
       desc: hasLines ? `${lines.length} ligne${lines.length > 1 ? "s" : ""}` : "Importer les factures",
       icon: "file-input",
-      status: stepStatus(purchasesDone, purchasesCurrent),
+      status: stepStatus(purchasesDone, purchasesCurrent && !hasLines),
       href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
     },
     {
-      key: "review",
-      label: "Contrôle IA",
-      desc: anomalyCount > 0 ? `${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}` : "Vérification automatique",
+      key: "analysis",
+      label: "Analyse IA",
+      desc: hasLines ? "Extraction terminée" : "Lancer l'extraction",
       icon: "sparkles",
-      status: stepStatus(reviewDone, reviewCurrent),
-      href: dossier ? `production.html?dossier=${dossier.id}&view=anomalies` : null,
+      status: stepStatus(hasLines, !hasLines && purchasesDone && !isExported),
+      action: "analysis",
     },
     {
-      key: "validate",
-      label: "Validation",
-      desc: isReview ? "Prêt à valider" : "Revue comptable",
+      key: "review",
+      label: "Contrôle & revue",
+      desc: anomalyCount > 0 ? `${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}` : "Vérifier les lignes",
       icon: "shield-check",
-      status: stepStatus(validateDone, validateCurrent),
-      href: dossier ? `production.html?dossier=${dossier.id}` : null,
+      status: stepStatus(reviewDone, reviewCurrent),
+      href: wsAnomalies || wsReview,
+      tab: "review",
+      view: anomalyCount > 0 ? "anomalies" : null,
     },
     {
       key: "export",
@@ -105,12 +115,13 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
       desc: isExported ? "Déclaration exportée" : "Excel DED TVA",
       icon: "file-spreadsheet",
       status: stepStatus(exportDone, exportCurrent),
-      href: dossier ? `production.html?dossier=${dossier.id}` : null,
+      href: wsReview,
+      tab: "review",
     },
   ];
 }
 
-export function buildCockpitState(client, dossier, workspace) {
+export function buildCockpitState(client, dossier, workspace, { pendingAnalysis = 0 } = {}) {
   if (!dossier) {
     return {
       hasPeriod: false,
@@ -135,11 +146,19 @@ export function buildCockpitState(client, dossier, workspace) {
   });
   const nextAction = resolveNextAction({
     dossier,
+    workspace: { ...(workspace || {}), pendingAnalysis },
+    anomalyCount,
+    statusKey,
+    clientId: client.id,
+  });
+  const pipeline = buildPipelineSteps({
+    dossier,
     workspace,
     anomalyCount,
     statusKey,
+    clientId: client.id,
+    pendingAnalysis,
   });
-  const pipeline = buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey });
   const lastActivity = workspace?.updated_at || dossier.updated_at || dossier.created_at;
 
   return {
@@ -168,8 +187,8 @@ export function buildCockpitState(client, dossier, workspace) {
   };
 }
 
-export async function loadWorkspaceCockpit(client, preferredDossierId = null) {
+export async function loadWorkspaceCockpit(client, preferredDossierId = null, { pendingAnalysis = 0 } = {}) {
   const dossier = pickActiveDossier(client.dossiers, preferredDossierId);
   const workspace = dossier ? await loadDossierWorkspace(dossier.id) : null;
-  return buildCockpitState(client, dossier, workspace);
+  return buildCockpitState(client, dossier, workspace, { pendingAnalysis });
 }

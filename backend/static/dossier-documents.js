@@ -31,11 +31,72 @@ export function buildStoragePath(dossierId, originalFilename) {
   return `dossier/${dossierId}/${unique}_${safe}`;
 }
 
+export function documentIdentityKeys(filename) {
+  const name = String(filename || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const parts = name.split("/").filter(Boolean);
+  const keys = new Set();
+  if (parts.length >= 2) {
+    keys.add(`${parts[parts.length - 2].toLowerCase()}/${parts[parts.length - 1].toLowerCase()}`);
+  }
+  if (parts.length) keys.add(parts[parts.length - 1].toLowerCase());
+  if (!keys.size) keys.add("document");
+  return keys;
+}
+
+export function documentsShareIdentity(a, b) {
+  const keysA = documentIdentityKeys(a);
+  const keysB = documentIdentityKeys(b);
+  for (const key of keysA) {
+    if (keysB.has(key)) return true;
+  }
+  return false;
+}
+
+export function dedupeDocuments(docs) {
+  const kept = [];
+  for (const doc of docs || []) {
+    const duplicateIndex = kept.findIndex(
+      (row) => row.doc_type === doc.doc_type
+        && documentsShareIdentity(row.original_filename, doc.original_filename),
+    );
+    if (duplicateIndex === -1) {
+      kept.push(doc);
+      continue;
+    }
+    if (new Date(doc.created_at) > new Date(kept[duplicateIndex].created_at)) {
+      kept[duplicateIndex] = doc;
+    }
+  }
+  return kept.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+}
+
+export async function findDossierDocumentByIdentity(dossierId, filename) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierId || !filename) return null;
+
+  const { data, error } = await supabase
+    .from("dossier_documents")
+    .select("id, dossier_id, doc_type, original_filename, storage_path, mime_type, size_bytes, source_id, created_at")
+    .eq("dossier_id", dossierId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+  return (data || []).find(
+    (row) => documentsShareIdentity(row.original_filename, filename),
+  ) || null;
+}
+
 export async function uploadDossierDocument({ dossierId, file, docType, sourceId = null }) {
   const supabase = getSupabase();
   if (!supabase || !dossierId || !file) return null;
 
   const originalFilename = file.name || "document";
+  const existing = await findDossierDocumentByIdentity(dossierId, originalFilename);
+  if (existing) return existing;
+
   const storagePath = buildStoragePath(dossierId, originalFilename);
   const mimeType = file.type || "application/octet-stream";
 
@@ -155,7 +216,7 @@ export async function listDossierDocuments(dossierId, { docType = null } = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  return dedupeDocuments(data || []);
 }
 
 export async function getDocumentDownloadUrl(storagePath, expiresIn = 3600) {

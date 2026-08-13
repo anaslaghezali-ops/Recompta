@@ -25,7 +25,7 @@
               <span>Import achats</span>
             </nav>
             <h1>Import des factures achats</h1>
-            <p style="margin:0.2rem 0 0;font-size:0.85rem;color:var(--dash-muted);">Déposez vos fichiers — traitement en arrière-plan, vous pouvez quitter la page</p>
+            <p style="margin:0.2rem 0 0;font-size:0.85rem;color:var(--dash-muted);">Déposez vos fichiers — l'analyse IA se lance ensuite depuis le workspace</p>
           </div>
         </div>
         <div class="dash-topbar-actions">
@@ -49,13 +49,13 @@
             <div class="imp-file-queue" id="fileQueue" hidden></div>
             <div class="imp-actions">
               <button type="button" class="dash-btn dash-btn-primary" id="queueBtn" disabled>
-                <i data-lucide="cloud-upload"></i> Mettre en file d'attente
+                <i data-lucide="cloud-upload"></i> Importer les documents
               </button>
               <button type="button" class="dash-btn" id="extractBtn" disabled hidden>
                 <i data-lucide="sparkles"></i> Extraction immédiate
               </button>
             </div>
-            <p class="imp-queue-hint" id="queueHint">Au clic, l'envoi démarre via le serveur Codespace. Ouvrez le workspace dans un autre onglet pour suivre — gardez cet onglet ouvert pendant l'envoi du fichier.</p>
+            <p class="imp-queue-hint" id="queueHint">Les fichiers sont stockés sur la plateforme. Retournez au workspace et cliquez sur <strong>Lancer l'analyse IA</strong> pour démarrer l'extraction en arrière-plan.</p>
             <div class="imp-progress" id="progressPanel" hidden>
               <p id="progressText">—</p>
               <div class="imp-progress-track"><div class="imp-progress-fill" id="progressBar"></div></div>
@@ -113,7 +113,7 @@
     </div>
   </div>
 
-  <script type="module" src="import-achats.js?v=imp6"></script>
+  <script type="module" src="import-achats.js?v=upload1"></script>
   <script type="module">
     document.getElementById("backBtn").addEventListener("click", (e) => {
       e.preventDefault();

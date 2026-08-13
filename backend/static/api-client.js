@@ -282,3 +282,14 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
     xhr.send(formData);
   });
 }
+
+export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "" } = {}) {
+  if (!apiUrl) throw new Error("Configurez l'URL du Codespace (port 8000) pour lancer l'analyse IA.");
+  const params = new URLSearchParams({ doc_type: docType, client_ice: clientIce || "" });
+  const response = await fetchOrExplain(
+    `${apiUrl.replace(/\/$/, "")}/api/dossiers/${dossierId}/analyze?${params}`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw await errorFromResponse(response);
+  return response.json();
+}

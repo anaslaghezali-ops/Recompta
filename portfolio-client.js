@@ -63,7 +63,7 @@ export function resolvePriority({ dossier, progress, anomalyCount, daysLeft, sta
   return { key: "low", label: "À démarrer", tone: "neutral" };
 }
 
-export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey }) {
+export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey, clientId = null }) {
   if (!dossier) {
     return { label: "Créer une période TVA", href: null, action: "create_period" };
   }
@@ -73,12 +73,23 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey 
 
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
+  const pendingAnalysis = workspace?.pendingAnalysis || 0;
+  const wsBase = clientId
+    ? `workspace.html?client=${clientId}&dossier=${dossier.id}`
+    : null;
 
   if (bank.length === 0) {
     return {
       label: "Importer le relevé bancaire",
       href: `import-banque.html?dossier=${dossier.id}`,
       action: "bank",
+    };
+  }
+  if (lines.length === 0 && pendingAnalysis > 0) {
+    return {
+      label: "Lancer l'analyse IA",
+      href: wsBase ? `${wsBase}&tab=cockpit` : null,
+      action: "analysis",
     };
   }
   if (lines.length === 0) {
@@ -91,21 +102,25 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey 
   if (anomalyCount > 0) {
     return {
       label: `Corriger ${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}`,
-      href: `production.html?dossier=${dossier.id}&view=anomalies`,
+      href: wsBase ? `${wsBase}&tab=review&view=anomalies` : null,
       action: "fix",
+      tab: "review",
+      view: "anomalies",
     };
   }
   if (statusKey === "in_review") {
     return {
-      label: "Valider et exporter",
-      href: `production.html?dossier=${dossier.id}`,
+      label: "Exporter la déclaration TVA",
+      href: wsBase ? `${wsBase}&tab=review` : null,
       action: "export",
+      tab: "review",
     };
   }
   return {
-    label: "Poursuivre la production",
-      href: `production.html?dossier=${dossier.id}`,
-      action: "continue",
+    label: "Vérifier et exporter",
+    href: wsBase ? `${wsBase}&tab=review` : null,
+    action: "continue",
+    tab: "review",
   };
 }
 
@@ -151,6 +166,7 @@ export function buildPortfolioRow(client, workspaceByDossierId = {}, activeImpor
     workspace,
     anomalyCount,
     statusKey,
+    clientId: client.id,
   });
 
   const lastActivity = workspace?.updated_at

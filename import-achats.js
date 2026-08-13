@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocumentFromBlob } from "./dossier-documents.js?v=doc1";
+import { uploadDossierDocument } from "./dossier-documents.js?v=doc3";
 
 const els = {};
 let session = null;
@@ -280,78 +280,46 @@ async function runQueue() {
   els.queueBtn.disabled = true;
   els.extractBtn.disabled = true;
   els.progressPanel.hidden = false;
-  els.progressText.textContent = "Préparation de l'import…";
+  els.progressText.textContent = "Envoi des documents…";
   els.progressBar.style.width = "5%";
 
   const filesToSend = [...pendingFiles];
   pendingFiles = [];
   renderFileQueue();
-  startJobsPolling();
 
-  const apiUrl = resolvedApiUrl();
-  if (!apiUrl) {
-    setWorkerHint("Configurez l'URL du Codespace pour envoyer via le serveur.", "error");
-    extracting = false;
-    els.queueBtn.disabled = false;
-    return;
+  let uploaded = 0;
+  const failures = [];
+
+  for (let index = 0; index < filesToSend.length; index += 1) {
+    const file = filesToSend[index];
+    const percent = 8 + Math.round(((index + 1) / filesToSend.length) * 88);
+    els.progressText.textContent = `Envoi ${index + 1}/${filesToSend.length} — ${file.name}`;
+    els.progressBar.style.width = `${percent}%`;
+    try {
+      await uploadDossierDocument({
+        dossierId: session.dossierId,
+        file,
+        docType: "invoice",
+      });
+      uploaded += 1;
+    } catch (error) {
+      failures.push({ name: file.name, message: error.message });
+    }
   }
 
-  try {
-    await startInvoiceImportUpload({
-      dossierId: session.dossierId,
-      files: filesToSend,
-      options: {
-        api_url: apiUrl,
-        use_ai: Boolean(els.useAi?.checked),
-        client_ice: session.context.clientIce,
-      },
-      onProgress: (message, percent) => {
-        els.progressText.textContent = message;
-        els.progressBar.style.width = `${percent}%`;
-      },
-      onFileQueued: async () => {
-        await renderJobsPanel();
-        await triggerWorkerProcessing();
-      },
-      onComplete: async (result) => {
-        els.progressText.textContent =
-          "Envoi terminé. Traitement en cours sur le serveur — vous pouvez quitter cette page.";
-        els.progressBar.style.width = "100%";
-        setStatus("Import lancé — traitement en arrière-plan", "success");
-        await triggerWorkerProcessing();
-        await renderJobsPanel();
-        extracting = false;
-        els.queueBtn.disabled = !pendingFiles.length;
-        els.extractBtn.disabled = !pendingFiles.length;
-        initLucide();
-      },
-      onError: (error) => {
-        els.progressText.textContent = `Erreur : ${error.message}`;
-        els.progressBar.style.width = "0%";
-        setStatus(error.message, "error");
-        extracting = false;
-        els.queueBtn.disabled = !pendingFiles.length;
-        els.extractBtn.disabled = !pendingFiles.length;
-        initLucide();
-      },
-    });
-
-    els.progressText.textContent =
-      "Envoi démarré — ouvrez le workspace dans un autre onglet pour suivre. Gardez cet onglet ouvert pendant l'envoi.";
-    els.progressBar.style.width = "12%";
-    setStatus("Envoi en cours", "success");
-    extracting = false;
-    els.queueBtn.disabled = !pendingFiles.length;
-    els.extractBtn.disabled = !pendingFiles.length;
-  } catch (error) {
-    els.progressText.textContent = `Erreur : ${error.message}`;
-    els.progressBar.style.width = "0%";
-    setStatus(error.message, "error");
-    extracting = false;
-    els.queueBtn.disabled = !pendingFiles.length;
-    els.extractBtn.disabled = !pendingFiles.length;
-    initLucide();
+  els.progressBar.style.width = "100%";
+  if (failures.length) {
+    els.progressText.textContent = `${uploaded} envoyé(s), ${failures.length} erreur(s).`;
+    setStatus(`${uploaded} document(s) importé(s) — ${failures.length} échec(s)`, "warn");
+  } else {
+    els.progressText.textContent = `${uploaded} document(s) importé(s). Retournez au workspace pour lancer l'analyse IA.`;
+    setStatus(`${uploaded} document(s) prêt(s) — lancez l'analyse depuis le workspace`, "success");
   }
+
+  extracting = false;
+  els.queueBtn.disabled = !pendingFiles.length;
+  els.extractBtn.disabled = !pendingFiles.length;
+  initLucide();
 }
 
 function formatJobDate(iso) {
