@@ -100,17 +100,41 @@
       <div id="emptyState" class="empty-state">
         <p>Aucune ligne pour l'instant.</p>
       </div>
-      <div class="table-wrap" id="tableWrap" hidden>
-        <table id="linesTable">
-          <thead>
-            <tr>
-              <th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
-              <th>Désignation</th><th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
-              <th>Date fact.</th><th>Date paie</th><th>Paie</th><th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <div id="reviewLayout" class="review-layout" hidden>
+        <div class="review-table-pane">
+          <div class="table-wrap" id="tableWrap">
+            <table id="linesTable">
+              <thead>
+                <tr>
+                  <th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
+                  <th>Désignation</th><th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
+                  <th>Date fact.</th><th>Date paie</th><th>Paie</th><th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <aside id="documentPreviewPanel" class="review-preview-pane" hidden>
+          <div class="preview-header">
+            <div>
+              <h3 id="previewTitle">Document</h3>
+              <p id="previewSubtitle" class="hint preview-subtitle"></p>
+            </div>
+            <div id="previewNav" class="preview-nav" hidden>
+              <button id="previewPrevPage" class="secondary small" type="button" aria-label="Page précédente">‹</button>
+              <span id="previewPageInfo">1 / 1</span>
+              <button id="previewNextPage" class="secondary small" type="button" aria-label="Page suivante">›</button>
+            </div>
+          </div>
+          <div id="previewIssues" class="preview-issues" hidden></div>
+          <p id="previewEmpty" class="hint preview-empty">Cliquez « Voir » sur une ligne pour afficher la facture.</p>
+          <p id="previewMissing" class="hint warn preview-missing" hidden></p>
+          <div id="previewCanvasWrap" class="preview-canvas-wrap" hidden>
+            <canvas id="previewCanvas"></canvas>
+            <img id="previewImage" alt="Aperçu facture" hidden />
+          </div>
+        </aside>
       </div>
     </section>
 
