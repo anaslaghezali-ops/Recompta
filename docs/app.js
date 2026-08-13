@@ -30,7 +30,7 @@ import {
   parseSourceFilename,
   showLinePreview,
   tagSourceFilename,
-} from "./document-preview.js?v=preview7";
+} from "./document-preview.js?v=preview8";
 import {
   extractViaServer,
   fetchServerHealth,

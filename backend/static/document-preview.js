@@ -143,15 +143,30 @@ function cancelPreviewRender(ui) {
   }
 }
 
-function replacePreviewCanvas(ui) {
-  if (!ui.canvas || !ui.canvas.parentNode) return;
+function clearPreviewImage(ui) {
+  if (ui._imageUrl) {
+    URL.revokeObjectURL(ui._imageUrl);
+    ui._imageUrl = "";
+  }
+  if (ui.image) {
+    ui.image.removeAttribute("src");
+    ui.image.hidden = true;
+  }
+}
+
+/** Un seul canvas dans le panneau — évite l'ancienne facture qui reste en dessous. */
+function resetPreviewSurface(ui) {
+  if (!ui.canvasWrap) return;
   cancelPreviewRender(ui);
-  const fresh = ui.canvas.cloneNode(false);
-  fresh.removeAttribute("width");
-  fresh.removeAttribute("height");
-  fresh.hidden = true;
-  ui.canvas.replaceWith(fresh);
-  ui.canvas = fresh;
+  clearPreviewImage(ui);
+  ui.canvasWrap.querySelectorAll("canvas").forEach((node) => node.remove());
+  const canvas = document.createElement("canvas");
+  canvas.hidden = true;
+  if (ui.image) ui.canvasWrap.insertBefore(canvas, ui.image);
+  else ui.canvasWrap.appendChild(canvas);
+  ui.canvas = canvas;
+  ui.canvasWrap.scrollTop = 0;
+  ui.canvasWrap.scrollLeft = 0;
 }
 
 function isPdf(sourceFile) {
@@ -203,6 +218,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
     if (ui.issues) ui.issues.hidden = true;
     if (ui.nav) ui.nav.hidden = true;
     if (ui.zoom) ui.zoom.hidden = true;
+    clearPreviewImage(ui);
     return;
   }
 
@@ -250,7 +266,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
   ui._previewState.pageCount = 1;
   applyDocumentZoom(ui);
   if (ui.zoom) ui.zoom.hidden = false;
-  replacePreviewCanvas(ui);
+  resetPreviewSurface(ui);
 
   try {
     if (isPdf(source)) {
@@ -325,10 +341,8 @@ async function renderPdfPage(ui, pdf, pageNumber, token = null) {
 }
 
 async function renderImage(ui, source) {
-  if (ui._imageUrl) {
-    URL.revokeObjectURL(ui._imageUrl);
-    ui._imageUrl = "";
-  }
+  clearPreviewImage(ui);
+  if (ui.canvas) ui.canvas.hidden = true;
   const blob = new Blob([source.content], { type: source.mime });
   const url = URL.createObjectURL(blob);
   ui._imageUrl = url;
@@ -336,7 +350,6 @@ async function renderImage(ui, source) {
     ui.image.src = url;
     ui.image.hidden = false;
   }
-  if (ui.canvas) ui.canvas.hidden = true;
 }
 
 export async function changePreviewPage(ui, delta) {

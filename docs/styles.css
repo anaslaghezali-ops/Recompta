@@ -591,6 +591,11 @@ tr.duplicate-row td:first-child {
   background: #fff;
 }
 
+.preview-canvas-wrap img[hidden],
+.preview-canvas-wrap canvas[hidden] {
+  display: none !important;
+}
+
 tr.selected-row {
   background: #eef6ff;
 }
