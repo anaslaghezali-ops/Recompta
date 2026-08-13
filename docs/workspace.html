@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=docs2" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs4" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -50,8 +50,14 @@
           <div class="ws-import-banner-text">
             <strong id="importBannerTitle">Import en cours</strong>
             <p id="importBannerText">—</p>
+            <div class="ws-import-banner-progress">
+              <div class="ws-import-banner-progress-track" aria-hidden="true">
+                <div class="ws-import-banner-progress-fill" id="importBannerProgressFill"></div>
+              </div>
+              <span id="importBannerPercent">0%</span>
+            </div>
           </div>
-          <a href="#" id="importBannerLink" class="dash-btn dash-btn-sm">Voir l'import</a>
+          <button type="button" id="importBannerBtn" class="dash-btn dash-btn-sm">Voir l'import</button>
         </div>
 
         <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
@@ -225,11 +231,12 @@
     import {
       formatActiveImportLabel,
       importJobPageUrl,
+      jobProgressPercent,
       JOB_STATUS_LABELS,
       listImportJobs,
       showImportCompletionToast,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs3";
+    } from "./import-jobs-client.js?v=jobs4";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
@@ -265,6 +272,7 @@
     let importPollTimer = null;
     let hadActiveImport = false;
     let stopCompletionWatcher = null;
+    let activeImportJob = null;
     let documentsCache = [];
     let documentFilter = "all";
 
@@ -290,6 +298,7 @@
 
       const job = jobs[0];
       if (!job) {
+        activeImportJob = null;
         if (hadActiveImport) {
           hadActiveImport = false;
           await reloadCockpit(selectedDossierId);
@@ -300,13 +309,22 @@
       }
 
       hadActiveImport = true;
+      activeImportJob = job;
       banner.hidden = false;
+      const percent = jobProgressPercent(job);
       document.getElementById("importBannerTitle").textContent =
-        JOB_STATUS_LABELS[job.status] || "Import en cours";
+        `${JOB_STATUS_LABELS[job.status] || "Import en cours"} — ${percent}%`;
       document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
-      document.getElementById("importBannerLink").href = importJobPageUrl(job, selectedDossierId);
+      document.getElementById("importBannerProgressFill").style.width = `${percent}%`;
+      document.getElementById("importBannerPercent").textContent = `${percent}%`;
       startImportPolling();
       initLucide();
+    }
+
+    function openActiveImportPage() {
+      if (!activeImportJob) return;
+      const url = importJobPageUrl(activeImportJob, selectedDossierId);
+      window.location.href = url;
     }
 
     function startCompletionWatcher() {
@@ -325,7 +343,7 @@
       if (importPollTimer) return;
       importPollTimer = setInterval(() => {
         renderImportBanner().catch(() => {});
-      }, 8000);
+      }, 4000);
     }
 
     function stopImportPolling() {
@@ -765,6 +783,8 @@
         }
       }
     }
+
+    document.getElementById("importBannerBtn")?.addEventListener("click", openActiveImportPage);
 
     document.getElementById("docFilters")?.addEventListener("click", (event) => {
       const btn = event.target.closest("[data-filter]");
