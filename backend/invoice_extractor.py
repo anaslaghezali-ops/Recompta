@@ -857,7 +857,17 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
   Un scan peut couper le libellé (« ...PATENTE:35891529I. » puis « F 14427958 »
   signifie PATENTE = 35891529 et IF = 14427958).
   Si aucun IF n'est identifiable avec certitude, renvoie une chaîne vide.
-- designation : EXACTEMENT une de : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
+- designation : EXACTEMENT une de : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE".
+  Choisis d'après la NATURE DES ARTICLES facturés, jamais d'après un mot isolé :
+  • "MATIERES CONSOMMABLES" = biens livrés : alimentaire (viande, bacon, légumes,
+    boissons), emballages, fournitures, produits d'entretien, marchandises.
+    C'est le cas par défaut d'une facture de fournisseur avec un tableau d'articles.
+  • "PRESTATIONS" = service immatériel : honoraires, conseil, maintenance,
+    transport facturé seul, publicité, location.
+  • "TELEPHONIE" = abonnement ou communications téléphoniques / internet.
+  • "FRAIS BANCAIRE" = commissions, agios, tenue de compte.
+  Un « Bon de livraison » cité sur une facture de marchandises ne la transforme
+  PAS en prestation : ce sont bien des matières consommables.
 - id_paie : 1 (comptant) ou 4 (virement) — défaut 4
 - date_fac : date d'émission de la facture
 - date_paie : TOUJOURS null. Une facture ne prouve pas son paiement ; cette

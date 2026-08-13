@@ -255,9 +255,11 @@ function normalizeDesignation(value) {
 
 function guessDesignation(text) {
   const lowered = text.toLowerCase();
-  if (/(orange|inwi|iam|téléphon|telephon)/.test(lowered)) return "TELEPHONIE";
-  if (/(banque|bancaire|relevé|releve|commission)/.test(lowered)) return "FRAIS BANCAIRE";
-  if (/(prestation|service|honoraire|glovo|livraison)/.test(lowered)) return "PRESTATIONS";
+  if (/(téléphon|telephon|abonnement mobile|forfait)/.test(lowered)) return "TELEPHONIE";
+  if (/(relevé de compte|releve de compte|agios|frais bancaire)/.test(lowered)) return "FRAIS BANCAIRE";
+  // « bon de livraison » accompagne une facture de marchandises : ce n'est pas
+  // une prestation de service.
+  if (/\b(prestation|honoraire|frais de service)\b/.test(lowered)) return "PRESTATIONS";
   return "MATIERES CONSOMMABLES";
 }
 
