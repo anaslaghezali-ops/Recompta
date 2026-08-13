@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from admin_saas import router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
 from invoice_extractor import extract_invoice
@@ -30,6 +31,7 @@ from source_id import split_source_tag
 from zip_utils import iter_invoice_files
 
 app = FastAPI(title="Recompta API", version="0.2.0")
+app.include_router(admin_router)
 
 
 # Déclaré avant CORSMiddleware pour rester à l'intérieur de celui-ci : une erreur
