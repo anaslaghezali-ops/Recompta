@@ -9,7 +9,7 @@ import {
   normalizeBankAliasToken,
   saveBankAlias,
 } from "./bank-match-client.js";
-import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js";
+import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=api2";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
 import {
   JOB_STATUS_LABELS,
@@ -18,7 +18,7 @@ import {
   showImportCompletionToast,
   startBankImportUpload,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs11";
+} from "./import-jobs-client.js?v=jobs12";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import {
   createWorkspaceSaver,
