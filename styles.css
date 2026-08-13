@@ -166,6 +166,83 @@ button.linkish {
   font-size: 0.85em;
 }
 
+.dossiers-layout {
+  display: grid;
+  gap: 1.25rem;
+  max-width: var(--layout-max);
+}
+
+.clients-root {
+  display: grid;
+  gap: 1rem;
+}
+
+.client-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  background: #fafcff;
+}
+
+.client-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.client-card h3 {
+  margin: 0 0 0.25rem;
+}
+
+.client-dossiers {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dossier-year h4 {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.dossier-month-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dossier-open-btn {
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dossier-open-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.dossier-context {
+  border-left: 4px solid var(--primary);
+}
+
+.dossier-context h2 {
+  margin: 0;
+}
+
+input[readonly] {
+  background: #f4f7fb;
+  color: var(--muted);
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.1em;
