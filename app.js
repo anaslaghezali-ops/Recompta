@@ -24,7 +24,7 @@ import {
   findFirstReviewLineIndex,
   resolveSourceId,
   showLinePreview,
-} from "./document-preview.js";
+} from "./document-preview.js?v=preview4";
 import {
   extractViaServer,
   fetchServerHealth,
@@ -650,7 +650,7 @@ async function extractFiles() {
 
   try {
     const expanded = await expandUploadedFiles(filesToProcess);
-    const idsByFilename = cacheSourceFiles(expanded);
+    const sourceRecords = cacheSourceFiles(expanded);
     const results = normalizeExtractionResults(await runExtraction(expanded));
     const firstNewIndex = state.lines.length;
 
@@ -659,10 +659,10 @@ async function extractFiles() {
     let warnFiles = 0;
     const warnings = [];
 
-    results.forEach((result) => {
+    results.forEach((result, resultIndex) => {
       if (result.lines?.length) {
         okFiles += 1;
-        const sourceId = resolveSourceId(idsByFilename, result.filename);
+        const sourceId = resolveSourceId(sourceRecords, result.filename, resultIndex);
         result.lines.forEach((line) => {
           state.lines.push({
             ...emptyLine(result.filename),
