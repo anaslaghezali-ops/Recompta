@@ -395,6 +395,52 @@ function applySupplierPathHints(filename, line) {
   if (hint.if) line.if = hint.if;
 }
 
+function isHtFormulaOnTtcAmount(mHt, tva, taux) {
+  const ht = Math.abs(Number(mHt));
+  const tv = Math.abs(Number(tva));
+  const rate = Number(taux);
+  if (ht < 0.01 || tv < 0.01 || (rate !== 0.1 && rate !== 0.2)) return false;
+  if (Math.abs(tv - Math.round(ht * rate * 100) / 100) > 0.05) return false;
+  const impliedHt = ht / (1 + rate);
+  return Math.abs(tv - Math.round(impliedHt * rate * 100) / 100) > 0.05;
+}
+
+function amountLabeledTtcInText(text, amount) {
+  if (!text?.trim() || Math.abs(Number(amount)) < 0.01) return false;
+  const value = Math.abs(Number(amount));
+  const whole = Math.floor(value);
+  const frac = Math.round((value - whole) * 100);
+  const variants = [
+    `${whole},${String(frac).padStart(2, "0")}`,
+    `${whole}.${String(frac).padStart(2, "0")}`,
+    String(whole),
+  ];
+  return variants.some((variant) => new RegExp(`${variant.replace(".", "\\.")}\\s*TTC`, "i").test(text));
+}
+
+function convertTtcAmountToHtLine(line, ttcValue) {
+  const sign = Number(ttcValue) < 0 ? -1 : 1;
+  const ttcAbs = Math.abs(Number(ttcValue));
+  const rate = Number(line.taux);
+  let tvaAbs = Math.abs(Number(line.tva));
+  let htAbs;
+  if (isHtFormulaOnTtcAmount(line.m_ht, line.tva, line.taux)) {
+    htAbs = Math.round((ttcAbs / (1 + rate)) * 100) / 100;
+    tvaAbs = Math.round((ttcAbs - htAbs) * 100) / 100;
+  } else if (tvaAbs > 0.01) {
+    htAbs = Math.round((ttcAbs - tvaAbs) * 100) / 100;
+  } else {
+    htAbs = Math.round((ttcAbs / (1 + rate)) * 100) / 100;
+    tvaAbs = Math.round((ttcAbs - htAbs) * 100) / 100;
+  }
+  return {
+    ...line,
+    m_ht: htAbs * sign,
+    tva: tvaAbs * sign,
+    m_ttc: Math.round(ttcAbs * 100) / 100 * sign,
+  };
+}
+
 function isTtcMislabeledAsHt(mHt, tva, taux) {
   const ht = Math.abs(Number(mHt));
   const tv = Math.abs(Number(tva));
@@ -409,18 +455,53 @@ function isTtcMislabeledAsHt(mHt, tva, taux) {
   return Math.abs(tv / recomputedHt - rate) <= 0.025;
 }
 
-function fixTtcMislabeledLine(line) {
+function fixTtcMislabeledLine(line, text = "") {
+  if (amountLabeledTtcInText(text, line.m_ht)) return convertTtcAmountToHtLine(line, line.m_ht);
+  if (isHtFormulaOnTtcAmount(line.m_ht, line.tva, line.taux)) return convertTtcAmountToHtLine(line, line.m_ht);
   if (!isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux)) return line;
-  const sign = Number(line.m_ht) < 0 ? -1 : 1;
-  const ttcAbs = Math.abs(Number(line.m_ht));
-  const tvaAbs = Math.abs(Number(line.tva));
-  const htAbs = Math.round((ttcAbs - tvaAbs) * 100) / 100;
-  return {
-    ...line,
-    m_ht: htAbs * sign,
-    tva: tvaAbs * sign,
-    m_ttc: Math.round(ttcAbs * 100) / 100 * sign,
+  return convertTtcAmountToHtLine(line, line.m_ht);
+}
+
+function extractFooterTotals(text) {
+  const found = {};
+  const patterns = {
+    ht: /Total\s+H\.?T\.?\s*(?:Net)?\s*[;:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?/i,
+    ttc: /Total\s+T\.?T\.?C\.?\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?/i,
+    tva: /Total\s+(?:T\.?V\.?A\.?|Taxes)\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?/i,
   };
+  for (const [key, pattern] of Object.entries(patterns)) {
+    const match = text.match(pattern);
+    if (match) {
+      const amount = parseAmount(match[1]);
+      if (amount !== null) found[key] = Math.abs(amount);
+    }
+  }
+  return found;
+}
+
+function alignLinesWithFooterTotals(lines, text) {
+  const { ht: footerHt, tva: footerTva, ttc: footerTtc } = extractFooterTotals(text);
+  if (footerHt == null || footerTtc == null) return lines;
+  return lines.map((line) => {
+    if (Math.abs(Math.abs(Number(line.m_ht)) - footerTtc) <= 1 && Math.abs(Math.abs(Number(line.m_ht)) - footerHt) > 1) {
+      return convertTtcAmountToHtLine(line, line.m_ht);
+    }
+    if (
+      lines.length === 1 &&
+      Math.abs(Math.abs(Number(line.m_ht)) - footerTtc) <= 1 &&
+      Math.abs(Math.abs(Number(line.m_ttc)) - footerTtc) <= 1 &&
+      Math.abs(Math.abs(Number(line.m_ht)) - footerHt) > 1
+    ) {
+      const sign = Number(line.m_ht) < 0 ? -1 : 1;
+      return {
+        ...line,
+        m_ht: footerHt * sign,
+        tva: (footerTva ?? line.tva) * sign,
+        m_ttc: footerTtc * sign,
+      };
+    }
+    return line;
+  });
 }
 
 function applyTtcVentilationFixes(result) {
@@ -442,9 +523,10 @@ function applyTtcVentilationFixes(result) {
   }
 
   let changed = false;
-  const lines = (result.lines || []).map((line) => {
+  const aligned = alignLinesWithFooterTotals(result.lines || [], text);
+  const lines = aligned.map((line) => {
     const before = `${line.m_ht}|${line.tva}|${line.m_ttc}`;
-    const fixed = fixTtcMislabeledLine(line);
+    const fixed = fixTtcMislabeledLine(line, text);
     if (`${fixed.m_ht}|${fixed.tva}|${fixed.m_ttc}` !== before) changed = true;
     return fixed;
   });

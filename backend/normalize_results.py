@@ -126,6 +126,55 @@ def apply_avoir_signs(result: ExtractionResult) -> ExtractionResult:
     return result
 
 
+def _is_ht_formula_on_ttc_amount(m_ht: float, tva: float, taux: float) -> bool:
+    """L'IA a appliqué TVA = montant × taux sur un montant qui est en fait du TTC."""
+    ht = abs(m_ht)
+    tv = abs(tva)
+    if ht < 0.01 or tv < 0.01 or taux not in (0.1, 0.2):
+        return False
+    if abs(tv - round(ht * taux, 2)) > 0.05:
+        return False
+    implied_ht = ht / (1 + taux)
+    return abs(tv - round(implied_ht * taux, 2)) > 0.05
+
+
+def _amount_labeled_ttc_in_text(text: str, amount: float) -> bool:
+    if not text.strip() or abs(amount) < 0.01:
+        return False
+    value = abs(amount)
+    for decimals in (2, 1, 0):
+        whole = int(value)
+        frac = round((value - whole) * (10**decimals))
+        if decimals == 2:
+            variants = [f"{whole},{frac:02d}", f"{whole}.{frac:02d}"]
+        elif decimals == 1:
+            variants = [f"{whole},{frac}", f"{whole}.{frac}"]
+        else:
+            variants = [str(whole)]
+        for variant in variants:
+            if re.search(rf"{re.escape(variant)}\s*TTC", text, re.I):
+                return True
+    return False
+
+
+def _convert_ttc_amount_to_ht_line(line: InvoiceLine, ttc_value: float) -> InvoiceLine:
+    sign = -1 if ttc_value < 0 else 1
+    ttc_abs = abs(ttc_value)
+    tva_abs = abs(line.tva)
+    if _is_ht_formula_on_ttc_amount(line.m_ht, line.tva, line.taux):
+        ht_abs = round(ttc_abs / (1 + line.taux), 2)
+        tva_abs = round(ttc_abs - ht_abs, 2)
+    elif tva_abs > 0.01:
+        ht_abs = round(ttc_abs - tva_abs, 2)
+    else:
+        ht_abs = round(ttc_abs / (1 + line.taux), 2)
+        tva_abs = round(ttc_abs - ht_abs, 2)
+    line.m_ht = ht_abs * sign
+    line.tva = tva_abs * sign
+    line.m_ttc = round(ttc_abs, 2) * sign
+    return line
+
+
 def _is_ttc_mislabeled_as_ht(m_ht: float, tva: float, taux: float) -> bool:
     """Détecte quand un montant TTC a été saisi dans m_ht (ex. ventilation MOSE Food)."""
     ht = abs(m_ht)
@@ -143,17 +192,45 @@ def _is_ttc_mislabeled_as_ht(m_ht: float, tva: float, taux: float) -> bool:
     return abs(tv / recomputed_ht - taux) <= 0.025
 
 
-def fix_ttc_mislabeled_line(line: InvoiceLine) -> InvoiceLine:
+def fix_ttc_mislabeled_line(line: InvoiceLine, text: str = "") -> InvoiceLine:
+    if _amount_labeled_ttc_in_text(text, line.m_ht):
+        return _convert_ttc_amount_to_ht_line(line, line.m_ht)
+    if _is_ht_formula_on_ttc_amount(line.m_ht, line.tva, line.taux):
+        return _convert_ttc_amount_to_ht_line(line, line.m_ht)
     if not _is_ttc_mislabeled_as_ht(line.m_ht, line.tva, line.taux):
         return line
-    sign = -1 if line.m_ht < 0 else 1
-    ttc_abs = abs(line.m_ht)
-    tva_abs = abs(line.tva)
-    ht_abs = round(ttc_abs - tva_abs, 2)
-    line.m_ht = ht_abs * sign
-    line.tva = tva_abs * sign
-    line.m_ttc = round(ttc_abs, 2) * sign
-    return line
+    return _convert_ttc_amount_to_ht_line(line, line.m_ht)
+
+
+def extract_footer_totals(text: str) -> tuple[float | None, float | None, float | None]:
+    from invoice_extractor import _extract_amounts
+
+    return _extract_amounts(text)
+
+
+def align_lines_with_footer_totals(lines: list[InvoiceLine], text: str) -> list[InvoiceLine]:
+    """Si m_ht d'une ligne = Total TTC du pied de page, reclasser en TTC."""
+    footer_ht, footer_tva, footer_ttc = extract_footer_totals(text)
+    if footer_ht is None or footer_ttc is None:
+        return lines
+
+    updated: list[InvoiceLine] = []
+    for line in lines:
+        if abs(abs(line.m_ht) - footer_ttc) <= 1.0 and abs(abs(line.m_ht) - footer_ht) > 1.0:
+            updated.append(_convert_ttc_amount_to_ht_line(line, line.m_ht))
+        elif (
+            len(lines) == 1
+            and abs(abs(line.m_ht) - footer_ttc) <= 1.0
+            and abs(abs(line.m_ttc) - footer_ttc) <= 1.0
+            and abs(abs(line.m_ht) - footer_ht) > 1.0
+        ):
+            line.m_ht = footer_ht if line.m_ht >= 0 else -footer_ht
+            line.tva = footer_tva if line.tva >= 0 else -footer_tva
+            line.m_ttc = footer_ttc if line.m_ttc >= 0 else -footer_ttc
+            updated.append(line)
+        else:
+            updated.append(line)
+    return updated
 
 
 TTC_VENTILATION_PATTERN = re.compile(
@@ -180,9 +257,9 @@ def parse_ttc_ventilation(text: str) -> list[dict[str, float]]:
     return items
 
 
-def reconcile_line_amounts(line: InvoiceLine) -> InvoiceLine:
+def reconcile_line_amounts(line: InvoiceLine, text: str = "") -> InvoiceLine:
     """Corrige toute incohérence HT/TVA/TTC (générique, tous fournisseurs)."""
-    return fix_ttc_mislabeled_line(line)
+    return fix_ttc_mislabeled_line(line, text)
 
 
 def apply_ttc_ventilation_fixes(result: ExtractionResult) -> ExtractionResult:
@@ -210,11 +287,13 @@ def apply_ttc_ventilation_fixes(result: ExtractionResult) -> ExtractionResult:
             )
             return result
 
+    result.lines = align_lines_with_footer_totals(result.lines, text)
+
     fixed: list[InvoiceLine] = []
     changed = False
     for line in result.lines:
         before = (line.m_ht, line.tva, line.m_ttc)
-        fixed.append(reconcile_line_amounts(line))
+        fixed.append(reconcile_line_amounts(line, text))
         after = (fixed[-1].m_ht, fixed[-1].tva, fixed[-1].m_ttc)
         if before != after:
             changed = True

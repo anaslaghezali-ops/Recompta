@@ -139,7 +139,7 @@ def _extract_amounts(text: str) -> tuple[float | None, float | None, float | Non
             re.I,
         ),
         "tva": re.compile(
-            r"Total\s+T\.?V\.?A\.?\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?",
+            r"Total\s+(?:T\.?V\.?A\.?|Taxes)\s*[:\s]*\n?\s*([-\d .,\u00a0]+)\s*(?:DH)?",
             re.I,
         ),
     }
