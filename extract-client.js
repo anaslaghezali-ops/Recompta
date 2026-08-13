@@ -1,5 +1,6 @@
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
 import { attachFieldConfidence } from "./field-confidence.js";
+import { appendBlendedWarnings, tryApplyVentilationFromText } from "./vat-multi-rate.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
@@ -521,36 +522,19 @@ function alignLinesWithFooterTotals(lines, text) {
 
 function applyTtcVentilationFixes(result) {
   const text = result.raw_text || "";
-  const ventilation = extractVatLinesFromText(text);
-  const warnings = [...(result.warnings || [])];
+  const helpers = {
+    extractVatLinesFromText,
+    isAvoirDocument,
+    sanitizeImpossibleAmounts,
+    fillMissingTtc,
+  };
 
-  const distinctInvoices = new Set((result.lines || []).map((l) => l.fact_num).filter(Boolean));
-
-  // Document multi-factures : la ventilation globale n'appartient pas à une
-  // seule facture, on ne réécrit donc pas les lignes à partir d'un modèle.
-  if (ventilation.length && result.lines?.length && distinctInvoices.size <= 1) {
-    const template = result.lines[0];
-    const isAvoir =
-      isAvoirDocument(text, result.filename) ||
-      isAvoirDocument("", "", template.fact_num);
-    const lines = ventilation.map((item) =>
-      fillMissingTtc(
-        sanitizeImpossibleAmounts(
-          {
-            ...template,
-            m_ht: item.m_ht,
-            tva: item.tva,
-            m_ttc: item.m_ttc,
-            taux: item.taux,
-          },
-          isAvoir,
-        ),
-      ),
-    );
-    return { ...result, lines, warnings };
+  const { result: ventilated, applied } = tryApplyVentilationFromText(result, text, helpers);
+  if (applied) {
+    return appendBlendedWarnings(ventilated);
   }
 
-  // Corrections appuyées sur le document : silencieuses, le tableau montre le résultat.
+  const warnings = [...(result.warnings || [])];
   const footerHt = extractFooterTotals(text).ht ?? null;
   const aligned = alignLinesWithFooterTotals(result.lines || [], text);
   const isAvoir =
@@ -559,7 +543,7 @@ function applyTtcVentilationFixes(result) {
   const lines = aligned.map((line) =>
     fillMissingTtc(sanitizeImpossibleAmounts(fixTtcMislabeledLine(line, text, footerHt), isAvoir)),
   );
-  return { ...result, lines, warnings };
+  return appendBlendedWarnings({ ...result, lines, warnings });
 }
 
 export function fillMissingTtc(line) {

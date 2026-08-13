@@ -860,7 +860,11 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
    - Sinon tva / m_ht ≈ taux (±2 %)  OU  tva / m_ttc ≈ taux/(1+taux)
    - Si ça ne colle pas : tu as confondu HT et TTC → recalcule (HT = TTC − TVA)
 
-4. **Plusieurs taux** (0 %, 10 % et 20 %) : une entrée JSON par taux, avec les montants de la ventilation.
+4. **Plusieurs taux** (0 %, 10 % et 20 %) — règle DED marocaine :
+   - **Une entrée JSON par taux distinct**, jamais une ligne unique « résumée ».
+   - Lis le tableau « Taux | Montant HT | TVA » ou les lignes « XXX TTC 20% YYY ».
+   - **INTERDIT** : une ligne où TVA÷HT est ~17,5 % (mix 10 %+20 %) avec un seul taux.
+   - Si 0 % + 20 % sur la même facture → 2 lignes JSON (même fact_num, taux différents).
 
 5. **Plusieurs factures dans un même document** (scan groupé de plusieurs pages) :
    traite-les TOUTES. Une entrée par (facture, taux), avec le fact_num propre à
@@ -904,14 +908,28 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
 Inclus un champ "verification" listant ton contrôle mathématique par ligne (ex. "20%: 1070+214=1284 OK").
 
 {
-  "verification": ["..."],
+  "verification": ["10%: 400+40=440 OK", "20%: 600+120=720 OK"],
   "lines": [
     {
       "fact_num": "...",
       "designation": "MATIERES CONSOMMABLES",
-      "m_ht": 1070.0,
-      "tva": 214.0,
-      "m_ttc": 1284.0,
+      "m_ht": 400.0,
+      "tva": 40.0,
+      "m_ttc": 440.0,
+      "if": "...",
+      "lib_frss": "...",
+      "ice_frs": "...",
+      "taux": 0.1,
+      "id_paie": 4,
+      "date_paie": null,
+      "date_fac": "2026-06-13"
+    },
+    {
+      "fact_num": "...",
+      "designation": "MATIERES CONSOMMABLES",
+      "m_ht": 600.0,
+      "tva": 120.0,
+      "m_ttc": 720.0,
       "if": "...",
       "lib_frss": "...",
       "ice_frs": "...",
@@ -1051,7 +1069,11 @@ def _parse_ai_lines(raw_lines: object) -> tuple[list[InvoiceLine], list[str]]:
 
 
 async def _extract_with_openai_images(
-    filename: str, images: list[tuple[bytes, str]], model: str | None = None
+    filename: str,
+    images: list[tuple[bytes, str]],
+    model: str | None = None,
+    *,
+    prompt_suffix: str = "",
 ) -> ExtractionResult:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -1059,7 +1081,7 @@ async def _extract_with_openai_images(
 
     from normalize_results import get_excluded_client_ices
 
-    prompt = AI_EXTRACTION_PROMPT
+    prompt = AI_EXTRACTION_PROMPT + (prompt_suffix or "")
     excluded = get_excluded_client_ices()
     if excluded:
         prompt += (
@@ -1100,8 +1122,10 @@ async def _extract_with_openai_images(
     )
 
     from vat_intelligence import apply_vat_reconciliation, result_needs_escalation
+    from vat_multi_rate import apply_multi_rate_postprocess
 
     result = apply_vat_reconciliation(result)
+    result = apply_multi_rate_postprocess(result)
 
     # Le détail du contrôle de l'IA n'a d'intérêt que s'il reste une incohérence.
     verification = content_json.get("verification")
@@ -1114,7 +1138,7 @@ async def _extract_with_openai_images(
 async def _supplement_ttc_ventilation(
     result: ExtractionResult, filename: str, content: bytes, mime_type: str
 ) -> ExtractionResult:
-    from vat_intelligence import apply_vat_reconciliation, extract_vat_lines_from_text
+    from vat_intelligence import apply_vat_reconciliation
 
     text = result.raw_text or ""
     if not text.strip() and mime_type == "application/pdf":
@@ -1137,34 +1161,12 @@ async def _supplement_ttc_ventilation(
 
     result = reconcile_supplier_if(result, text)
 
-    ventilation = extract_vat_lines_from_text(text)
-    distinct_invoices = {line.fact_num for line in result.lines if line.fact_num}
-    # Sur un document multi-factures, la ventilation lue globalement ne peut pas
-    # être réattribuée à une facture unique : on garde les lignes de l'IA.
-    if ventilation and result.lines and len(distinct_invoices) <= 1:
-        template = result.lines[0]
-        result.lines = [
-            InvoiceLine(
-                fact_num=template.fact_num,
-                designation=template.designation,
-                m_ht=row["m_ht"],
-                tva=row["tva"],
-                m_ttc=row["m_ttc"],
-                **{
-                    "if": template.if_fournisseur,
-                    "lib_frss": template.lib_frss,
-                    "ice_frs": template.ice_frs,
-                    "taux": row["taux"],
-                    "id_paie": template.id_paie,
-                    "date_paie": template.date_paie,
-                    "date_fac": template.date_fac,
-                },
-            )
-            for row in ventilation
-        ]
-        return result
+    from vat_multi_rate import apply_multi_rate_postprocess, try_apply_ventilation_from_text
 
-    return apply_vat_reconciliation(result)
+    result, applied = try_apply_ventilation_from_text(result, text)
+    if not applied:
+        result = apply_vat_reconciliation(result)
+    return apply_multi_rate_postprocess(result)
 
 
 async def _extract_with_ai_cascade(
@@ -1172,6 +1174,7 @@ async def _extract_with_ai_cascade(
 ) -> ExtractionResult:
     """Modèle économique par défaut, escalade vers un modèle plus capable si incohérent."""
     from vat_intelligence import result_needs_escalation
+    from vat_multi_rate import AI_MULTI_RATE_ESCALATION_SUFFIX, result_has_blended_summary
 
     result = await _extract_with_openai_images(filename, images)
 
@@ -1179,12 +1182,23 @@ async def _extract_with_ai_cascade(
     if not result_needs_escalation(result) or fallback == vision_model():
         return result
 
+    blended = result_has_blended_summary(result)
+    suffix = AI_MULTI_RATE_ESCALATION_SUFFIX if blended else ""
+
     try:
-        upgraded = await _extract_with_openai_images(filename, images, model=fallback)
+        upgraded = await _extract_with_openai_images(
+            filename,
+            images,
+            model=fallback,
+            prompt_suffix=suffix,
+        )
     except Exception:  # noqa: BLE001
         return result
 
-    if result_needs_escalation(upgraded) and result.lines:
+    if result_needs_escalation(upgraded) and result.lines and not blended:
+        return result
+
+    if result_needs_escalation(upgraded) and blended and result_has_blended_summary(upgraded):
         return result
 
     upgraded.warnings.append(f"Scan difficile : relu avec {fallback}.")

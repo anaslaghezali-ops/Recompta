@@ -226,7 +226,11 @@ def result_needs_escalation(result: ExtractionResult) -> bool:
     """Vrai si l'extraction est douteuse et mérite un modèle plus capable."""
     if not result.lines:
         return True
-    return any(not line_is_coherent(line) for line in result.lines)
+    if any(not line_is_coherent(line) for line in result.lines):
+        return True
+    from vat_multi_rate import result_needs_multi_rate_escalation
+
+    return result_needs_multi_rate_escalation(result)
 
 
 def _signs_are_mixed(ht: float, tva: float, ttc: float) -> bool:
@@ -391,20 +395,10 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     # Document multi-factures : la ventilation globale n'appartient pas à une
     # seule facture, on ne réécrit donc pas les lignes à partir d'un modèle.
     if ventilation and result.lines and len(distinct_invoices) <= 1:
+        from vat_multi_rate import expand_lines_from_ventilation
+
         template = result.lines[0]
-        result.lines = [
-            template.model_copy(
-                update={
-                    "m_ht": item["m_ht"],
-                    "tva": item["tva"],
-                    "m_ttc": item["m_ttc"],
-                    "taux": item["taux"],
-                }
-            )
-            for item in ventilation
-        ]
-        result.lines = [sanitize_impossible_amounts(line, is_avoir) for line in result.lines]
-        result.lines = [fill_missing_ttc(line) for line in result.lines]
+        result.lines = expand_lines_from_ventilation(template, ventilation, is_avoir=is_avoir)
         return result
 
     # Corrections appuyées sur le document : pas de message, le tableau affiche
@@ -414,17 +408,8 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     result.lines = [reconcile_line_amounts(line, text, footer_ht) for line in result.lines]
     result.lines = [sanitize_impossible_amounts(line, is_avoir) for line in result.lines]
 
-    # Un taux global entre 10 % et 20 % trahit une facture multi-taux résumée
-    # en une seule ligne : le comptable doit la ventiler lui-même.
-    for line in result.lines:
-        ht, tva = abs(line.m_ht), abs(line.tva)
-        if ht > 0.01 and tva > 0.01:
-            rate = tva / ht
-            if not (0.085 <= rate <= 0.115 or 0.185 <= rate <= 0.215):
-                result.warnings.append(
-                    f"Taux TVA global de {rate * 100:.1f} % sur {line.fact_num or 'cette pièce'} : "
-                    "facture probablement à plusieurs taux, à ventiler manuellement."
-                )
-                break
+    from vat_multi_rate import append_blended_warnings
+
+    result = append_blended_warnings(result)
     result.lines = [fill_missing_ttc(line) for line in result.lines]
     return result
