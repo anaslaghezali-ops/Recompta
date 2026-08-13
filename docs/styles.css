@@ -10,8 +10,8 @@
   --success: #0d7a4e;
   --warn: #9a6700;
   --shadow: 0 8px 24px rgba(15, 28, 46, 0.07);
-  --layout-max: 1100px;
-  --layout-max-review: min(1720px, calc(100vw - 2.5rem));
+  --layout-max: min(1680px, calc(100vw - 2rem));
+  --layout-max-review: calc(100vw - 1.5rem);
 }
 
 * { box-sizing: border-box; }
@@ -38,9 +38,16 @@ body {
   padding: 2rem 1.5rem 1.5rem;
 }
 
-.hero-content {
+.hero-content,
+.steps {
   max-width: var(--layout-max);
-  margin: 0 auto 1.5rem;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.hero-content {
+  margin-bottom: 1.5rem;
 }
 
 .eyebrow {
@@ -71,8 +78,6 @@ h2 {
 }
 
 .steps {
-  max-width: var(--layout-max);
-  margin: 0 auto;
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
@@ -115,15 +120,29 @@ h2 {
   width: 100%;
   max-width: var(--layout-max);
   margin: 0 auto;
-  padding: 1.25rem 1.5rem 3rem;
+  padding: 1.25rem 1rem 3rem;
   display: grid;
   gap: 1rem;
   min-width: 0;
 }
 
-/* Étape vérification : utiliser toute la largeur utile (tableau + scan côte à côte). */
+/* Étape vérification : quasi pleine largeur (tableau + scan côte à côte). */
 .container.container--review {
   max-width: var(--layout-max-review);
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+@media (min-width: 1400px) {
+  .container {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .container.container--review {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
 }
 
 .card {
