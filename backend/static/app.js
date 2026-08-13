@@ -46,6 +46,12 @@ import {
   parseBankStatementViaServer,
   saveApiUrl,
 } from "./api-client.js";
+import {
+  getSession,
+  isSuperAdmin,
+  isSupabaseConfigured,
+  signOut,
+} from "./auth-client.js";
 
 const state = {
   files: [],
@@ -66,6 +72,7 @@ const DESIGNATIONS = [
 
 const els = {
   container: document.querySelector("main.container"),
+  heroAuth: document.getElementById("heroAuth"),
   clientName: document.getElementById("clientName"),
   clientIce: document.getElementById("clientIce"),
   period: document.getElementById("period"),
@@ -1366,3 +1373,41 @@ updateFilenamePreview();
 updateButtons();
 setStep(1);
 refreshEngineBadge();
+renderHeroAuth();
+
+async function renderHeroAuth() {
+  const root = els.heroAuth;
+  if (!root) return;
+  const escapeHtml = (value) =>
+    String(value).replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[char]));
+  if (!isSupabaseConfigured()) {
+    root.innerHTML = `<a href="login.html" class="hero-auth-link">Connexion</a>`;
+    return;
+  }
+  try {
+    const session = await getSession();
+    if (!session?.user) {
+      root.innerHTML = `<a href="login.html" class="hero-auth-link">Connexion</a>`;
+      return;
+    }
+    const admin = await isSuperAdmin(session.user.id);
+    const email = escapeHtml(session.user.email || "");
+    root.innerHTML = `
+      ${admin ? `<span class="hero-auth-role">Super-admin</span>` : ""}
+      <span class="hero-auth-email" title="${email}">${email}</span>
+      <button type="button" id="signOutBtn">Déconnexion</button>
+    `;
+    document.getElementById("signOutBtn")?.addEventListener("click", async () => {
+      await signOut();
+      window.location.reload();
+    });
+  } catch {
+    root.innerHTML = `<a href="login.html" class="hero-auth-link">Connexion</a>`;
+  }
+}

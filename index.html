@@ -4,17 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Déclaration TVA</title>
-  <link rel="stylesheet" href="styles.css?v=wide5" />
+  <link rel="stylesheet" href="styles.css?v=auth1" />
 </head>
 <body>
   <header class="hero">
-    <div class="hero-content">
-      <p class="eyebrow">Recompta</p>
-      <h1>Déclaration TVA automatisée</h1>
-      <p class="subtitle">
-        Importez vos ZIP ou factures scannées, vérifiez les lignes, téléchargez le Excel DED TVA.
-        Fonctionne directement dans le navigateur — aucune installation.
-      </p>
+    <div class="hero-top">
+      <div class="hero-content">
+        <p class="eyebrow">Recompta</p>
+        <h1>Déclaration TVA automatisée</h1>
+        <p class="subtitle">
+          Importez vos ZIP ou factures scannées, vérifiez les lignes, téléchargez le Excel DED TVA.
+          Fonctionne directement dans le navigateur — aucune installation.
+        </p>
+      </div>
+      <div class="hero-auth" id="heroAuth">
+        <a href="login.html" class="hero-auth-link">Connexion</a>
+      </div>
     </div>
     <div class="steps" aria-label="Étapes">
       <div class="step active" data-step="1"><span>1</span> Paramètres</div>
@@ -260,6 +265,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js?v=bankmatch2"></script>
+  <script type="module" src="app.js?v=auth1"></script>
 </body>
 </html>
