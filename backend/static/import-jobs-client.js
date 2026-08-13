@@ -1,6 +1,5 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { isInvoiceFile, isZipFile } from "./extract-client.js";
-import { uploadDossierDocument } from "./dossier-documents.js?v=doc1";
 import { uploadImportJobFile } from "./api-client.js";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
@@ -735,7 +734,9 @@ export async function queueInvoiceImport({
 export async function queueBankImport({
   dossierId,
   file,
+  options = {},
   onProgress,
+  onFileQueued,
 }) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) throw new Error("Session ou dossier invalide.");
@@ -745,6 +746,7 @@ export async function queueBankImport({
 
   const { data: userData } = await supabase.auth.getUser();
   const createdBy = userData?.user?.id || null;
+  const apiUrl = options?.api_url?.replace(/\/$/, "") || "";
 
   const { data: job, error: jobError } = await supabase
     .from("import_jobs")
@@ -753,7 +755,7 @@ export async function queueBankImport({
       doc_type: "bank",
       status: "uploading",
       total_files: 1,
-      options: {},
+      options,
       created_by: createdBy,
     })
     .select("id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at")
@@ -761,11 +763,21 @@ export async function queueBankImport({
 
   if (jobError) throw jobError;
 
+  onProgress?.(`Envoi — ${file.name}`, 12);
+  await onFileQueued?.(job.id);
+
+  if (apiUrl) {
+    const uploaded = await uploadInvoiceJobViaServer(apiUrl, job.id, file, {
+      onProgress,
+      onFileQueued,
+    });
+    onProgress?.("Relevé en file d'attente. Le serveur analyse le fichier — vous pouvez quitter cette page.", 100);
+    return { job: uploaded, uploaded: 1 };
+  }
+
   const sourceId = nextSourceId();
   const storagePath = buildImportStoragePath(dossierId, job.id, file.name);
   const mimeType = file.type || "application/octet-stream";
-
-  onProgress?.(`Envoi — ${file.name}`, 40);
 
   const { error: uploadError } = await supabase.storage
     .from(IMPORT_QUEUE_BUCKET)
@@ -800,13 +812,6 @@ export async function queueBankImport({
     throw new Error(fileError.message);
   }
 
-  uploadDossierDocument({
-    dossierId,
-    file,
-    docType: "bank",
-    sourceId,
-  }).catch(() => {});
-
   await updateJob(job.id, {
     status: "queued",
     uploaded_files: 1,
@@ -819,6 +824,66 @@ export async function queueBankImport({
     job: await getImportJob(job.id),
     uploaded: 1,
   };
+}
+
+export async function startBankImportUpload({
+  dossierId,
+  file,
+  options = {},
+  onProgress,
+  onFileQueued,
+  onComplete,
+  onError,
+}) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierId) throw new Error("Session ou dossier invalide.");
+  if (!file) throw new Error("Aucun fichier sélectionné.");
+
+  const apiUrl = options?.api_url?.replace(/\/$/, "") || "";
+  if (!apiUrl) {
+    const result = await queueBankImport({ dossierId, file, options, onProgress, onFileQueued });
+    onComplete?.(result);
+    return result;
+  }
+
+  onProgress?.("Préparation de l'envoi…", 5);
+  const { data: userData } = await supabase.auth.getUser();
+  const createdBy = userData?.user?.id || null;
+
+  const { data: job, error: jobError } = await supabase
+    .from("import_jobs")
+    .insert({
+      dossier_id: dossierId,
+      doc_type: "bank",
+      status: "uploading",
+      total_files: 1,
+      options,
+      created_by: createdBy,
+    })
+    .select("id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at")
+    .single();
+
+  if (jobError) throw jobError;
+  await onFileQueued?.(job.id);
+  onProgress?.("Envoi démarré — suivez la progression ici ou sur le workspace (nouvel onglet).", 8);
+
+  (async () => {
+    try {
+      const uploaded = await uploadInvoiceJobViaServer(apiUrl, job.id, file, {
+        onProgress,
+        onFileQueued,
+      });
+      onProgress?.(
+        "Envoi terminé. Le serveur analyse le relevé — vous pouvez quitter cette page.",
+        100,
+      );
+      onComplete?.({ job: uploaded, uploaded: 1 });
+    } catch (error) {
+      onError?.(error);
+    }
+  })();
+
+  return { started: true, job };
 }
 
 export async function getActiveImportSummary(dossierId) {

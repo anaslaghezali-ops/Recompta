@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from admin_saas import router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
-from import_job_queue import complete_invoice_job_upload
+from import_job_queue import complete_job_upload
 from import_job_worker import process_pending_import_jobs
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
@@ -283,7 +283,7 @@ async def upload_import_job_file(
     filename = file.filename or "document"
     mime_type = file.content_type or "application/octet-stream"
     try:
-        job = await complete_invoice_job_upload(
+        job = await complete_job_upload(
             job_id,
             filename=filename,
             content=content,

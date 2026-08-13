@@ -15,10 +15,10 @@ import {
   JOB_STATUS_LABELS,
   jobProgressPercent,
   listImportJobs,
-  queueBankImport,
   showImportCompletionToast,
+  startBankImportUpload,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs10";
+} from "./import-jobs-client.js?v=jobs11";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import {
   createWorkspaceSaver,
@@ -289,33 +289,64 @@ async function runQueue() {
   els.progressText.textContent = "Préparation de l'import…";
   els.progressBar.style.width = "5%";
 
+  const fileToSend = bankFile;
+  bankFile = null;
+  if (els.fileInput) els.fileInput.value = "";
+  updateFileActions();
+  startJobsPolling();
+
+  const apiUrl = resolvedApiUrl();
+  if (!apiUrl) {
+    setWorkerHint("Configurez l'URL du Codespace pour envoyer via le serveur.", "error");
+    queuing = false;
+    updateFileActions();
+    return;
+  }
+
   try {
-    const result = await queueBankImport({
+    await startBankImportUpload({
       dossierId: session.dossierId,
-      file: bankFile,
+      file: fileToSend,
+      options: { api_url: apiUrl },
       onProgress: (message, percent) => {
         els.progressText.textContent = message;
         els.progressBar.style.width = `${percent}%`;
       },
+      onFileQueued: async () => {
+        await renderJobsPanel();
+        await triggerWorkerProcessing();
+      },
+      onComplete: async () => {
+        els.progressText.textContent =
+          "Envoi terminé. Traitement en cours sur le serveur — vous pouvez quitter cette page.";
+        els.progressBar.style.width = "100%";
+        setStatus("Import lancé — traitement en arrière-plan", "success");
+        await triggerWorkerProcessing();
+        await renderJobsPanel();
+        queuing = false;
+        updateFileActions();
+        initLucide();
+      },
+      onError: (error) => {
+        els.progressText.textContent = `Erreur : ${error.message}`;
+        els.progressBar.style.width = "0%";
+        setStatus(error.message, "error");
+        queuing = false;
+        updateFileActions();
+        initLucide();
+      },
     });
 
-    bankFile = null;
-    if (els.fileInput) els.fileInput.value = "";
+    els.progressText.textContent =
+      "Envoi démarré — ouvrez le workspace dans un autre onglet pour suivre. Gardez cet onglet ouvert pendant l'envoi.";
+    els.progressBar.style.width = "12%";
+    setStatus("Envoi en cours", "success");
+    queuing = false;
     updateFileActions();
-
-    els.progressText.textContent = "Relevé en file d'attente. Vous pouvez quitter cette page.";
-    els.progressBar.style.width = "100%";
-    setStatus("Import lancé — traitement en arrière-plan", "success");
-
-    await triggerWorkerProcessing();
-
-    await renderJobsPanel();
-    startJobsPolling();
   } catch (error) {
     els.progressText.textContent = `Erreur : ${error.message}`;
     els.progressBar.style.width = "0%";
     setStatus(error.message, "error");
-  } finally {
     queuing = false;
     updateFileActions();
     initLucide();
