@@ -1,39 +1,22 @@
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from contextvars import ContextVar
 from pathlib import PurePosixPath
+import re
 
 from models import ExtractionResult, InvoiceLine
+from vat_intelligence import apply_vat_reconciliation
+
+# Rétrocompatibilité imports internes
+from vat_intelligence import parse_ttc_ventilation  # noqa: F401
+
+apply_ttc_ventilation_fixes = apply_vat_reconciliation
 
 _excluded_client_ices: ContextVar[frozenset[str]] = ContextVar(
     "_excluded_client_ices",
     default=frozenset(),
 )
-
-FOLDER_SUPPLIERS: dict[str, dict[str, str]] = {
-    "achibest": {
-        "lib_frss": "ACHIBEST",
-        "ice_frs": "000229475000050",
-        "if_fournisseur": "1102277",
-    },
-    "eatmeat": {
-        "lib_frss": "EATMEAT",
-        "ice_frs": "002540001000040",
-        "if_fournisseur": "45978904",
-    },
-    "mose": {
-        "lib_frss": "MOSE Food",
-        "ice_frs": "000161664000072",
-        "if_fournisseur": "14427958",
-    },
-    "mose food": {
-        "lib_frss": "MOSE Food",
-        "ice_frs": "000161664000072",
-        "if_fournisseur": "14427958",
-    },
-}
 
 
 def build_excluded_ices(client_ice: str) -> set[str]:
@@ -64,15 +47,12 @@ def folder_key(filename: str) -> str:
 
 
 def supplier_hint_from_path(filename: str) -> dict[str, str] | None:
+    """Indice organisationnel (nom de dossier ZIP) — pas de règle fournisseur codée."""
     key = folder_key(filename)
-    if not key:
+    if not key or key in {".", "..", "unknown", "factures", "invoices"}:
         return None
-    if key in FOLDER_SUPPLIERS:
-        return FOLDER_SUPPLIERS[key]
-    for pattern, hint in FOLDER_SUPPLIERS.items():
-        if pattern in key:
-            return hint
-    return None
+    label = " ".join(word.capitalize() for word in re.split(r"[\s_-]+", key) if word)
+    return {"lib_frss": label} if label else None
 
 
 def normalize_ice_digits(value: str) -> str:
@@ -126,185 +106,7 @@ def apply_avoir_signs(result: ExtractionResult) -> ExtractionResult:
     return result
 
 
-def _is_ht_formula_on_ttc_amount(m_ht: float, tva: float, taux: float) -> bool:
-    """L'IA a appliqué TVA = montant × taux sur un montant qui est en fait du TTC."""
-    ht = abs(m_ht)
-    tv = abs(tva)
-    if ht < 0.01 or tv < 0.01 or taux not in (0.1, 0.2):
-        return False
-    if abs(tv - round(ht * taux, 2)) > 0.05:
-        return False
-    implied_ht = ht / (1 + taux)
-    return abs(tv - round(implied_ht * taux, 2)) > 0.05
-
-
-def _amount_labeled_ttc_in_text(text: str, amount: float) -> bool:
-    if not text.strip() or abs(amount) < 0.01:
-        return False
-    value = abs(amount)
-    for decimals in (2, 1, 0):
-        whole = int(value)
-        frac = round((value - whole) * (10**decimals))
-        if decimals == 2:
-            variants = [f"{whole},{frac:02d}", f"{whole}.{frac:02d}"]
-        elif decimals == 1:
-            variants = [f"{whole},{frac}", f"{whole}.{frac}"]
-        else:
-            variants = [str(whole)]
-        for variant in variants:
-            if re.search(rf"{re.escape(variant)}\s*TTC", text, re.I):
-                return True
-    return False
-
-
-def _convert_ttc_amount_to_ht_line(line: InvoiceLine, ttc_value: float) -> InvoiceLine:
-    sign = -1 if ttc_value < 0 else 1
-    ttc_abs = abs(ttc_value)
-    tva_abs = abs(line.tva)
-    if _is_ht_formula_on_ttc_amount(line.m_ht, line.tva, line.taux):
-        ht_abs = round(ttc_abs / (1 + line.taux), 2)
-        tva_abs = round(ttc_abs - ht_abs, 2)
-    elif tva_abs > 0.01:
-        ht_abs = round(ttc_abs - tva_abs, 2)
-    else:
-        ht_abs = round(ttc_abs / (1 + line.taux), 2)
-        tva_abs = round(ttc_abs - ht_abs, 2)
-    line.m_ht = ht_abs * sign
-    line.tva = tva_abs * sign
-    line.m_ttc = round(ttc_abs, 2) * sign
-    return line
-
-
-def _is_ttc_mislabeled_as_ht(m_ht: float, tva: float, taux: float) -> bool:
-    """Détecte quand un montant TTC a été saisi dans m_ht (ex. ventilation MOSE Food)."""
-    ht = abs(m_ht)
-    tv = abs(tva)
-    if ht < 0.01 or tv < 0.01 or taux not in (0.1, 0.2):
-        return False
-    ratio = tv / ht
-    as_ht_rate = abs(ratio - taux) <= 0.025
-    as_ttc_rate = abs(ratio - taux / (1 + taux)) <= 0.025
-    if not as_ttc_rate or as_ht_rate:
-        return False
-    recomputed_ht = ht - tv
-    if recomputed_ht <= 0:
-        return False
-    return abs(tv / recomputed_ht - taux) <= 0.025
-
-
-def fix_ttc_mislabeled_line(line: InvoiceLine, text: str = "") -> InvoiceLine:
-    if _amount_labeled_ttc_in_text(text, line.m_ht):
-        return _convert_ttc_amount_to_ht_line(line, line.m_ht)
-    if _is_ht_formula_on_ttc_amount(line.m_ht, line.tva, line.taux):
-        return _convert_ttc_amount_to_ht_line(line, line.m_ht)
-    if not _is_ttc_mislabeled_as_ht(line.m_ht, line.tva, line.taux):
-        return line
-    return _convert_ttc_amount_to_ht_line(line, line.m_ht)
-
-
-def extract_footer_totals(text: str) -> tuple[float | None, float | None, float | None]:
-    from invoice_extractor import _extract_amounts
-
-    return _extract_amounts(text)
-
-
-def align_lines_with_footer_totals(lines: list[InvoiceLine], text: str) -> list[InvoiceLine]:
-    """Si m_ht d'une ligne = Total TTC du pied de page, reclasser en TTC."""
-    footer_ht, footer_tva, footer_ttc = extract_footer_totals(text)
-    if footer_ht is None or footer_ttc is None:
-        return lines
-
-    updated: list[InvoiceLine] = []
-    for line in lines:
-        if abs(abs(line.m_ht) - footer_ttc) <= 1.0 and abs(abs(line.m_ht) - footer_ht) > 1.0:
-            updated.append(_convert_ttc_amount_to_ht_line(line, line.m_ht))
-        elif (
-            len(lines) == 1
-            and abs(abs(line.m_ht) - footer_ttc) <= 1.0
-            and abs(abs(line.m_ttc) - footer_ttc) <= 1.0
-            and abs(abs(line.m_ht) - footer_ht) > 1.0
-        ):
-            line.m_ht = footer_ht if line.m_ht >= 0 else -footer_ht
-            line.tva = footer_tva if line.tva >= 0 else -footer_tva
-            line.m_ttc = footer_ttc if line.m_ttc >= 0 else -footer_ttc
-            updated.append(line)
-        else:
-            updated.append(line)
-    return updated
-
-
-TTC_VENTILATION_PATTERN = re.compile(
-    r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)",
-    re.I,
-)
-
-
-def parse_ttc_ventilation(text: str) -> list[dict[str, float]]:
-    from invoice_extractor import _parse_amount
-
-    items: list[dict[str, float]] = []
-    for match in TTC_VENTILATION_PATTERN.finditer(text):
-        ttc = _parse_amount(match.group(1))
-        taux = _parse_amount(match.group(2))
-        tva = _parse_amount(match.group(3))
-        if ttc is None or taux is None or tva is None:
-            continue
-        taux_norm = taux / 100 if taux > 1 else taux
-        if taux_norm not in (0.1, 0.2):
-            continue
-        ht = round(ttc - tva, 2)
-        items.append({"m_ht": ht, "tva": tva, "m_ttc": ttc, "taux": taux_norm})
-    return items
-
-
-def reconcile_line_amounts(line: InvoiceLine, text: str = "") -> InvoiceLine:
-    """Corrige toute incohérence HT/TVA/TTC (générique, tous fournisseurs)."""
-    return fix_ttc_mislabeled_line(line, text)
-
-
-def apply_ttc_ventilation_fixes(result: ExtractionResult) -> ExtractionResult:
-    text = result.raw_text or ""
-    ventilation = parse_ttc_ventilation(text)
-
-    if ventilation:
-        template = result.lines[0] if result.lines else None
-        if template:
-            new_lines: list[InvoiceLine] = []
-            for item in ventilation:
-                new_lines.append(
-                    template.model_copy(
-                        update={
-                            "m_ht": item["m_ht"],
-                            "tva": item["tva"],
-                            "m_ttc": item["m_ttc"],
-                            "taux": item["taux"],
-                        }
-                    )
-                )
-            result.lines = new_lines
-            result.warnings.append(
-                f"Ventilation TTC corrigée ({len(new_lines)} ligne(s) — montants TTC convertis en HT)."
-            )
-            return result
-
-    result.lines = align_lines_with_footer_totals(result.lines, text)
-
-    fixed: list[InvoiceLine] = []
-    changed = False
-    for line in result.lines:
-        before = (line.m_ht, line.tva, line.m_ttc)
-        fixed.append(reconcile_line_amounts(line, text))
-        after = (fixed[-1].m_ht, fixed[-1].tva, fixed[-1].m_ttc)
-        if before != after:
-            changed = True
-    result.lines = fixed
-    if changed:
-        result.warnings.append("Montants TTC de la ventilation convertis en HT.")
-    return result
-
-
 def _should_consolidate_group(group: list[InvoiceLine]) -> bool:
-    """Fusionne seulement les éclats produit (ex. EatMeat) où la TVA est sur une seule ligne."""
     if len(group) <= 1:
         return False
     has_zero_tva = any(abs(line.tva) < 1e-9 for line in group)
@@ -321,7 +123,7 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
         groups[(line.fact_num or "", round(line.taux, 2))].append(line)
 
     merged: list[InvoiceLine] = []
-    for (fact_num, taux), group in groups.items():
+    for (_fact_num, taux), group in groups.items():
         if len(group) == 1 or not _should_consolidate_group(group):
             merged.extend(group)
             continue
@@ -356,7 +158,7 @@ def normalize_extraction_results(
     normalized: list[ExtractionResult] = []
     for result in results:
         item = apply_avoir_signs(result.model_copy(deep=True))
-        item = apply_ttc_ventilation_fixes(item)
+        item = apply_vat_reconciliation(item)
         item.lines = consolidate_lines(item.lines)
         normalized.append(item)
 
@@ -374,20 +176,20 @@ def normalize_extraction_results(
             if line.if_fournisseur:
                 bucket["ifs"].append(line.if_fournisseur)
 
-    for group_key, bucket in groups.items():
+    for _group_key, bucket in groups.items():
         path_hint = supplier_hint_from_path(bucket["filenames"][0] if bucket["filenames"] else "")
-        best_ice = (path_hint or {}).get("ice_frs") or pick_best_ice(bucket["ices"], excluded)
-        best_if = (path_hint or {}).get("if_fournisseur") or pick_most_common(bucket["ifs"])
-        best_name = (path_hint or {}).get("lib_frss") or pick_most_common(
-            [line.lib_frss for line in bucket["lines"]]
-        )
+        best_ice = pick_best_ice(bucket["ices"], excluded)
+        best_if = pick_most_common(bucket["ifs"])
+        best_name = pick_most_common([line.lib_frss for line in bucket["lines"]])
+        if path_hint and not best_name:
+            best_name = path_hint.get("lib_frss", "")
 
         for line in bucket["lines"]:
-            if best_name:
+            if best_name and not line.lib_frss:
                 line.lib_frss = best_name
             if best_ice and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
                 line.ice_frs = best_ice
-            if best_if:
+            if best_if and not line.if_fournisseur:
                 line.if_fournisseur = best_if
 
     return normalized

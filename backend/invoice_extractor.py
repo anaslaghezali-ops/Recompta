@@ -86,11 +86,7 @@ def extract_text_from_pdf(content: bytes) -> str:
     return "\n".join(chunks)
 
 
-KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {
-    "000229475000050": ("ACHIBEST", "1102277"),
-    "000161664000072": ("MOSE Food", "14427958"),
-    "002540001000040": ("EATMEAT", "45978904"),
-}
+KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {}
 
 
 def pdf_to_png_pages(content: bytes, max_pages: int = 3, dpi: int = 200) -> list[bytes]:
@@ -197,11 +193,7 @@ def _extract_avoir_totals(text: str) -> tuple[float | None, float | None, float 
 
 
 def _resolve_supplier_from_ice(text: str, supplier: str, ice: str) -> tuple[str, str]:
-    if_fiscal = _extract_supplier_if(text)
-    if ice in KNOWN_ICE_SUPPLIERS:
-        known_name, known_if = KNOWN_ICE_SUPPLIERS[ice]
-        return known_name, known_if or if_fiscal
-    return supplier, if_fiscal
+    return supplier, _extract_supplier_if(text)
 
 
 def _needs_ai_upgrade(result: ExtractionResult) -> bool:
@@ -223,22 +215,6 @@ def _guess_taux(ht: float | None, tva: float | None) -> float:
 
 
 def _extract_supplier_name(text: str) -> str:
-    branded = re.search(
-        r"\b(ACHIBEST|EATMEAT|MOSE\s*Food|ORANGE|GLOVO|CARREFOUR)\b",
-        text,
-        re.I,
-    )
-    if branded:
-        name = branded.group(1).upper().replace("  ", " ")
-        if "MOSE" in name:
-            return "MOSE Food"
-        if "EATMEAT" in name:
-            return "EATMEAT"
-        return name.title() if name != "ACHIBEST" else "ACHIBEST"
-
-    if "partenaire des tables gourmandes" in text.lower():
-        return "ACHIBEST"
-
     company_pattern = re.compile(r"\b(SARL|SA|STE|S\.A\.R\.L|S\.A\.R\.L\.A\.U)\b", re.I)
     for line in text.splitlines():
         candidate = line.strip()
@@ -438,16 +414,12 @@ def _heuristic_extract(filename: str, text: str) -> ExtractionResult:
     invoice_date = date_candidates[0] if date_candidates else None
 
     line_items = _extract_line_items(text)
-    achibest_lines = _extract_achibest_tva_table(text) if "ACHIBEST" in supplier.upper() or "partenaire des tables gourmandes" in text.lower() else []
-    ventilation = _extract_tva_ventilation(text)
+    from vat_intelligence import extract_vat_lines_from_text
+
+    ventilation = extract_vat_lines_from_text(text)
     invoice_lines: list[InvoiceLine] = []
 
-    if achibest_lines:
-        source = achibest_lines
-    elif ventilation:
-        source = ventilation
-    else:
-        source = []
+    source = ventilation
 
     if source:
         for item in source:
@@ -713,9 +685,9 @@ async def _extract_with_openai_images(
         warnings=content_json.get("warnings", []),
     )
 
-    from normalize_results import apply_ttc_ventilation_fixes
+    from normalize_results import apply_vat_reconciliation
 
-    result = apply_ttc_ventilation_fixes(result)
+    result = apply_vat_reconciliation(result)
     verification = content_json.get("verification")
     if isinstance(verification, list) and verification:
         result.warnings.append(f"Vérification IA : {'; '.join(str(v) for v in verification[:3])}")
@@ -726,7 +698,7 @@ async def _extract_with_openai_images(
 async def _supplement_ttc_ventilation(
     result: ExtractionResult, filename: str, content: bytes, mime_type: str
 ) -> ExtractionResult:
-    from normalize_results import apply_ttc_ventilation_fixes, parse_ttc_ventilation
+    from vat_intelligence import apply_vat_reconciliation, extract_vat_lines_from_text
 
     text = result.raw_text or ""
     if not text.strip() and mime_type == "application/pdf":
@@ -747,89 +719,34 @@ async def _supplement_ttc_ventilation(
     if text.strip():
         result.raw_text = text[:4000]
 
-    ventilation = parse_ttc_ventilation(text)
-    if ventilation:
-        template = result.lines[0] if result.lines else None
-        if template:
-            result.lines = [
-                InvoiceLine(
-                    fact_num=template.fact_num,
-                    designation=template.designation,
-                    m_ht=row["m_ht"],
-                    tva=row["tva"],
-                    m_ttc=row["m_ttc"],
-                    **{
-                        "if": template.if_fournisseur,
-                        "lib_frss": template.lib_frss,
-                        "ice_frs": template.ice_frs,
-                        "taux": row["taux"],
-                        "id_paie": template.id_paie,
-                        "date_paie": template.date_paie,
-                        "date_fac": template.date_fac,
-                    },
-                )
-                for row in ventilation
-            ]
-            result.warnings.append(
-                f"Ventilation TTC relue depuis le document ({len(result.lines)} ligne(s))."
-            )
-            return result
-
-    return apply_ttc_ventilation_fixes(result)
-
-
-async def _supplement_achibest_ventilation(
-    result: ExtractionResult, filename: str, content: bytes
-) -> ExtractionResult:
-    haystack = f"{filename}\n" + " ".join(line.lib_frss for line in result.lines)
-    if "achibest" not in haystack.lower() and "achibest" not in filename.lower():
-        return result
-
-    if not tesseract_available():
-        return result
-
-    try:
-        pages = pdf_to_png_pages(content, max_pages=1)
-        if not pages:
-            return result
-        text = ocr_image_bytes(pages[0])
-        vent = _extract_achibest_tva_table(text)
-        if len(vent) <= len(result.lines):
-            return result
-
-        template = result.lines[0] if result.lines else None
-        fact_num = template.fact_num if template else _extract_invoice_number(text, filename)
-        supplier = template.lib_frss if template and template.lib_frss else _extract_supplier_name(text)
-        ice = template.ice_frs if template and template.ice_frs else _extract_supplier_ice(text)
-        if_fiscal = template.if_fournisseur if template and template.if_fournisseur else _extract_supplier_if(text)
-        invoice_date = template.date_fac if template else None
-
+    ventilation = extract_vat_lines_from_text(text)
+    if ventilation and result.lines:
+        template = result.lines[0]
         result.lines = [
             InvoiceLine(
-                fact_num=fact_num,
-                designation=Designation.MATIERES_CONSOMMABLES,
+                fact_num=template.fact_num,
+                designation=template.designation,
                 m_ht=row["m_ht"],
                 tva=row["tva"],
                 m_ttc=row["m_ttc"],
                 **{
-                    "if": if_fiscal,
-                    "lib_frss": supplier or "ACHIBEST",
-                    "ice_frs": ice,
+                    "if": template.if_fournisseur,
+                    "lib_frss": template.lib_frss,
+                    "ice_frs": template.ice_frs,
                     "taux": row["taux"],
-                    "id_paie": 4,
-                    "date_paie": invoice_date,
-                    "date_fac": invoice_date,
+                    "id_paie": template.id_paie,
+                    "date_paie": template.date_paie,
+                    "date_fac": template.date_fac,
                 },
             )
-            for row in vent
+            for row in ventilation
         ]
         result.warnings.append(
-            f"Ventilation ACHIBEST complétée via OCR ({len(result.lines)} ligne(s) de TVA)."
+            f"Ventilation relue depuis le document ({len(result.lines)} ligne(s))."
         )
-    except Exception:  # noqa: BLE001
         return result
 
-    return result
+    return apply_vat_reconciliation(result)
 
 
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
@@ -837,7 +754,6 @@ async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResul
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
     result = await _extract_with_openai_images(filename, [(page, "image/png") for page in pages])
-    result = await _supplement_achibest_ventilation(result, filename, content)
     return await _supplement_ttc_ventilation(result, filename, content, "application/pdf")
 
 
