@@ -225,8 +225,11 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
 
     text = result.raw_text or ""
     ventilation = extract_vat_lines_from_text(text)
+    distinct_invoices = {line.fact_num for line in result.lines if line.fact_num}
 
-    if ventilation and result.lines:
+    # Document multi-factures : la ventilation globale n'appartient pas à une
+    # seule facture, on ne réécrit donc pas les lignes à partir d'un modèle.
+    if ventilation and result.lines and len(distinct_invoices) <= 1:
         template = result.lines[0]
         result.lines = [
             template.model_copy(
