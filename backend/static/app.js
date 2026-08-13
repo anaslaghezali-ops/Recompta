@@ -20,9 +20,15 @@ import {
 } from "./field-confidence.js";
 import {
   applyBankStatement,
+  applyPaymentToLineIndices,
   normalizeBankTransactions,
   parseBankFile,
 } from "./bank-statement-client.js";
+import {
+  bankAliasLookup,
+  normalizeBankAliasToken,
+  saveBankAlias,
+} from "./bank-match-client.js";
 import {
   assignSourceIds,
   bindPreviewControls,
@@ -120,7 +126,19 @@ const els = {
   fieldBulkTitle: document.getElementById("fieldBulkTitle"),
   fieldBulkIntro: document.getElementById("fieldBulkIntro"),
   fieldBulkApplyAll: document.getElementById("fieldBulkApplyAll"),
+  bankMatchDialog: document.getElementById("bankMatchDialog"),
+  bankMatchForm: document.getElementById("bankMatchForm"),
+  bankMatchTitle: document.getElementById("bankMatchTitle"),
+  bankMatchIntro: document.getElementById("bankMatchIntro"),
+  bankMatchProposals: document.getElementById("bankMatchProposals"),
+  bankMatchLearnWrap: document.getElementById("bankMatchLearnWrap"),
+  bankMatchLearnAlias: document.getElementById("bankMatchLearnAlias"),
+  bankMatchConfirm: document.getElementById("bankMatchConfirm"),
 };
+
+let pendingBankMatchQueue = [];
+let lastBankApplyStats = null;
+let skipBankMatchCloseHandler = false;
 
 const previewUi = {
   panel: els.previewPanel,
@@ -940,6 +958,8 @@ function clearBankState() {
   state.bankFile = null;
   state.bankTransactions = [];
   state.bankMeta = { filename: "", bankName: "BANQUE", bankIce: "", bankIf: "" };
+  pendingBankMatchQueue = [];
+  lastBankApplyStats = null;
   els.bankFileInput.value = "";
   els.bankFileInfo.hidden = true;
   els.bankFileInfo.innerHTML = "";
@@ -1016,6 +1036,120 @@ async function loadBankFile(file) {
   }
 }
 
+function formatMad(amount) {
+  return Number(amount).toLocaleString("fr-FR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatBankDate(isoDate) {
+  if (!isoDate) return "";
+  const [year, month, day] = isoDate.split("-");
+  if (!day) return isoDate;
+  return `${day}/${month}/${year}`;
+}
+
+function updateBankStatusMessage() {
+  if (!lastBankApplyStats) return;
+  const { paymentsMatched, paymentsUnmatched, paymentsPending, feesAdded } = lastBankApplyStats;
+  let msg = `${paymentsMatched} paiement(s) rapproché(s), ${feesAdded} ligne(s) frais bancaire ajoutée(s).`;
+  if (paymentsPending) msg += ` ${paymentsPending} virement(s) à confirmer.`;
+  if (paymentsUnmatched) msg += ` ${paymentsUnmatched} débit(s) sans facture correspondante.`;
+  els.bankStatus.textContent = msg;
+  els.bankStatus.classList.remove("error", "warn", "success");
+  if (paymentsUnmatched || paymentsPending) els.bankStatus.classList.add("warn");
+  else els.bankStatus.classList.add("success");
+}
+
+function validBankMatchProposals(item) {
+  return (item.proposals || []).filter((proposal) =>
+    proposal.indices.every((index) => !state.lines[index]?.date_paie_from_bank),
+  );
+}
+
+function showNextBankMatchDialog() {
+  while (pendingBankMatchQueue.length > 0) {
+    const item = pendingBankMatchQueue[0];
+    const proposals = validBankMatchProposals(item);
+    if (!proposals.length) {
+      pendingBankMatchQueue.shift();
+      continue;
+    }
+
+    const amount = formatMad(item.txn.absAmount);
+    const date = formatBankDate(item.txn.date);
+    const label = String(item.txn.label || "").trim();
+    els.bankMatchIntro.textContent =
+      `Virement de ${amount} MAD du ${date}${label ? ` — « ${label} »` : ""}. Choisissez la facture ou le groupe de factures correspondant :`;
+
+    els.bankMatchProposals.replaceChildren();
+    proposals.forEach((proposal, index) => {
+      const option = document.createElement("label");
+      option.className = "bank-match-option";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "bankProposal";
+      radio.value = proposal.id;
+      radio.checked = index === 0;
+      const text = document.createElement("div");
+      const invoiceLabel =
+        proposal.invoiceCount === 1
+          ? "1 facture"
+          : `${proposal.invoiceCount} factures (${proposal.lineCount} lignes)`;
+      text.innerHTML =
+        `<strong>${proposal.lib_frss}</strong>` +
+        `${invoiceLabel} — total ${formatMad(proposal.totalTtc)} MAD`;
+      option.append(radio, text);
+      els.bankMatchProposals.appendChild(option);
+    });
+
+    const bankToken = item.bankToken || normalizeBankAliasToken(label);
+    const showLearn = Boolean(bankToken);
+    els.bankMatchLearnWrap.hidden = !showLearn;
+    if (showLearn) els.bankMatchLearnAlias.checked = true;
+
+    els.bankMatchDialog.showModal();
+    return;
+  }
+
+  updateBankStatusMessage();
+}
+
+function confirmBankMatch() {
+  const item = pendingBankMatchQueue[0];
+  if (!item) return;
+
+  const selectedId = els.bankMatchProposals.querySelector('input[name="bankProposal"]:checked')?.value;
+  const proposals = validBankMatchProposals(item);
+  const proposal = proposals.find((entry) => entry.id === selectedId) || proposals[0];
+  if (!proposal) {
+    pendingBankMatchQueue.shift();
+    showNextBankMatchDialog();
+    return;
+  }
+
+  applyPaymentToLineIndices(state.lines, proposal.indices, item.txn);
+  proposal.indices.forEach((index) => markFieldVerified(state.lines[index], "date_paie"));
+
+  const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
+  if (els.bankMatchLearnAlias.checked && bankToken) {
+    saveBankAlias(currentClientIce(), bankToken, proposal.supplierKey, proposal.lib_frss);
+  }
+
+  if (lastBankApplyStats) {
+    lastBankApplyStats.paymentsMatched += 1;
+    if (lastBankApplyStats.paymentsPending > 0) lastBankApplyStats.paymentsPending -= 1;
+  }
+  pendingBankMatchQueue.shift();
+  renderTable();
+  updateButtons();
+  skipBankMatchCloseHandler = true;
+  els.bankMatchDialog.close();
+  skipBankMatchCloseHandler = false;
+  showNextBankMatchDialog();
+}
+
 function applyBankToLines() {
   if (!state.bankTransactions.length || !state.lines.length) return;
 
@@ -1024,20 +1158,17 @@ function applyBankToLines() {
     bankName: state.bankMeta.bankName || "BANQUE",
     bankIce: state.bankMeta.bankIce || "",
     bankIf: state.bankMeta.bankIf || "",
+    supplierAliases: bankAliasLookup(currentClientIce()),
   });
 
   state.lines = result.lines;
+  pendingBankMatchQueue = result.pendingMatches || [];
+  lastBankApplyStats = { ...result.stats };
   renderTable();
   updateButtons();
+  updateBankStatusMessage();
 
-  const { paymentsMatched, paymentsUnmatched, feesAdded } = result.stats;
-  let msg = `${paymentsMatched} paiement(s) rapproché(s), ${feesAdded} ligne(s) frais bancaire ajoutée(s).`;
-  if (paymentsUnmatched) msg += ` ${paymentsUnmatched} débit(s) sans facture correspondante.`;
-
-  els.bankStatus.textContent = msg;
-  els.bankStatus.classList.remove("error", "warn");
-  if (paymentsUnmatched) els.bankStatus.classList.add("warn");
-  else els.bankStatus.classList.add("success");
+  if (pendingBankMatchQueue.length) showNextBankMatchDialog();
 }
 
 function removeDuplicates() {
@@ -1151,6 +1282,15 @@ els.fieldBulkApplyAll?.addEventListener("click", () => {
 });
 els.fieldBulkDialog?.addEventListener("close", () => {
   pendingFieldBulk = null;
+});
+els.bankMatchConfirm?.addEventListener("click", (event) => {
+  event.preventDefault();
+  confirmBankMatch();
+});
+els.bankMatchForm?.addEventListener("close", () => {
+  if (skipBankMatchCloseHandler) return;
+  if (pendingBankMatchQueue.length > 0) pendingBankMatchQueue.shift();
+  showNextBankMatchDialog();
 });
 loadClientSettings();
 updateFilenamePreview();

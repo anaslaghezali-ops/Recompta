@@ -311,8 +311,10 @@ function findInvoiceSubset(groups, targetAmount) {
   return null;
 }
 
-function supplierKeysFromLabel(label, groups, lines, usedLineIndices) {
+function supplierKeysFromLabel(label, groups, lines, usedLineIndices, supplierAliases = {}) {
   const keys = new Set();
+  const hay = normalizeText(label);
+
   groups.forEach((group) => {
     if (labelScore(label, group.lib_frss, group.fact_num) > 0) {
       const key = supplierNameKey(group.lib_frss);
@@ -327,7 +329,78 @@ function supplierKeysFromLabel(label, groups, lines, usedLineIndices) {
       if (key) keys.add(key);
     }
   });
+
+  for (const [bankToken, supplierKey] of Object.entries(supplierAliases || {})) {
+    if (bankToken && supplierKey && hay.includes(bankToken)) keys.add(supplierKey);
+  }
+
   return keys;
+}
+
+/** Extrait le bénéficiaire après « EN FAVEUR DE » (pour apprentissage d'alias). */
+export function extractBankBeneficiaryToken(label) {
+  const hay = normalizeText(label);
+  const match = hay.match(/EN FAVEUR DE\s+([^,]+)/);
+  if (!match) return "";
+  return match[1]
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function labelMatchesLearnedAlias(label, supplierAliases) {
+  const hay = normalizeText(label);
+  return Object.keys(supplierAliases || {}).some((token) => token && hay.includes(token));
+}
+
+/** Candidats fournisseur dont la somme TTC des factures non rapprochées = montant du virement. */
+export function findSupplierAmountCandidates(groups, usedGroupKeys, debitAmount) {
+  const bySupplier = new Map();
+
+  for (const group of groups) {
+    if (usedGroupKeys.has(group.key)) continue;
+    const supplierKey = supplierNameKey(group.lib_frss);
+    if (!supplierKey) continue;
+    if (!bySupplier.has(supplierKey)) {
+      bySupplier.set(supplierKey, { lib_frss: group.lib_frss || "", groups: [] });
+    }
+    bySupplier.get(supplierKey).groups.push(group);
+  }
+
+  const candidates = [];
+  for (const [supplierKey, { lib_frss, groups: supplierGroups }] of bySupplier) {
+    const subset = findInvoiceSubset(supplierGroups, debitAmount);
+    if (!subset) continue;
+
+    const indices = [];
+    subset.forEach((group) => group.indices.forEach((idx) => indices.push(idx)));
+    candidates.push({
+      supplierKey,
+      lib_frss: subset[0]?.lib_frss || lib_frss,
+      groupKeys: subset.map((group) => group.key),
+      indices,
+      invoiceCount: subset.length,
+      lineCount: indices.length,
+      totalTtc: roundMoney(subset.reduce((sum, group) => sum + group.totalTtc, 0)),
+    });
+  }
+
+  candidates.sort((a, b) => {
+    if (b.invoiceCount !== a.invoiceCount) return b.invoiceCount - a.invoiceCount;
+    return a.lib_frss.localeCompare(b.lib_frss, "fr");
+  });
+
+  return candidates.slice(0, 3);
+}
+
+export function applyPaymentToLineIndices(lines, indices, txn) {
+  for (const index of indices) {
+    if (!lines[index]) continue;
+    lines[index].date_paie = txn.date;
+    lines[index].id_paie = 4;
+    lines[index].date_paie_from_bank = true;
+  }
 }
 
 function feeLineFromTransaction(txn, sourceFile, bankName = "BANQUE", bankIce = "", bankIf = "") {
@@ -364,11 +437,18 @@ function existingFeeKey(line) {
 export function applyBankStatement(
   transactions,
   lines,
-  { sourceFile = "releve_bancaire", bankName = "BANQUE", bankIce = "", bankIf = "" } = {},
+  {
+    sourceFile = "releve_bancaire",
+    bankName = "BANQUE",
+    bankIce = "",
+    bankIf = "",
+    supplierAliases = {},
+  } = {},
 ) {
   const updated = lines.map((line) => ({ ...line }));
   const matchedPayments = [];
   const unmatchedPayments = [];
+  const pendingMatches = [];
   const feeTransactions = [];
   const skipped = [];
 
@@ -427,7 +507,13 @@ export function applyBankStatement(
       continue;
     }
 
-    const supplierKeys = supplierKeysFromLabel(txn.label, groups, updated, usedLineIndices);
+    const supplierKeys = supplierKeysFromLabel(
+      txn.label,
+      groups,
+      updated,
+      usedLineIndices,
+      supplierAliases,
+    );
     let supplierMatch = null;
     let supplierMatchScore = 0;
 
@@ -468,6 +554,19 @@ export function applyBankStatement(
       continue;
     }
 
+    const amountCandidates = findSupplierAmountCandidates(groups, usedGroupKeys, debitAmount);
+    if (amountCandidates.length > 0 && !labelMatchesLearnedAlias(txn.label, supplierAliases)) {
+      pendingMatches.push({
+        txn,
+        bankToken: extractBankBeneficiaryToken(txn.label),
+        proposals: amountCandidates.map((candidate, index) => ({
+          id: `p${index}`,
+          ...candidate,
+        })),
+      });
+      continue;
+    }
+
     unmatchedPayments.push(txn);
   }
 
@@ -490,11 +589,13 @@ export function applyBankStatement(
     stats: {
       paymentsMatched: matchedPayments.length,
       paymentsUnmatched: unmatchedPayments.length,
+      paymentsPending: pendingMatches.length,
       feesAdded: newFeeLines.length,
       feesSkipped: feeTransactions.length - newFeeLines.length,
     },
     matchedPayments,
     unmatchedPayments,
+    pendingMatches,
     feeTransactions,
     skipped,
   };
