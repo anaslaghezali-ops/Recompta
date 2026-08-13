@@ -297,6 +297,7 @@ export async function loadDossierContext(dossierId) {
 
   return {
     dossierId: data.id,
+    clientId: data.client.id,
     status: data.status,
     year: data.period_year,
     month: data.period_month,

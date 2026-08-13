@@ -103,6 +103,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
+    import { listClientActivity } from "./dossier-persistence.js?v=persist1";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -222,23 +223,37 @@
       initLucide();
     }
 
-    function renderTimeline() {
-      const events = [...client.dossiers]
-        .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
-        .slice(0, 8)
-        .map((d) => {
-          const meta = STATUS_META[d.status] || STATUS_META.draft;
-          return `
-            <li>
-              <time>${escapeHtml(formatRelativeTime(d.updated_at || d.created_at))}</time>
-              <div>
-                <strong>${escapeHtml(formatMonthLabel(d.period_month))} ${d.period_year}</strong>
-                — ${escapeHtml(meta.label)}
-                <span style="color:var(--dash-muted);"> · période ${escapeHtml(periodToMmaaaa(d.period_year, d.period_month))}</span>
-              </div>
-            </li>
-          `;
-        });
+    async function renderTimeline() {
+      let events = [];
+      try {
+        const activity = await listClientActivity(client.id, 12);
+        events = activity.map((row) => `
+          <li>
+            <time>${escapeHtml(formatRelativeTime(row.created_at))}</time>
+            <div>${escapeHtml(row.summary)}</div>
+          </li>
+        `);
+      } catch {
+        events = [];
+      }
+
+      if (!events.length) {
+        events = [...client.dossiers]
+          .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
+          .slice(0, 8)
+          .map((d) => {
+            const meta = STATUS_META[d.status] || STATUS_META.draft;
+            return `
+              <li>
+                <time>${escapeHtml(formatRelativeTime(d.updated_at || d.created_at))}</time>
+                <div>
+                  <strong>${escapeHtml(formatMonthLabel(d.period_month))} ${d.period_year}</strong>
+                  — ${escapeHtml(meta.label)}
+                </div>
+              </li>
+            `;
+          });
+      }
 
       activityTimeline.innerHTML = events.length
         ? events.join("")
@@ -281,7 +296,7 @@
           renderActions();
           renderYearTabs();
           renderMonthGrid();
-          renderTimeline();
+          await renderTimeline();
           initLucide();
         }
       }

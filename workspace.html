@@ -2,11 +2,323 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="refresh" content="0; url=docs/workspace.html" />
-  <title>Recompta — Workspace</title>
-  <script>location.replace("docs/workspace.html" + location.search);</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recompta — Workspace client</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css?v=dash1" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <p><a href="docs/workspace.html">Ouvrir le workspace client</a></p>
+  <div class="dash-app" id="dashApp">
+    <div id="sidebarMount"></div>
+    <div class="dash-main">
+      <header class="dash-topbar">
+        <div class="dash-topbar-left">
+          <button type="button" class="dash-mobile-toggle dash-btn dash-btn-ghost" id="mobileNavToggle" aria-label="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <nav class="dash-breadcrumb" aria-label="Fil d'Ariane">
+              <a href="dossiers.html"><i data-lucide="arrow-left" style="width:14px;height:14px;"></i> Portefeuille</a>
+            </nav>
+            <h1 id="clientTitle">—</h1>
+            <p class="dash-client-ice" id="clientIceLine">ICE —</p>
+          </div>
+        </div>
+        <div class="dash-topbar-actions">
+          <button type="button" class="dash-btn dash-btn-primary" id="newPeriodBtn">
+            <i data-lucide="calendar-plus"></i> Nouvelle période TVA
+          </button>
+        </div>
+      </header>
+
+      <main class="dash-content">
+        <div class="dash-panels">
+          <section class="dash-panel">
+            <h2>Informations client</h2>
+            <ul class="dash-info-list" id="clientInfoList"></ul>
+          </section>
+          <section class="dash-panel">
+            <h2>Actions rapides</h2>
+            <div class="dash-actions-grid" id="actionsGrid"></div>
+          </section>
+        </div>
+
+        <section class="dash-panel">
+          <div class="dash-workspace-header" style="margin-bottom:0.75rem;">
+            <div>
+              <h2 style="margin:0;font-size:1rem;font-weight:800;letter-spacing:-0.02em;">Calendrier TVA</h2>
+              <p style="margin:0.25rem 0 0;font-size:0.82rem;color:var(--dash-muted);">Exercice fiscal — déclarations mensuelles</p>
+            </div>
+          </div>
+          <div class="dash-year-tabs" id="yearTabs"></div>
+          <div class="dash-month-grid" id="monthGrid"></div>
+          <div class="dash-legend">
+            <span><i class="dash-dot" style="background:#94a3b8;"></i> Brouillon</span>
+            <span><i class="dash-dot" style="background:#f59e0b;"></i> En revue</span>
+            <span><i class="dash-dot" style="background:#10b981;"></i> Déclaré</span>
+            <span><i class="dash-dot" style="background:#cbd5e1;border:1px dashed #94a3b8;"></i> À créer</span>
+          </div>
+        </section>
+
+        <section class="dash-panel" style="margin-top:0.75rem;">
+          <h2>Activité récente</h2>
+          <ul class="dash-timeline" id="activityTimeline"></ul>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="newPeriodDialog" class="dash-modal">
+    <form method="dialog" id="newPeriodForm" class="dash-modal-inner dash-form">
+      <h3>Nouvelle période TVA</h3>
+      <p class="hint" id="newPeriodClientLabel"></p>
+      <label>Année
+        <input id="periodYear" type="number" min="2000" max="2100" required />
+      </label>
+      <label>Mois
+        <select id="periodMonth" required></select>
+      </label>
+      <p class="dash-error" id="periodError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="cancelPeriodBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary">Créer et ouvrir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { signOut } from "./auth-client.js?v=auth5";
+    import {
+      buildYearGrid,
+      createDossier,
+      formatMonthLabel,
+      formatRelativeTime,
+      getClientWithDossiers,
+      listAvailableYears,
+      MONTH_LABELS,
+      periodToMmaaaa,
+      requireCabinetSession,
+      STATUS_META,
+    } from "./dossiers-client.js?v=dash2";
+    import { listClientActivity } from "./dossier-persistence.js?v=persist1";
+    import {
+      bindSidebarMobile,
+      escapeHtml,
+      initLucide,
+      sidebarHtml,
+    } from "./dashboard-ui.js?v=dash1";
+
+    const params = new URLSearchParams(window.location.search);
+    const clientId = Number(params.get("client"));
+    const sidebarMount = document.getElementById("sidebarMount");
+    const monthGrid = document.getElementById("monthGrid");
+    const yearTabs = document.getElementById("yearTabs");
+    const activityTimeline = document.getElementById("activityTimeline");
+    const newPeriodDialog = document.getElementById("newPeriodDialog");
+    const newPeriodForm = document.getElementById("newPeriodForm");
+    const periodYear = document.getElementById("periodYear");
+    const periodMonth = document.getElementById("periodMonth");
+    const periodError = document.getElementById("periodError");
+
+    let cabinetId = null;
+    let client = null;
+    let selectedYear = new Date().getFullYear();
+    let selectedDossierId = null;
+
+    function showPeriodError(message) {
+      periodError.hidden = !message;
+      periodError.textContent = message || "";
+    }
+
+    function openDossierTool(dossierId) {
+      window.location.href = `index.html?dossier=${dossierId}`;
+    }
+
+    function renderClientInfo() {
+      document.getElementById("clientTitle").textContent = client.name;
+      document.getElementById("clientIceLine").textContent = `ICE ${client.ice}`;
+      document.title = `Recompta — ${client.name}`;
+      document.getElementById("clientInfoList").innerHTML = `
+        <li><span>Raison sociale</span><strong>${escapeHtml(client.name)}</strong></li>
+        <li><span>ICE</span><strong>${escapeHtml(client.ice)}</strong></li>
+        <li><span>Périodes TVA</span><strong>${client.dossiers.length}</strong></li>
+        <li><span>Client depuis</span><strong>${new Date(client.created_at).toLocaleDateString("fr-FR")}</strong></li>
+      `;
+    }
+
+    function renderActions() {
+      const latest = client.dossiers[0];
+      selectedDossierId = latest?.id || null;
+      const disabled = !selectedDossierId;
+      const actions = [
+        { icon: "landmark", label: "Import banque", desc: "Relevé et rapprochement", soon: true },
+        { icon: "file-input", label: "Import achats", desc: "Factures fournisseurs", soon: false, action: "achats" },
+        { icon: "file-output", label: "Import ventes", desc: "Factures clients", soon: true },
+        { icon: "sparkles", label: "Analyse IA", desc: "Contrôles automatiques", soon: true },
+        { icon: "book-open", label: "Générer écritures", desc: "Proposition comptable", soon: true },
+        { icon: "file-spreadsheet", label: "Déclaration TVA", desc: "Excel DED TVA", soon: false, action: "tva" },
+        { icon: "history", label: "Historique", desc: "Versions et exports", soon: true },
+      ];
+
+      document.getElementById("actionsGrid").innerHTML = actions.map((item) => `
+        <button type="button" class="dash-action-tile" data-action="${item.action || ""}" ${item.soon || disabled ? "disabled" : ""} title="${item.soon ? "Bientôt disponible" : ""}">
+          <i data-lucide="${item.icon}"></i>
+          <strong>${item.label}</strong>
+          <span>${item.soon ? "Bientôt" : item.desc}</span>
+        </button>
+      `).join("");
+
+      document.getElementById("actionsGrid").querySelectorAll("[data-action]").forEach((btn) => {
+        if (btn.disabled) return;
+        btn.addEventListener("click", () => {
+          if (selectedDossierId) openDossierTool(selectedDossierId);
+        });
+      });
+    }
+
+    function renderYearTabs() {
+      const years = listAvailableYears(client.dossiers, selectedYear);
+      if (!years.includes(selectedYear)) selectedYear = years[0];
+      yearTabs.innerHTML = years.map((year) => `
+        <button type="button" class="dash-year-tab ${year === selectedYear ? "active" : ""}" data-year="${year}">${year}</button>
+      `).join("");
+      yearTabs.querySelectorAll("[data-year]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedYear = Number(btn.dataset.year);
+          renderYearTabs();
+          renderMonthGrid();
+        });
+      });
+    }
+
+    function renderMonthGrid() {
+      const grid = buildYearGrid(selectedYear, client.dossiers);
+      monthGrid.innerHTML = grid.map((cell) => {
+        if (!cell.dossier) {
+          return `
+            <button type="button" class="dash-month-cell empty" data-year="${selectedYear}" data-month="${cell.month}" title="Créer ${cell.label} ${selectedYear}">
+              <span class="month-label">${cell.short}</span>
+              <span class="month-status">+ Créer</span>
+            </button>
+          `;
+        }
+        const meta = STATUS_META[cell.status] || STATUS_META.draft;
+        return `
+          <button type="button" class="dash-month-cell status-${cell.status}" data-dossier-id="${cell.dossier.id}" title="${cell.label} ${selectedYear} — ${meta.label}">
+            <span class="month-label">${cell.short}</span>
+            <span class="month-status">${meta.label}</span>
+          </button>
+        `;
+      }).join("");
+
+      monthGrid.querySelectorAll("[data-dossier-id]").forEach((btn) => {
+        btn.addEventListener("click", () => openDossierTool(btn.dataset.dossierId));
+      });
+      monthGrid.querySelectorAll(".dash-month-cell.empty").forEach((btn) => {
+        btn.addEventListener("click", () => openNewPeriodModal(Number(btn.dataset.month)));
+      });
+      initLucide();
+    }
+
+    async function renderTimeline() {
+      let events = [];
+      try {
+        const activity = await listClientActivity(client.id, 12);
+        events = activity.map((row) => `
+          <li>
+            <time>${escapeHtml(formatRelativeTime(row.created_at))}</time>
+            <div>${escapeHtml(row.summary)}</div>
+          </li>
+        `);
+      } catch {
+        events = [];
+      }
+
+      if (!events.length) {
+        events = [...client.dossiers]
+          .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
+          .slice(0, 8)
+          .map((d) => {
+            const meta = STATUS_META[d.status] || STATUS_META.draft;
+            return `
+              <li>
+                <time>${escapeHtml(formatRelativeTime(d.updated_at || d.created_at))}</time>
+                <div>
+                  <strong>${escapeHtml(formatMonthLabel(d.period_month))} ${d.period_year}</strong>
+                  — ${escapeHtml(meta.label)}
+                </div>
+              </li>
+            `;
+          });
+      }
+
+      activityTimeline.innerHTML = events.length
+        ? events.join("")
+        : `<li><div style="color:var(--dash-muted);">Aucune activité — créez une première période TVA.</div></li>`;
+    }
+
+    function openNewPeriodModal(presetMonth) {
+      document.getElementById("newPeriodClientLabel").textContent = client.name;
+      periodYear.value = String(selectedYear);
+      periodMonth.value = String(presetMonth || new Date().getMonth() + 1);
+      showPeriodError("");
+      newPeriodDialog.showModal();
+    }
+
+    periodMonth.innerHTML = MONTH_LABELS.map((label, i) =>
+      `<option value="${i + 1}">${label}</option>`,
+    ).join("");
+
+    if (!clientId) {
+      window.location.href = "dossiers.html";
+    } else {
+      const membership = await requireCabinetSession();
+      if (membership) {
+        cabinetId = membership.cabinet_id;
+        client = await getClientWithDossiers(clientId, cabinetId);
+        if (!client) {
+          window.location.href = "dossiers.html";
+        } else {
+          sidebarMount.innerHTML = sidebarHtml({
+            cabinetName: membership.cabinet.name,
+            active: "portfolio",
+          });
+          bindSidebarMobile();
+          document.getElementById("signOutBtn")?.addEventListener("click", async () => {
+            await signOut();
+            window.location.href = "login.html";
+          });
+
+          renderClientInfo();
+          renderActions();
+          renderYearTabs();
+          renderMonthGrid();
+          await renderTimeline();
+          initLucide();
+        }
+      }
+    }
+
+    document.getElementById("newPeriodBtn").addEventListener("click", () => openNewPeriodModal());
+    document.getElementById("cancelPeriodBtn").addEventListener("click", () => newPeriodDialog.close());
+
+    newPeriodForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showPeriodError("");
+      try {
+        const dossier = await createDossier(client.id, {
+          year: periodYear.value,
+          month: periodMonth.value,
+        });
+        newPeriodDialog.close();
+        openDossierTool(dossier.id);
+      } catch (error) {
+        showPeriodError(error.message || "Impossible de créer la période.");
+      }
+    });
+  </script>
 </body>
 </html>
