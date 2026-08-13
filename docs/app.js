@@ -130,7 +130,12 @@ const els = {
   bankMatchForm: document.getElementById("bankMatchForm"),
   bankMatchTitle: document.getElementById("bankMatchTitle"),
   bankMatchIntro: document.getElementById("bankMatchIntro"),
+  bankMatchTxnDate: document.getElementById("bankMatchTxnDate"),
+  bankMatchTxnAmount: document.getElementById("bankMatchTxnAmount"),
+  bankMatchTxnLabel: document.getElementById("bankMatchTxnLabel"),
   bankMatchProposals: document.getElementById("bankMatchProposals"),
+  bankMatchInvoiceDetail: document.getElementById("bankMatchInvoiceDetail"),
+  bankMatchInvoiceList: document.getElementById("bankMatchInvoiceList"),
   bankMatchLearnWrap: document.getElementById("bankMatchLearnWrap"),
   bankMatchLearnAlias: document.getElementById("bankMatchLearnAlias"),
   bankMatchConfirm: document.getElementById("bankMatchConfirm"),
@@ -1068,6 +1073,68 @@ function validBankMatchProposals(item) {
   );
 }
 
+function bankTxnPosition(txn) {
+  const payments = state.bankTransactions.filter((entry) => entry.type === "payment");
+  const index = payments.findIndex((entry) => entry.id === txn.id);
+  if (index < 0) return "";
+  return ` (${index + 1}/${payments.length} sur le relevé)`;
+}
+
+function proposalInvoiceRows(proposal) {
+  const byFact = new Map();
+  for (const index of proposal.indices) {
+    const line = state.lines[index];
+    if (!line) continue;
+    const factNum = String(line.fact_num || "").trim() || "Sans n°";
+    if (!byFact.has(factNum)) {
+      byFact.set(factNum, { fact_num: factNum, total: 0 });
+    }
+    byFact.get(factNum).total += Number(line.m_ttc) || 0;
+  }
+  return [...byFact.values()].map((row) => ({
+    ...row,
+    total: Math.round(row.total * 100) / 100,
+  }));
+}
+
+function renderBankMatchTxn(item) {
+  const txn = item.txn;
+  const date = formatBankDate(txn.date);
+  const position = bankTxnPosition(txn);
+  els.bankMatchTxnDate.textContent = date ? `${date}${position}` : position || "—";
+  els.bankMatchTxnAmount.textContent = `${formatMad(txn.absAmount)} MAD`;
+  els.bankMatchTxnLabel.textContent = String(txn.label || "").trim() || "—";
+}
+
+function renderBankMatchInvoiceDetail(proposal) {
+  if (!proposal) {
+    els.bankMatchInvoiceDetail.hidden = true;
+    els.bankMatchInvoiceList.replaceChildren();
+    return;
+  }
+
+  const rows = proposalInvoiceRows(proposal);
+  els.bankMatchInvoiceList.replaceChildren();
+  rows.forEach((row) => {
+    const li = document.createElement("li");
+    li.textContent = `${row.fact_num} — ${formatMad(row.total)} MAD`;
+    els.bankMatchInvoiceList.appendChild(li);
+  });
+  els.bankMatchInvoiceDetail.hidden = rows.length === 0;
+}
+
+function selectedBankMatchProposal() {
+  const item = pendingBankMatchQueue[0];
+  if (!item) return null;
+  const proposals = validBankMatchProposals(item);
+  const selectedId = els.bankMatchProposals.querySelector('input[name="bankProposal"]:checked')?.value;
+  return proposals.find((entry) => entry.id === selectedId) || proposals[0] || null;
+}
+
+function updateBankMatchInvoiceDetail() {
+  renderBankMatchInvoiceDetail(selectedBankMatchProposal());
+}
+
 function showNextBankMatchDialog() {
   while (pendingBankMatchQueue.length > 0) {
     const item = pendingBankMatchQueue[0];
@@ -1077,11 +1144,7 @@ function showNextBankMatchDialog() {
       continue;
     }
 
-    const amount = formatMad(item.txn.absAmount);
-    const date = formatBankDate(item.txn.date);
-    const label = String(item.txn.label || "").trim();
-    els.bankMatchIntro.textContent =
-      `Virement de ${amount} MAD du ${date}${label ? ` — « ${label} »` : ""}. Choisissez la facture ou le groupe de factures correspondant :`;
+    renderBankMatchTxn(item);
 
     els.bankMatchProposals.replaceChildren();
     proposals.forEach((proposal, index) => {
@@ -1104,6 +1167,9 @@ function showNextBankMatchDialog() {
       els.bankMatchProposals.appendChild(option);
     });
 
+    updateBankMatchInvoiceDetail();
+
+    const label = String(item.txn.label || "").trim();
     const bankToken = item.bankToken || normalizeBankAliasToken(label);
     const showLearn = Boolean(bankToken);
     els.bankMatchLearnWrap.hidden = !showLearn;
@@ -1286,6 +1352,9 @@ els.fieldBulkDialog?.addEventListener("close", () => {
 els.bankMatchConfirm?.addEventListener("click", (event) => {
   event.preventDefault();
   confirmBankMatch();
+});
+els.bankMatchProposals?.addEventListener("change", (event) => {
+  if (event.target?.name === "bankProposal") updateBankMatchInvoiceDetail();
 });
 els.bankMatchForm?.addEventListener("close", () => {
   if (skipBankMatchCloseHandler) return;
