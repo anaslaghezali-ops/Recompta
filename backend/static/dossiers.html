@@ -3,273 +3,400 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recompta — Dossiers clients</title>
-  <link rel="stylesheet" href="styles.css?v=dossiers1" />
+  <title>Recompta — Portefeuille clients</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css?v=portfolio1" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
-  <header class="hero">
-    <div class="hero-top">
-      <div class="hero-content">
-        <p class="eyebrow">Recompta</p>
-        <h1 id="pageTitle">Dossiers clients</h1>
-        <p class="subtitle" id="pageSubtitle">Créez vos clients et ouvrez un dossier par mois pour la déclaration TVA.</p>
-      </div>
-      <div class="hero-auth">
-        <a href="index.html" class="hero-auth-link" id="soloToolLink" hidden>Outil solo</a>
-        <button type="button" id="signOutBtn" class="hero-auth-link">Déconnexion</button>
-      </div>
+  <div class="dash-app" id="dashApp">
+    <div id="sidebarMount"></div>
+    <div class="dash-main">
+      <header class="dash-topbar">
+        <div class="dash-topbar-left">
+          <button type="button" class="dash-mobile-toggle dash-btn dash-btn-ghost" id="mobileNavToggle" aria-label="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <h1>Portefeuille clients</h1>
+            <p id="topbarSubtitle">Sur quels clients travailler aujourd'hui ?</p>
+          </div>
+        </div>
+        <div class="dash-topbar-actions">
+          <label class="dash-search">
+            <i data-lucide="search"></i>
+            <input id="searchInput" type="search" placeholder="Rechercher un client ou ICE…" />
+          </label>
+          <button type="button" class="dash-btn" id="refreshBtn">
+            <i data-lucide="refresh-cw"></i> Actualiser
+          </button>
+          <button type="button" class="dash-btn dash-btn-primary" id="openNewClientBtn">
+            <i data-lucide="plus"></i> Nouveau client
+          </button>
+        </div>
+      </header>
+
+      <main class="dash-content dash-portfolio">
+        <div class="dash-portfolio-kpis" id="kpiRow">
+          <div class="dash-kpi" id="kpiActiveWrap">
+            <div class="dash-kpi-label">Clients actifs</div>
+            <div class="dash-kpi-value" id="kpiActive">—</div>
+            <div class="dash-kpi-hint">En production TVA</div>
+          </div>
+          <div class="dash-kpi" id="kpiPeriodsWrap">
+            <div class="dash-kpi-label">Périodes en cours</div>
+            <div class="dash-kpi-value" id="kpiPeriods">—</div>
+            <div class="dash-kpi-hint">Ouvertes dans le cabinet</div>
+          </div>
+          <div class="dash-kpi" id="kpiExceptionsWrap">
+            <div class="dash-kpi-label">Exceptions IA</div>
+            <div class="dash-kpi-value" id="kpiExceptions">—</div>
+            <div class="dash-kpi-hint">Anomalies à corriger</div>
+          </div>
+          <div class="dash-kpi dash-kpi-success" id="kpiExportsWrap">
+            <div class="dash-kpi-label">Exports prêts</div>
+            <div class="dash-kpi-value" id="kpiExports">—</div>
+            <div class="dash-kpi-hint">Périodes clôturées</div>
+          </div>
+          <div class="dash-kpi" id="kpiLateWrap">
+            <div class="dash-kpi-label">TVA en retard</div>
+            <div class="dash-kpi-value" id="kpiLate">—</div>
+            <div class="dash-kpi-hint">Échéance dépassée</div>
+          </div>
+        </div>
+
+        <div class="dash-segmented" id="statusFilters" role="tablist" aria-label="Filtrer le portefeuille">
+          <button type="button" class="active" data-filter="all" role="tab">Tous <span class="dash-segmented-count" data-count="all">0</span></button>
+          <button type="button" data-filter="priority" role="tab">Prioritaires <span class="dash-segmented-count" data-count="priority">0</span></button>
+          <button type="button" data-filter="late" role="tab">En retard <span class="dash-segmented-count" data-count="late">0</span></button>
+          <button type="button" data-filter="validate" role="tab">À valider <span class="dash-segmented-count" data-count="validate">0</span></button>
+          <button type="button" data-filter="done" role="tab">Terminés <span class="dash-segmented-count" data-count="done">0</span></button>
+          <button type="button" data-filter="mine" role="tab">Mes clients <span class="dash-segmented-count" data-count="mine">0</span></button>
+        </div>
+
+        <div id="listHint" class="dash-empty" hidden>
+          <i data-lucide="users" style="width:32px;height:32px;color:#94a3b8;"></i>
+          <h3>Aucun client</h3>
+          <p>Ajoutez votre premier client pour commencer le suivi TVA.</p>
+          <button type="button" class="dash-btn dash-btn-primary" id="emptyNewClientBtn" style="margin-top:1rem;">
+            <i data-lucide="plus"></i> Nouveau client
+          </button>
+        </div>
+
+        <div id="portfolioList" class="dash-portfolio-list" hidden>
+          <div class="dash-portfolio-head" aria-hidden="true">
+            <span></span>
+            <span>Client</span>
+            <span>Période</span>
+            <span>Progression</span>
+            <span>Ops</span>
+            <span>Anom.</span>
+            <span>Activité</span>
+            <span>Prochaine action</span>
+            <span>Priorité</span>
+            <span></span>
+          </div>
+          <div class="dash-portfolio-rows" id="portfolioRows"></div>
+        </div>
+      </main>
     </div>
-  </header>
+  </div>
 
-  <main class="container dossiers-layout">
-    <section class="card">
-      <h2>Nouveau client</h2>
-      <form id="createClientForm" class="admin-form">
-        <div class="grid two">
-          <label>Nom du client
-            <input id="clientName" type="text" required minlength="2" placeholder="Société ABC" />
-          </label>
-          <label>ICE de la société
-            <input id="clientIce" type="text" required minlength="15" maxlength="15" inputmode="numeric" pattern="[0-9]{15}" placeholder="15 chiffres" />
-          </label>
-        </div>
-        <p class="hint error" id="clientError" hidden></p>
-        <p class="hint success" id="clientOk" hidden></p>
-        <div class="actions">
-          <button class="primary" type="submit">Ajouter le client</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="card">
-      <div class="section-header">
-        <h2>Clients et dossiers</h2>
-        <button type="button" class="secondary small" id="refreshBtn">Actualiser</button>
-      </div>
-      <p class="hint" id="listHint">Chargement…</p>
-      <div id="clientsRoot" class="clients-root" hidden></div>
-    </section>
-  </main>
-
-  <dialog id="newDossierDialog" class="modal">
-    <form method="dialog" id="newDossierForm" class="modal-form">
-      <h3>Nouveau dossier</h3>
-      <p class="hint" id="newDossierClientLabel"></p>
-      <div class="grid two">
-        <label>Année
-          <input id="dossierYear" type="number" min="2000" max="2100" required />
-        </label>
-        <label>Mois
-          <select id="dossierMonth" required></select>
-        </label>
-      </div>
-      <p class="hint error" id="dossierError" hidden></p>
-      <div class="actions">
-        <button type="button" class="secondary" id="cancelDossierBtn">Annuler</button>
-        <button class="primary" type="submit">Créer le dossier</button>
+  <dialog id="newClientDialog" class="dash-modal">
+    <form method="dialog" id="newClientForm" class="dash-modal-inner dash-form">
+      <h3>Nouveau client</h3>
+      <p class="hint">Raison sociale et ICE de la société déclarante (15 chiffres).</p>
+      <label>Nom du client
+        <input id="clientName" type="text" required minlength="2" placeholder="Société ABC" />
+      </label>
+      <label>ICE
+        <input id="clientIce" type="text" required minlength="15" maxlength="15" inputmode="numeric" placeholder="003641228000030" />
+      </label>
+      <p class="dash-error" id="clientError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="cancelClientBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary">Créer le client</button>
       </div>
     </form>
   </dialog>
 
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth5";
+    import { createClient, requireCabinetSession } from "./dossiers-client.js?v=dash2";
     import {
-      createClient,
-      createDossier,
-      formatMonthLabel,
-      groupDossiersByYear,
-      listClientsWithDossiers,
-      MONTH_LABELS,
-      periodToMmaaaa,
-      requireCabinetSession,
-    } from "./dossiers-client.js?v=dossiers1";
+      bindSidebarMobile,
+      escapeHtml,
+      initLucide,
+      renderBadge,
+      renderPriorityBadge,
+      sidebarHtml,
+    } from "./dashboard-ui.js?v=portfolio1";
+    import {
+      computePortfolioKpis,
+      listPortfolioRows,
+      matchesPortfolioFilter,
+    } from "./portfolio-client.js?v=portfolio1";
 
-    const pageTitle = document.getElementById("pageTitle");
-    const pageSubtitle = document.getElementById("pageSubtitle");
-    const createClientForm = document.getElementById("createClientForm");
+    const portfolioRows = document.getElementById("portfolioRows");
+    const portfolioList = document.getElementById("portfolioList");
+    const listHint = document.getElementById("listHint");
+    const searchInput = document.getElementById("searchInput");
+    const sidebarMount = document.getElementById("sidebarMount");
+    const newClientDialog = document.getElementById("newClientDialog");
+    const newClientForm = document.getElementById("newClientForm");
     const clientName = document.getElementById("clientName");
     const clientIce = document.getElementById("clientIce");
     const clientError = document.getElementById("clientError");
-    const clientOk = document.getElementById("clientOk");
-    const listHint = document.getElementById("listHint");
-    const clientsRoot = document.getElementById("clientsRoot");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const signOutBtn = document.getElementById("signOutBtn");
-    const newDossierDialog = document.getElementById("newDossierDialog");
-    const newDossierForm = document.getElementById("newDossierForm");
-    const newDossierClientLabel = document.getElementById("newDossierClientLabel");
-    const dossierYear = document.getElementById("dossierYear");
-    const dossierMonth = document.getElementById("dossierMonth");
-    const dossierError = document.getElementById("dossierError");
-    const cancelDossierBtn = document.getElementById("cancelDossierBtn");
+
+    const FILTER_LABELS = {
+      all: "all",
+      priority: "priority",
+      late: "late",
+      validate: "validate",
+      done: "done",
+      mine: "mine",
+    };
 
     let cabinetId = null;
-    let pendingClient = null;
-
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      }[char]));
-    }
+    let userId = null;
+    let allRows = [];
+    let activeFilter = "all";
+    let searchQuery = "";
 
     function showClientError(message) {
       clientError.hidden = !message;
       clientError.textContent = message || "";
-      clientOk.hidden = true;
     }
 
-    function showClientOk(message) {
-      clientOk.hidden = !message;
-      clientOk.textContent = message || "";
-      clientError.hidden = true;
+    function openWorkspace(clientId) {
+      window.location.href = `workspace.html?client=${clientId}`;
     }
 
-    function showDossierError(message) {
-      dossierError.hidden = !message;
-      dossierError.textContent = message || "";
+    function matchesSearch(row) {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return row.name.toLowerCase().includes(q) || row.ice.includes(q);
     }
 
-    function fillMonthSelect() {
-      dossierMonth.innerHTML = MONTH_LABELS.map((label, index) => (
-        `<option value="${index + 1}">${label}</option>`
-      )).join("");
+    function countByFilter(filter) {
+      return allRows.filter((row) => matchesPortfolioFilter(row, filter, userId)).length;
     }
 
-    function openDossier(dossierId) {
-      window.location.href = `index.html?dossier=${dossierId}`;
+    function updateFilterCounts() {
+      for (const key of Object.values(FILTER_LABELS)) {
+        const el = document.querySelector(`[data-count="${key}"]`);
+        if (el) el.textContent = String(countByFilter(key));
+      }
     }
 
-    function renderClients(clients) {
-      if (!clients.length) {
+    function updateKpis(rows) {
+      const kpis = computePortfolioKpis(rows);
+      document.getElementById("kpiActive").textContent = String(kpis.activeClients);
+      document.getElementById("kpiPeriods").textContent = String(kpis.periodsInProgress);
+      document.getElementById("kpiExceptions").textContent = String(kpis.aiExceptions);
+      document.getElementById("kpiExports").textContent = String(kpis.exportsReady);
+      document.getElementById("kpiLate").textContent = String(kpis.tvaLate);
+
+      document.getElementById("kpiExceptionsWrap").classList.toggle("dash-kpi-warn", kpis.aiExceptions > 0);
+      document.getElementById("kpiLateWrap").classList.toggle("dash-kpi-alert", kpis.tvaLate > 0);
+    }
+
+    function priorityClass(row) {
+      const tone = row.priority?.tone || "neutral";
+      if (tone === "danger") return "priority-danger";
+      if (tone === "warn") return "priority-warn";
+      if (tone === "accent") return "priority-accent";
+      if (tone === "success") return "priority-success";
+      return "priority-neutral";
+    }
+
+    function renderRow(row) {
+      const progress = row.isDone ? 100 : row.progress;
+      const anomalyClass = row.anomalyCount > 0 ? "has-anomalies" : "";
+      const nextClass = row.nextAction?.action === "done" ? "is-muted" : "";
+      const periodText = row.periodLabel || "—";
+      const opsText = row.operationCount > 0 ? String(row.operationCount) : "—";
+      const anomalyText = row.anomalyCount > 0 ? String(row.anomalyCount) : "—";
+
+      return `
+        <article class="dash-portfolio-row ${priorityClass(row)}" data-client-id="${escapeHtml(row.clientId)}" tabindex="0">
+          <div class="dash-portfolio-row-accent" aria-hidden="true"></div>
+          <div class="dash-portfolio-client">
+            <strong class="dash-portfolio-name">${escapeHtml(row.name)}</strong>
+            <span class="dash-portfolio-ice">ICE ${escapeHtml(row.ice)}</span>
+          </div>
+          <div class="dash-portfolio-col period">${escapeHtml(periodText)}</div>
+          <div class="dash-portfolio-col progress">
+            <div class="dash-portfolio-progress">
+              <div class="dash-progress-track" aria-hidden="true">
+                <div class="dash-progress-fill" style="width:${progress}%"></div>
+              </div>
+              <span class="dash-progress-pct">${progress}%</span>
+            </div>
+          </div>
+          <div class="dash-portfolio-col ops">${opsText}</div>
+          <div class="dash-portfolio-col anomalies ${anomalyClass}">${anomalyText}</div>
+          <div class="dash-portfolio-col activity">${escapeHtml(row.lastActivityLabel)}</div>
+          <div class="dash-portfolio-col next">
+            <span class="dash-portfolio-next ${nextClass}">${escapeHtml(row.nextAction?.label || "—")}</span>
+          </div>
+          <div class="dash-portfolio-col status">
+            ${renderPriorityBadge(row.priority)}
+          </div>
+          <div class="dash-portfolio-col">
+            <button type="button" class="dash-btn dash-btn-sm dash-portfolio-open" data-open-client="${escapeHtml(row.clientId)}">
+              Ouvrir
+            </button>
+          </div>
+          <div class="dash-portfolio-row-mobile">
+            <span class="dash-portfolio-mobile-chip">${renderPriorityBadge(row.priority)}</span>
+            <span class="dash-portfolio-mobile-chip">Période <strong>${escapeHtml(periodText)}</strong></span>
+            <span class="dash-portfolio-mobile-chip">Progression <strong>${progress}%</strong></span>
+            <span class="dash-portfolio-mobile-chip">Ops <strong>${opsText}</strong></span>
+            <span class="dash-portfolio-mobile-chip ${row.anomalyCount > 0 ? "is-danger" : ""}">Anomalies <strong>${anomalyText}</strong></span>
+            <span class="dash-portfolio-mobile-chip">${escapeHtml(row.lastActivityLabel)}</span>
+            <span class="dash-portfolio-mobile-chip">→ <strong>${escapeHtml(row.nextAction?.label || "—")}</strong></span>
+            <span class="dash-portfolio-mobile-chip">${renderBadge(row.statusKey, row.statusLabel)}</span>
+          </div>
+        </article>
+      `;
+    }
+
+    function bindRowEvents() {
+      portfolioRows.querySelectorAll(".dash-portfolio-row").forEach((row) => {
+        const clientId = row.dataset.clientId;
+        row.addEventListener("click", (event) => {
+          if (event.target.closest("button")) return;
+          openWorkspace(clientId);
+        });
+        row.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openWorkspace(clientId);
+          }
+        });
+      });
+      portfolioRows.querySelectorAll("[data-open-client]").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          openWorkspace(btn.dataset.openClient);
+        });
+      });
+    }
+
+    function renderPortfolio() {
+      const filtered = allRows.filter((row) => {
+        return matchesPortfolioFilter(row, activeFilter, userId) && matchesSearch(row);
+      });
+
+      updateKpis(allRows);
+      updateFilterCounts();
+
+      if (!allRows.length) {
         listHint.hidden = false;
-        listHint.textContent = "Aucun client pour l'instant. Ajoutez votre premier client ci-dessus.";
-        clientsRoot.hidden = true;
+        listHint.querySelector("h3").textContent = "Aucun client";
+        listHint.querySelector("p").textContent = "Ajoutez votre premier client pour commencer le suivi TVA.";
+        portfolioList.hidden = true;
+        initLucide();
+        return;
+      }
+
+      if (!filtered.length) {
+        listHint.hidden = false;
+        listHint.querySelector("h3").textContent = "Aucun résultat";
+        listHint.querySelector("p").textContent = "Modifiez la recherche ou le filtre.";
+        portfolioList.hidden = true;
+        initLucide();
         return;
       }
 
       listHint.hidden = true;
-      clientsRoot.hidden = false;
-      clientsRoot.innerHTML = clients.map((client) => {
-        const years = groupDossiersByYear(client.dossiers);
-        const yearsHtml = years.length
-          ? years.map(({ year, dossiers }) => `
-              <div class="dossier-year">
-                <h4>${year}</h4>
-                <ul class="dossier-month-list">
-                  ${dossiers.map((d) => `
-                    <li>
-                      <button type="button" class="dossier-open-btn" data-dossier-id="${d.id}">
-                        ${escapeHtml(formatMonthLabel(d.period_month))}
-                        <span class="muted">(${escapeHtml(periodToMmaaaa(d.period_year, d.period_month))})</span>
-                      </button>
-                    </li>
-                  `).join("")}
-                </ul>
-              </div>
-            `).join("")
-          : `<p class="hint">Aucun dossier pour ce client.</p>`;
-
-        return `
-          <article class="client-card">
-            <div class="client-card-header">
-              <div>
-                <h3>${escapeHtml(client.name)}</h3>
-                <p class="hint">ICE ${escapeHtml(client.ice)}</p>
-              </div>
-              <button type="button" class="secondary small" data-client-id="${client.id}" data-client-name="${escapeHtml(client.name)}">
-                + Dossier
-              </button>
-            </div>
-            <div class="client-dossiers">${yearsHtml}</div>
-          </article>
-        `;
-      }).join("");
-
-      clientsRoot.querySelectorAll(".dossier-open-btn").forEach((btn) => {
-        btn.addEventListener("click", () => openDossier(btn.dataset.dossierId));
-      });
-      clientsRoot.querySelectorAll("[data-client-id]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          pendingClient = { id: Number(btn.dataset.clientId), name: btn.dataset.clientName };
-          newDossierClientLabel.textContent = `Client : ${pendingClient.name}`;
-          dossierYear.value = String(new Date().getFullYear());
-          dossierMonth.value = String(new Date().getMonth() + 1);
-          showDossierError("");
-          newDossierDialog.showModal();
-        });
-      });
+      portfolioList.hidden = false;
+      portfolioRows.innerHTML = filtered.map(renderRow).join("");
+      bindRowEvents();
+      initLucide();
     }
 
     async function refreshClients() {
-      listHint.hidden = false;
-      listHint.textContent = "Chargement…";
-      clientsRoot.hidden = true;
+      portfolioList.hidden = false;
+      portfolioRows.innerHTML = '<div class="dash-portfolio-loading">Chargement du portefeuille…</div>';
+      listHint.hidden = true;
+
       try {
-        const clients = await listClientsWithDossiers(cabinetId);
-        renderClients(clients);
+        allRows = await listPortfolioRows(cabinetId);
+        renderPortfolio();
       } catch (error) {
-        listHint.hidden = false;
-        listHint.textContent = error.message || "Impossible de charger les clients.";
+        portfolioRows.innerHTML = `<div class="dash-portfolio-loading">Erreur : ${escapeHtml(error.message || "chargement impossible")}</div>`;
       }
+    }
+
+    function openNewClientModal() {
+      showClientError("");
+      clientName.value = "";
+      clientIce.value = "";
+      newClientDialog.showModal();
+      clientName.focus();
     }
 
     const membership = await requireCabinetSession();
-    if (!membership) {
-      // redirect handled
-    } else {
+    if (membership) {
       cabinetId = membership.cabinet_id;
-      pageTitle.textContent = membership.cabinet.name;
-      pageSubtitle.textContent = "Organisez vos dossiers TVA par client, année et mois.";
-      fillMonthSelect();
+      userId = membership.session?.user?.id || null;
+      sidebarMount.innerHTML = sidebarHtml({
+        cabinetName: membership.cabinet.name,
+        active: "portfolio",
+      });
+      document.getElementById("topbarSubtitle").textContent =
+        `${membership.cabinet.name} — ${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}`;
+      bindSidebarMobile();
+      document.getElementById("signOutBtn")?.addEventListener("click", async () => {
+        await signOut();
+        window.location.href = "login.html";
+      });
       await refreshClients();
+      initLucide();
     }
 
-    createClientForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      showClientError("");
-      try {
-        await createClient(cabinetId, {
-          name: clientName.value,
-          ice: clientIce.value,
-        });
-        clientName.value = "";
-        clientIce.value = "";
-        showClientOk("Client ajouté.");
-        await refreshClients();
-      } catch (error) {
-        showClientError(error.message || "Erreur lors de la création du client.");
-      }
+    document.getElementById("openNewClientBtn").addEventListener("click", openNewClientModal);
+    document.getElementById("emptyNewClientBtn")?.addEventListener("click", openNewClientModal);
+    document.getElementById("cancelClientBtn").addEventListener("click", () => newClientDialog.close());
+    document.getElementById("refreshBtn").addEventListener("click", refreshClients);
+
+    searchInput.addEventListener("input", () => {
+      searchQuery = searchInput.value.trim();
+      renderPortfolio();
+    });
+
+    document.getElementById("statusFilters").addEventListener("click", (event) => {
+      const chip = event.target.closest("[data-filter]");
+      if (!chip) return;
+      activeFilter = chip.dataset.filter;
+      document.querySelectorAll("#statusFilters [data-filter]").forEach((el) => {
+        el.classList.toggle("active", el.dataset.filter === activeFilter);
+      });
+      renderPortfolio();
     });
 
     clientIce.addEventListener("input", () => {
       clientIce.value = clientIce.value.replace(/\D/g, "").slice(0, 15);
     });
 
-    newDossierForm.addEventListener("submit", async (event) => {
+    newClientForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!pendingClient) return;
-      showDossierError("");
+      showClientError("");
       try {
-        const dossier = await createDossier(pendingClient.id, {
-          year: dossierYear.value,
-          month: dossierMonth.value,
+        const created = await createClient(cabinetId, {
+          name: clientName.value,
+          ice: clientIce.value,
         });
-        newDossierDialog.close();
-        openDossier(dossier.id);
+        newClientDialog.close();
+        await refreshClients();
+        openWorkspace(created.id);
       } catch (error) {
-        showDossierError(error.message || "Erreur lors de la création du dossier.");
+        showClientError(error.message || "Impossible de créer le client.");
       }
-    });
-
-    cancelDossierBtn.addEventListener("click", () => newDossierDialog.close());
-    refreshBtn.addEventListener("click", refreshClients);
-    signOutBtn.addEventListener("click", async () => {
-      await signOut();
-      window.location.href = "login.html";
     });
   </script>
 </body>
