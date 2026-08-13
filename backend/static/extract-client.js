@@ -1396,41 +1396,58 @@ export function completeSupplierIdentifiers(lines) {
   return completed;
 }
 
-function duplicateSignature(line) {
+function duplicateSignatures(line) {
   const factNum = String(line.fact_num || "")
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
-  if (!factNum) return "";
-
   const ice = normalizeIceDigits(line.ice_frs);
   const supplier =
     ice ||
     String(line.lib_frss || "")
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, "");
-
   const ttc = Math.round((Number(line.m_ttc) || 0) * 100);
-  return `${supplier}|${factNum}|${Number(line.taux)}|${ttc}`;
+  const date = String(line.date_fac || "").slice(0, 10);
+  const source = String(line.source_file || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean)
+    .slice(-2)
+    .join("/")
+    .toLowerCase()
+    .replace(/[^a-z0-9./]/g, "");
+
+  const keys = [];
+  if (supplier && factNum) {
+    keys.push(`fact:${supplier}|${factNum}|${Number(line.taux)}|${ttc}`);
+  }
+  if (source && ttc !== 0) {
+    keys.push(`file:${source}|${ttc}`);
+  }
+  if (supplier && date && ttc) {
+    keys.push(`amt:${supplier}|${date}|${ttc}`);
+  }
+  return keys;
 }
 
 /**
- * Repère les lignes déjà présentes : même fournisseur, même numéro de facture,
- * même taux et même montant TTC. Couvre la facture scannée deux fois comme le
- * même fichier importé en double. Renvoie les indices des occurrences
- * surnuméraires — la première est toujours conservée.
+ * Repère les lignes déjà présentes : même fournisseur + n° facture, ou même
+ * fichier source + TTC, ou même fournisseur + date + TTC. La première
+ * occurrence est conservée ; les suivantes sont des doublons.
  */
 export function findDuplicateLineIndexes(lines) {
   const seen = new Map();
-  const duplicates = [];
+  const duplicates = new Set();
 
   (lines || []).forEach((line, index) => {
-    const signature = duplicateSignature(line);
-    if (!signature) return;
-    if (seen.has(signature)) duplicates.push(index);
-    else seen.set(signature, index);
+    for (const key of duplicateSignatures(line)) {
+      if (!key) continue;
+      if (seen.has(key)) duplicates.add(index);
+      else seen.set(key, index);
+    }
   });
 
-  return duplicates;
+  return [...duplicates].sort((a, b) => a - b);
 }
 
 export async function extractAllFiles(files, onProgress) {

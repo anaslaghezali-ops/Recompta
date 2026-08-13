@@ -11,7 +11,7 @@ import {
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
-} from "./extract-client.js";
+} from "./extract-client.js?v=dedupe1";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
@@ -663,26 +663,13 @@ function renderTable() {
     actionTd.appendChild(viewBtn);
 
     const deleteBtn = document.createElement("button");
-    deleteBtn.textContent = "✕";
-    deleteBtn.className = "delete-btn";
+    deleteBtn.type = "button";
+    deleteBtn.textContent = duplicates.has(index) ? "Supprimer le doublon" : "Supprimer";
+    deleteBtn.className = duplicates.has(index) ? "delete-btn delete-btn-dup" : "delete-btn";
     deleteBtn.title = "Supprimer cette ligne";
-    deleteBtn.addEventListener("click", () => {
-      state.lines.splice(index, 1);
-      if (state.selectedLineIndex === index) {
-        state.selectedLineIndex = state.lines.length ? Math.min(index, state.lines.length - 1) : null;
-        if (state.previewOpen) {
-          if (state.selectedLineIndex != null) {
-            showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
-          } else {
-            closeLinePreview();
-          }
-        }
-      } else if (state.selectedLineIndex != null && state.selectedLineIndex > index) {
-        state.selectedLineIndex -= 1;
-      }
-      renderTable();
-      updateButtons();
-      scheduleWorkspaceSave();
+    deleteBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteLineAt(index);
     });
     actionTd.appendChild(deleteBtn);
     tr.appendChild(actionTd);
@@ -1454,9 +1441,33 @@ function applyBankToLines() {
   else scheduleWorkspaceSave("bank_apply", "Rapprochement bancaire appliqué");
 }
 
+function deleteLineAt(index) {
+  if (index < 0 || index >= state.lines.length) return;
+  state.lines.splice(index, 1);
+  if (state.selectedLineIndex === index) {
+    state.selectedLineIndex = state.lines.length ? Math.min(index, state.lines.length - 1) : null;
+    if (state.previewOpen) {
+      if (state.selectedLineIndex != null) {
+        showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+      } else {
+        closeLinePreview();
+      }
+    }
+  } else if (state.selectedLineIndex != null && state.selectedLineIndex > index) {
+    state.selectedLineIndex -= 1;
+  }
+  renderTable();
+  updateButtons();
+  scheduleWorkspaceSave("delete_line", "Ligne supprimée");
+}
+
 function removeDuplicates() {
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));
   if (!duplicates.size) return;
+  const confirmed = window.confirm(
+    `Supprimer ${duplicates.size} ligne(s) en double ?\nLa première occurrence de chaque facture est conservée.`,
+  );
+  if (!confirmed) return;
 
   state.lines = state.lines.filter((_line, index) => !duplicates.has(index));
   if (state.selectedLineIndex != null && duplicates.has(state.selectedLineIndex)) {

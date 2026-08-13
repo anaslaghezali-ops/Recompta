@@ -602,6 +602,15 @@ button.loading .btn-label { opacity: 0.8; }
   color: var(--danger);
 }
 
+button.danger {
+  background: #b42318;
+  color: #fff;
+}
+
+button.danger:hover {
+  filter: brightness(1.05);
+}
+
 tr.duplicate-row {
   background: #fff6f6;
 }
@@ -905,7 +914,11 @@ td:nth-child(13) select { max-width: 3.5rem; }
   background: #fde8e8;
   color: var(--danger);
   padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+}
+
+.delete-btn-dup {
+  font-weight: 700;
 }
 
 td input.inferred,
