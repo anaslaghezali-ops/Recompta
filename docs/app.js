@@ -51,7 +51,7 @@ import {
   isSuperAdmin,
   isSupabaseConfigured,
   signOut,
-} from "./auth-client.js";
+} from "./auth-client.js?v=auth3";
 
 const state = {
   files: [],

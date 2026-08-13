@@ -1,4 +1,5 @@
-/** Unique fichier de config frontend. GitHub Pages et uvicorn lisent `docs/`. */
+/** Bump when la clé anon change (évite le cache navigateur sur GitHub Pages). */
+export const SUPABASE_CONFIG_VERSION = "pbyoxfxngfutoiqjirkx-1";
 export const SUPABASE_URL = "https://pbyoxfxngfutoiqjirkx.supabase.co";
 
 /**

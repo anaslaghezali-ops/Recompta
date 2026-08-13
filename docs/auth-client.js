@@ -1,5 +1,5 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.86.0/+esm";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase-config.js";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase-config.js?v=pbyoxfxngfutoiqjirkx-1";
 
 let client = null;
 
@@ -13,7 +13,7 @@ export function isSupabaseConfigured() {
 export function authErrorMessage(error) {
   const message = error?.message || "Échec de la connexion.";
   if (/invalid api key/i.test(message)) {
-    return "Clé API invalide. Utilisez la clé anon du projet Recompta (URL pbyoxfxngfutoiqjirkx.supabase.co), collée dans docs/supabase-config.js — pas la clé d'un autre projet.";
+    return "Clé API refusée (souvent un ancien fichier en cache). Faites Ctrl+Shift+R. La clé dans docs/supabase-config.js doit être celle du projet pbyoxfxngfutoiqjirkx.";
   }
   return message;
 }
