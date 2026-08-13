@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=workspace1" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs3" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -43,6 +43,15 @@
         <div class="ws-period-bar" id="periodBar" hidden>
           <label for="periodSelect">Période active</label>
           <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période"></select>
+        </div>
+
+        <div class="ws-import-banner" id="importBanner" hidden>
+          <i data-lucide="loader-circle"></i>
+          <div class="ws-import-banner-text">
+            <strong id="importBannerTitle">Import en cours</strong>
+            <p id="importBannerText">—</p>
+          </div>
+          <a href="#" id="importBannerLink" class="dash-btn dash-btn-sm">Voir l'import</a>
         </div>
 
         <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
@@ -186,6 +195,11 @@
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
     import { listClientActivity } from "./dossier-persistence.js?v=persist1";
+    import {
+      formatActiveImportLabel,
+      JOB_STATUS_LABELS,
+      listImportJobs,
+    } from "./import-jobs-client.js?v=jobs2";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
@@ -218,10 +232,62 @@
     let selectedYear = new Date().getFullYear();
     let selectedDossierId = null;
     let activeTab = "cockpit";
+    let importPollTimer = null;
+    let hadActiveImport = false;
 
     function showPeriodError(message) {
       periodError.hidden = !message;
       periodError.textContent = message || "";
+    }
+
+    async function renderImportBanner() {
+      const banner = document.getElementById("importBanner");
+      if (!selectedDossierId) {
+        banner.hidden = true;
+        return;
+      }
+
+      let jobs = [];
+      try {
+        jobs = await listImportJobs(selectedDossierId, { limit: 1, activeOnly: true });
+      } catch {
+        banner.hidden = true;
+        return;
+      }
+
+      const job = jobs[0];
+      if (!job) {
+        if (hadActiveImport) {
+          hadActiveImport = false;
+          await reloadCockpit(selectedDossierId);
+        }
+        banner.hidden = true;
+        stopImportPolling();
+        return;
+      }
+
+      hadActiveImport = true;
+      banner.hidden = false;
+      document.getElementById("importBannerTitle").textContent =
+        JOB_STATUS_LABELS[job.status] || "Import en cours";
+      document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
+      document.getElementById("importBannerLink").href =
+        `import-achats.html?dossier=${selectedDossierId}`;
+      startImportPolling();
+      initLucide();
+    }
+
+    function startImportPolling() {
+      if (importPollTimer) return;
+      importPollTimer = setInterval(() => {
+        renderImportBanner().catch(() => {});
+      }, 8000);
+    }
+
+    function stopImportPolling() {
+      if (!importPollTimer) return;
+      clearInterval(importPollTimer);
+      importPollTimer = null;
     }
 
     function openDossierTool(dossierId, href) {
@@ -508,6 +574,7 @@
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
       await renderTimeline();
+      await renderImportBanner();
     }
 
     function openNewPeriodModal(presetMonth) {

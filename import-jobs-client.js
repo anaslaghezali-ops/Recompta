@@ -86,6 +86,46 @@ export function jobProgressPercent(job) {
   return 0;
 }
 
+export function formatActiveImportLabel(job) {
+  if (!job) return "";
+  const progress = jobProgressPercent(job);
+  const status = JOB_STATUS_LABELS[job.status] || job.status;
+  const counts = `${job.processed_files || 0}/${job.total_files || 0}`;
+  if (job.status === "processing" || job.status === "uploading") {
+    return `Import ${progress}% · ${counts} fichiers`;
+  }
+  if (job.status === "queued") {
+    return `Import en attente · ${job.total_files || 0} fichier(s)`;
+  }
+  return `Import · ${status}`;
+}
+
+export async function fetchActiveImportMap(dossierIds) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierIds?.length) return new Map();
+
+  const { data, error } = await supabase
+    .from("import_jobs")
+    .select(
+      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at, updated_at",
+    )
+    .in("dossier_id", dossierIds)
+    .in("status", ["uploading", "queued", "processing"])
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const map = new Map();
+  for (const job of data || []) {
+    if (!map.has(job.dossier_id)) map.set(job.dossier_id, job);
+  }
+  return map;
+}
+
+export function countActiveImportJobs(importMap) {
+  return importMap?.size || 0;
+}
+
 /**
  * Étape 1 : prépare le lot, envoie les fichiers vers Storage, passe le job en `queued`.
  * Le traitement IA se fera côté worker (étape 2).
