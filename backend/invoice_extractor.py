@@ -23,6 +23,13 @@ MOROCCAN_DATE_PATTERNS = [
 ICE_PATTERN = re.compile(r"\bI\.?C\.?E\.?\s*[:\s]*(\d{15})\b", re.I)
 IF_PATTERN = re.compile(r"\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*[:\s-]*([0-9A-Za-z]+)", re.I)
 IF_FOOTER_PATTERN = re.compile(r"\bF\s+(\d{6,9})\b")
+# Identifiants légaux marocains à ne jamais confondre avec l'IF.
+OTHER_LEGAL_IDS_PATTERNS = (
+    re.compile(r"\b(?:R\.?\s?C\.?|Registre\s+de\s+commerce)\s*[:\s.]*(\d{3,10})\b", re.I),
+    re.compile(r"\bPATENTE\s*[:\s.]*(\d{5,12})", re.I),
+    re.compile(r"\bCNSS\s*[:\s.]*(\d{5,12})", re.I),
+    re.compile(r"\bCAPITAL[^\n]*?(\d[\d .,]{4,})", re.I),
+)
 AMOUNT_PATTERN = re.compile(r"(\d{1,3}(?:[ \u00a0.,]\d{3})*(?:[.,]\d{2})?)")
 INVOICE_NUM_PATTERN = re.compile(
     r"(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N[°o\.]?|:)?\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})",
@@ -297,6 +304,43 @@ def _extract_supplier_if(text: str) -> str:
     if footer:
         return footer.group(1).strip()
     return ""
+
+
+def other_legal_ids(text: str) -> set[str]:
+    """Numéros R.C., patente, CNSS, capital : jamais des identifiants fiscaux."""
+    found: set[str] = set()
+    for pattern in OTHER_LEGAL_IDS_PATTERNS:
+        for match in pattern.finditer(text):
+            digits = re.sub(r"\D", "", match.group(1))
+            if digits:
+                found.add(digits)
+    return found
+
+
+def reconcile_supplier_if(result: ExtractionResult, text: str) -> ExtractionResult:
+    """Remplace un IF qui est en fait le R.C. / la patente / le CNSS du fournisseur."""
+    if not text.strip():
+        return result
+
+    correct_if = _extract_supplier_if(text)
+    if not correct_if:
+        return result
+
+    wrong_ids = other_legal_ids(text)
+    corrected = False
+    for line in result.lines:
+        current = re.sub(r"\D", "", line.if_fournisseur or "")
+        if current == correct_if:
+            continue
+        if not current or current in wrong_ids:
+            line.if_fournisseur = correct_if
+            corrected = True
+
+    if corrected:
+        result.warnings.append(
+            f"IF corrigé depuis le pied de page du document ({correct_if})."
+        )
+    return result
 
 
 def _extract_invoice_number(text: str, filename: str) -> str:
@@ -581,7 +625,12 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
 ## Champs
 
 - ICE fournisseur = 15 chiffres (pied de page légal, PAS l'ICE client en en-tête)
-- IF = identifiant fiscal fournisseur
+- IF = Identifiant Fiscal, 6 à 9 chiffres, noté « IF », « I.F. » ou « IF: ».
+  NE JAMAIS y mettre le R.C. (registre de commerce), la PATENTE, le CNSS,
+  le capital social ni l'ICE : ce sont des numéros différents.
+  Un scan peut couper le libellé (« ...PATENTE:35891529I. » puis « F 14427958 »
+  signifie PATENTE = 35891529 et IF = 14427958).
+  Si aucun IF n'est identifiable avec certitude, renvoie une chaîne vide.
 - designation : EXACTEMENT une de : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
 - id_paie : 1 (comptant) ou 4 (virement) — défaut 4
 - AVOIR : montants HT, TVA et TTC négatifs
@@ -782,6 +831,8 @@ async def _supplement_ttc_ventilation(
 
     if text.strip():
         result.raw_text = text[:4000]
+
+    result = reconcile_supplier_if(result, text)
 
     ventilation = extract_vat_lines_from_text(text)
     if ventilation and result.lines:
