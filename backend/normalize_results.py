@@ -4,6 +4,7 @@ from collections import defaultdict
 from contextvars import ContextVar
 from pathlib import PurePosixPath
 import re
+import unicodedata
 
 from models import ExtractionResult, InvoiceLine
 from vat_intelligence import apply_vat_reconciliation
@@ -53,6 +54,55 @@ def supplier_hint_from_path(filename: str) -> dict[str, str] | None:
         return None
     label = " ".join(word.capitalize() for word in re.split(r"[\s_-]+", key) if word)
     return {"lib_frss": label} if label else None
+
+
+LEGAL_FORM_TOKENS = {
+    "SARL", "SARLAU", "SA", "SAS", "SASU", "SNC", "SCS", "STE", "SOCIETE", "AU", "EURL",
+}
+
+
+def supplier_name_key(name: str) -> str:
+    """« EAT MEAT », « EATMEAT SARL » et « EATMEAT » désignent la même société."""
+    text = unicodedata.normalize("NFD", str(name or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"[.'’]", "", text).upper()
+    tokens = [t for t in re.split(r"[^A-Z0-9]+", text) if t and t not in LEGAL_FORM_TOKENS]
+    return "".join(tokens)
+
+
+def complete_supplier_identifiers(lines: list[InvoiceLine]) -> int:
+    """Complète ICE et IF manquants depuis les autres factures du fournisseur."""
+    by_supplier: dict[str, dict[str, list[str]]] = defaultdict(lambda: {"ices": [], "ifs": []})
+    if_by_ice: dict[str, list[str]] = defaultdict(list)
+
+    for line in lines:
+        key = supplier_name_key(line.lib_frss)
+        ice = normalize_ice_digits(line.ice_frs)
+        fiscal = re.sub(r"\D", "", line.if_fournisseur or "")
+        if key:
+            if ice and not is_excluded_ice(ice):
+                by_supplier[key]["ices"].append(ice)
+            if fiscal:
+                by_supplier[key]["ifs"].append(fiscal)
+        if ice and fiscal:
+            if_by_ice[ice].append(fiscal)
+
+    completed = 0
+    for line in lines:
+        group = by_supplier.get(supplier_name_key(line.lib_frss))
+
+        if not normalize_ice_digits(line.ice_frs) and group and group["ices"]:
+            line.ice_frs = pick_most_common(group["ices"])
+            completed += 1
+
+        if not (line.if_fournisseur or "").strip():
+            ice = normalize_ice_digits(line.ice_frs)
+            candidates = if_by_ice.get(ice) or (group["ifs"] if group else [])
+            if candidates:
+                line.if_fournisseur = pick_most_common(candidates)
+                completed += 1
+
+    return completed
 
 
 def normalize_ice_digits(value: str) -> str:
@@ -169,9 +219,11 @@ def normalize_extraction_results(
 
     groups: dict[str, dict] = defaultdict(lambda: {"filenames": [], "lines": [], "ices": [], "ifs": []})
     for result in normalized:
-        group_key = folder_key(result.filename) or (
-            (result.lines[0].lib_frss if result.lines else "") or "unknown"
-        ).upper()
+        group_key = (
+            folder_key(result.filename)
+            or supplier_name_key(result.lines[0].lib_frss if result.lines else "")
+            or "unknown"
+        )
         bucket = groups[group_key]
         bucket["filenames"].append(result.filename)
         for line in result.lines:
@@ -196,5 +248,7 @@ def normalize_extraction_results(
                 line.ice_frs = best_ice
             if best_if and not line.if_fournisseur:
                 line.if_fournisseur = best_if
+
+    complete_supplier_identifiers([line for item in normalized for line in item.lines])
 
     return normalized

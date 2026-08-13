@@ -1,4 +1,5 @@
 import {
+  completeSupplierIdentifiers,
   expandUploadedFilesToFiles,
   extractAllFiles,
   findDuplicateLineIndexes,
@@ -520,6 +521,10 @@ async function extractFiles() {
       }
     });
 
+    // Sur l'ensemble du tableau, imports précédents compris : une facture sans
+    // ICE reprend celui déjà confirmé pour ce fournisseur.
+    const completedIds = completeSupplierIdentifiers(state.lines);
+
     state.files = [];
     renderFileList();
     renderTable();
@@ -530,6 +535,7 @@ async function extractFiles() {
     const aiFiles = results.filter((result) => result.engine === "ai").length;
     if (aiFiles) msg += ` ${aiFiles} via IA.`;
     if (warnFiles) msg += ` ${warnFiles} fichier(s) sans résultat.`;
+    if (completedIds) msg += ` ${completedIds} ICE/IF complété(s) depuis d'autres factures.`;
 
     const duplicateCount = findDuplicateLineIndexes(state.lines).length;
     if (duplicateCount) {

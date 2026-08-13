@@ -599,7 +599,8 @@ export function normalizeExtractionResults(results) {
 
   const groups = new Map();
   for (const result of normalized) {
-    const groupKey = folderKey(result.filename) || (result.lines[0]?.lib_frss || "unknown").toUpperCase();
+    const groupKey =
+      folderKey(result.filename) || supplierNameKey(result.lines[0]?.lib_frss) || "unknown";
     if (!groups.has(groupKey)) {
       groups.set(groupKey, { filenames: [], lines: [], ices: [], ifs: [] });
     }
@@ -628,6 +629,10 @@ export function normalizeExtractionResults(results) {
       if (bestIf && !line.if) line.if = bestIf;
     }
   }
+
+  // Dernier passage, tous fichiers confondus : une facture sans ICE hérite de
+  // celui des autres factures du même fournisseur.
+  completeSupplierIdentifiers(normalized.flatMap((result) => result.lines));
 
   return normalized;
 }
@@ -1141,6 +1146,75 @@ export async function expandUploadedFilesToFiles(files) {
   return expanded.map(
     (item) => new File([item.content], item.filename, { type: item.mime }),
   );
+}
+
+const LEGAL_FORM_TOKENS = new Set([
+  "SARL", "SARLAU", "SA", "SAS", "SASU", "SNC", "SCS", "STE", "SOCIETE", "AU", "EURL",
+]);
+
+/**
+ * Clé de fournisseur tolérante aux variations de saisie : « EAT MEAT »,
+ * « EATMEAT SARL » et « EATMEAT » désignent la même société.
+ */
+export function supplierNameKey(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[.'']/g, "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter((token) => token && !LEGAL_FORM_TOKENS.has(token))
+    .join("");
+}
+
+/**
+ * Complète l'ICE et l'IF manquants à partir des autres factures du même
+ * fournisseur : une facture mal lue hérite des identifiants déjà confirmés
+ * ailleurs. Renvoie le nombre de champs complétés.
+ */
+export function completeSupplierIdentifiers(lines) {
+  const bySupplier = new Map();
+  const ifByIce = new Map();
+
+  const push = (map, key, value) => {
+    if (!key || !value) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(value);
+  };
+
+  for (const line of lines || []) {
+    const key = supplierNameKey(line.lib_frss);
+    const ice = normalizeIceDigits(line.ice_frs);
+    const fiscal = String(line.if || "").replace(/\D/g, "");
+
+    if (key) {
+      if (!bySupplier.has(key)) bySupplier.set(key, { ices: [], ifs: [] });
+      if (ice && !isExcludedIce(ice)) bySupplier.get(key).ices.push(ice);
+      if (fiscal) bySupplier.get(key).ifs.push(fiscal);
+    }
+    if (ice && fiscal) push(ifByIce, ice, fiscal);
+  }
+
+  let completed = 0;
+  for (const line of lines || []) {
+    const group = bySupplier.get(supplierNameKey(line.lib_frss));
+
+    if (!normalizeIceDigits(line.ice_frs) && group?.ices.length) {
+      line.ice_frs = pickMostCommon(group.ices);
+      completed += 1;
+    }
+
+    if (!String(line.if || "").trim()) {
+      const ice = normalizeIceDigits(line.ice_frs);
+      const candidates = (ice && ifByIce.get(ice)) || group?.ifs || [];
+      if (candidates.length) {
+        line.if = pickMostCommon(candidates);
+        completed += 1;
+      }
+    }
+  }
+
+  return completed;
 }
 
 function duplicateSignature(line) {
