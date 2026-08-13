@@ -227,7 +227,7 @@
       downloadDossierDocument,
       groupDocumentsBySupplier,
       listDossierDocuments,
-    } from "./dossier-documents.js?v=doc2";
+    } from "./dossier-documents.js?v=doc3";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -240,7 +240,7 @@
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs10";
     import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace3";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -633,7 +633,7 @@
       const quickActions = [
         { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
         { icon: "file-input", label: "Achats", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}&view=anomalies` : null },
         { icon: "file-spreadsheet", label: "Export TVA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
         { icon: "folder-open", label: "Documents", action: "documents" },
       ];

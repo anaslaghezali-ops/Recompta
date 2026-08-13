@@ -101,7 +101,7 @@
       <ul id="warningList" class="warning-list" hidden></ul>
     </section>
 
-    <section class="card">
+    <section class="card" id="reviewSection">
       <div class="section-header">
         <h2>Lignes extraites</h2>
         <div class="badges">
@@ -114,6 +114,7 @@
           </button>
         </div>
       </div>
+      <p id="anomalyViewHint" class="hint" hidden>Mode correction : seules les lignes à relire (orange/rouge) et les doublons sont affichées. Modifiez les cellules puis l'enregistrement se fait automatiquement.</p>
       <p class="hint">Cliquez <strong>Voir</strong> pour afficher une facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau. En modifiant <strong>Fournisseur</strong>, <strong>ICE</strong> ou <strong>IF</strong>, vous pouvez appliquer la correction à toutes les lignes qui avaient la même valeur.</p>
       <div id="emptyState" class="empty-state">
         <p>Aucune ligne pour l'instant.</p>
@@ -277,6 +278,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js?v=auth1"></script>
+  <script type="module" src="app.js?v=review1"></script>
 </body>
 </html>

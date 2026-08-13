@@ -91,7 +91,7 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey 
   if (anomalyCount > 0) {
     return {
       label: `Corriger ${anomalyCount} anomalie${anomalyCount > 1 ? "s" : ""}`,
-      href: `import-achats.html?dossier=${dossier.id}`,
+      href: `production.html?dossier=${dossier.id}&view=anomalies`,
       action: "fix",
     };
   }
@@ -104,7 +104,7 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey 
   }
   return {
     label: "Poursuivre la production",
-      href: `import-achats.html?dossier=${dossier.id}`,
+      href: `production.html?dossier=${dossier.id}`,
       action: "continue",
   };
 }

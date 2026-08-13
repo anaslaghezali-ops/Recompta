@@ -294,11 +294,15 @@ async def upload_import_job_file(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    try:
-        await process_pending_import_jobs(max_jobs=3)
-    except Exception:  # noqa: BLE001
-        pass
+    async def kick_worker() -> None:
+        try:
+            await process_pending_import_jobs(max_jobs=3)
+        except Exception:  # noqa: BLE001
+            import traceback
 
+            traceback.print_exc()
+
+    asyncio.create_task(kick_worker())
     return {"job": job}
 
 
