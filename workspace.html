@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=docs2" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs4" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -234,9 +234,10 @@
       jobProgressPercent,
       JOB_STATUS_LABELS,
       listImportJobs,
+      reconcileStaleImportJobs,
       showImportCompletionToast,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs6";
+    } from "./import-jobs-client.js?v=jobs8";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
@@ -298,6 +299,7 @@
 
       const job = jobs[0];
       if (!job) {
+        activeImportJob = null;
         if (hadActiveImport) {
           hadActiveImport = false;
           await reloadCockpit(selectedDossierId);
@@ -739,6 +741,14 @@
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
       await renderTimeline();
+      const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
+      if (dossierIds.length) {
+        try {
+          await reconcileStaleImportJobs(dossierIds);
+        } catch {
+          /* ignore cleanup errors */
+        }
+      }
       await renderImportBanner();
       if (activeTab === "documents") await renderDocuments();
     }
