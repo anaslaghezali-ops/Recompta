@@ -13,7 +13,7 @@ export function isSupabaseConfigured() {
 export function authErrorMessage(error) {
   const message = error?.message || "Échec de la connexion.";
   if (/invalid api key/i.test(message)) {
-    return "Clé API invalide. Collez la clé anon du projet Recompta dans docs/supabase-config.js (Settings → API Keys), puis attendez le déploiement GitHub Pages.";
+    return "Clé API invalide. Utilisez la clé anon du projet Recompta (URL pbyoxfxngfutoiqjirkx.supabase.co), collée dans docs/supabase-config.js — pas la clé d'un autre projet.";
   }
   return message;
 }
