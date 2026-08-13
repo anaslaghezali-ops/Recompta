@@ -262,6 +262,15 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
         resolve(body);
         return;
       }
+      if (xhr.status === 405 || xhr.status === 404) {
+        const error = new Error(
+          "Backend Codespace pas à jour : dans le terminal, git pull origin main puis redémarrez uvicorn.",
+        );
+        error.code = "UPLOAD_ROUTE_MISSING";
+        error.status = xhr.status;
+        reject(error);
+        return;
+      }
       const detail = body.detail || xhr.responseText || `Erreur serveur (${xhr.status})`;
       reject(new Error(detail));
     });

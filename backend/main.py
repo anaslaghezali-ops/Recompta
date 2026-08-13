@@ -331,6 +331,11 @@ async def preview_filename(client_name: str = Form(...), period: str = Form(...)
     return {"filename": export_filename(client_name, period)}
 
 
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def unknown_api_route(path: str) -> None:
+    raise HTTPException(status_code=404, detail=f"Route API inconnue : /api/{path}")
+
+
 # Un seul frontend : docs/ (GitHub Pages + uvicorn). Évite 3 copies de supabase-config.js.
 _docs_dir = Path(__file__).resolve().parent.parent / "docs"
 app.mount("/", StaticFiles(directory=str(_docs_dir), html=True), name="static")

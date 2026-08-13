@@ -1,6 +1,6 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { isInvoiceFile, isZipFile } from "./extract-client.js";
-import { uploadImportJobFile } from "./api-client.js";
+import { uploadImportJobFile } from "./api-client.js?v=api2";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
 
@@ -509,12 +509,18 @@ async function createUploadingInvoiceJob(dossierId, options, createdBy) {
   return job;
 }
 
-async function uploadInvoiceJobViaServer(apiUrl, jobId, file, { onProgress, onFileQueued } = {}) {
-  const result = await uploadImportJobFile(apiUrl, jobId, file, {
-    onProgress,
-  });
-  await onFileQueued?.(jobId);
-  return result.job || (await getImportJob(jobId));
+async function uploadInvoiceJobViaServer(apiUrl, jobId, file, { onProgress, onFileQueued, dossierId } = {}) {
+  try {
+    const result = await uploadImportJobFile(apiUrl, jobId, file, { onProgress });
+    await onFileQueued?.(jobId);
+    return result.job || (await getImportJob(jobId));
+  } catch (error) {
+    if (error?.code !== "UPLOAD_ROUTE_MISSING" || !dossierId) throw error;
+    onProgress?.("Route serveur absente — envoi direct vers la plateforme…", 20);
+    const job = await getImportJob(jobId);
+    if (!job) throw error;
+    return uploadInvoiceJobViaClient(dossierId, job, file, { onFileQueued });
+  }
 }
 
 async function uploadInvoiceJobViaClient(dossierId, job, file, { onFileQueued } = {}) {
@@ -588,7 +594,7 @@ async function runInvoiceUploadBatch({
         12 + Math.round((index / total) * 8),
       );
       const uploadedJob = apiUrl
-        ? await uploadInvoiceJobViaServer(apiUrl, job.id, file, { onProgress, onFileQueued })
+        ? await uploadInvoiceJobViaServer(apiUrl, job.id, file, { onProgress, onFileQueued, dossierId })
         : await uploadInvoiceJobViaClient(dossierId, job, file, { onFileQueued });
       jobs.push(uploadedJob);
     } catch (error) {
@@ -664,6 +670,7 @@ export async function startInvoiceImportUpload({
           const uploadedJob = await uploadInvoiceJobViaServer(apiUrl, job.id, file, {
             onProgress,
             onFileQueued,
+            dossierId,
           });
           jobs.push(uploadedJob);
         } catch (error) {
@@ -770,6 +777,7 @@ export async function queueBankImport({
     const uploaded = await uploadInvoiceJobViaServer(apiUrl, job.id, file, {
       onProgress,
       onFileQueued,
+      dossierId,
     });
     onProgress?.("Relevé en file d'attente. Le serveur analyse le fichier — vous pouvez quitter cette page.", 100);
     return { job: uploaded, uploaded: 1 };
@@ -872,6 +880,7 @@ export async function startBankImportUpload({
       const uploaded = await uploadInvoiceJobViaServer(apiUrl, job.id, file, {
         onProgress,
         onFileQueued,
+        dossierId,
       });
       onProgress?.(
         "Envoi terminé. Le serveur analyse le relevé — vous pouvez quitter cette page.",
