@@ -639,7 +639,7 @@ def _heuristic_extract_single(filename: str, text: str) -> ExtractionResult:
                         "ice_frs": ice_match,
                         "taux": item["taux"],
                         "id_paie": 4,
-                        "date_paie": invoice_date,
+                        "date_paie": None,
                         "date_fac": invoice_date,
                     },
                 )
@@ -664,7 +664,7 @@ def _heuristic_extract_single(filename: str, text: str) -> ExtractionResult:
                         "ice_frs": ice_match,
                         "taux": taux,
                         "id_paie": 4,
-                        "date_paie": invoice_date,
+                        "date_paie": None,
                         "date_fac": invoice_date,
                     },
                 )
@@ -705,7 +705,7 @@ def _heuristic_extract_single(filename: str, text: str) -> ExtractionResult:
                     "ice_frs": ice_match,
                     "taux": taux,
                     "id_paie": 4,
-                    "date_paie": invoice_date,
+                    "date_paie": None,
                     "date_fac": invoice_date,
                 },
             )
@@ -763,6 +763,9 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
   Si aucun IF n'est identifiable avec certitude, renvoie une chaîne vide.
 - designation : EXACTEMENT une de : "MATIERES CONSOMMABLES", "PRESTATIONS", "TELEPHONIE", "FRAIS BANCAIRE"
 - id_paie : 1 (comptant) ou 4 (virement) — défaut 4
+- date_fac : date d'émission de la facture
+- date_paie : TOUJOURS null. Une facture ne prouve pas son paiement ; cette
+  date est renseignée plus tard par rapprochement avec le relevé bancaire.
 - AVOIR : montants HT, TVA et TTC négatifs
 - Dates : YYYY-MM-DD
 
@@ -784,7 +787,7 @@ Inclus un champ "verification" listant ton contrôle mathématique par ligne (ex
       "ice_frs": "...",
       "taux": 0.2,
       "id_paie": 4,
-      "date_paie": "2026-06-13",
+      "date_paie": null,
       "date_fac": "2026-06-13"
     }
   ],

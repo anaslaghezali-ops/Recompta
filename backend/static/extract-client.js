@@ -620,6 +620,8 @@ export function normalizeExtractionResults(results) {
 
     for (const line of group.lines) {
       line.designation = normalizeDesignation(line.designation);
+      // Renseignée uniquement par le rapprochement bancaire.
+      line.date_paie = "";
       if (!line.lib_frss && bestName) line.lib_frss = bestName;
       if (!line.lib_frss && pathHint?.lib_frss) line.lib_frss = pathHint.lib_frss;
       if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) line.ice_frs = bestIce;
@@ -911,7 +913,7 @@ function heuristicExtract(filename, text) {
     ice_frs: ice,
     taux: 0.2,
     id_paie: 4,
-    date_paie: invoiceDate,
+    date_paie: "",
     date_fac: invoiceDate,
     ...overrides,
   });

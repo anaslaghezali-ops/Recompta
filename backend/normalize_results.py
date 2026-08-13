@@ -160,6 +160,10 @@ def normalize_extraction_results(
         item = apply_avoir_signs(result.model_copy(deep=True))
         item = apply_vat_reconciliation(item)
         item.lines = consolidate_lines(item.lines)
+        # La date de paiement ne vient que du relevé bancaire : une facture ne
+        # prouve pas son règlement, même si l'IA propose une date.
+        for line in item.lines:
+            line.date_paie = None
         item.warnings = list(dict.fromkeys(item.warnings))
         normalized.append(item)
 
