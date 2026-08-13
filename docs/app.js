@@ -1,7 +1,11 @@
 import {
+  applyFieldValueBulk,
+  BULK_EDIT_FIELDS,
   completeSupplierIdentifiers,
+  countLinesWithFieldValue,
   expandUploadedFiles,
   extractInvoice,
+  fieldValuesMatch,
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
@@ -110,6 +114,10 @@ const els = {
   exportReviewIntro: document.getElementById("exportReviewIntro"),
   exportReviewList: document.getElementById("exportReviewList"),
   exportReviewConfirm: document.getElementById("exportReviewConfirm"),
+  fieldBulkDialog: document.getElementById("fieldBulkDialog"),
+  fieldBulkTitle: document.getElementById("fieldBulkTitle"),
+  fieldBulkIntro: document.getElementById("fieldBulkIntro"),
+  fieldBulkApplyAll: document.getElementById("fieldBulkApplyAll"),
 };
 
 const previewUi = {
@@ -132,6 +140,33 @@ const previewUi = {
   canvas: els.previewCanvas,
   image: els.previewImage,
 };
+
+let pendingFieldBulk = null;
+
+function openFieldBulkDialog(fieldKey, oldValue, newValue, otherCount) {
+  const label = BULK_EDIT_FIELDS[fieldKey] || fieldKey;
+  pendingFieldBulk = { fieldKey, oldValue, newValue };
+  els.fieldBulkTitle.textContent = `${label} modifié`;
+  els.fieldBulkIntro.textContent =
+    `Remplacer « ${oldValue} » par « ${newValue} » pour le champ ${label} sur ${otherCount} autre(s) ligne(s) ?`;
+  els.fieldBulkDialog.showModal();
+}
+
+function applyPendingFieldBulk() {
+  if (!pendingFieldBulk) return 0;
+  const { fieldKey, oldValue, newValue } = pendingFieldBulk;
+  const updated = applyFieldValueBulk(state.lines, fieldKey, oldValue, newValue);
+  for (const line of updated) markFieldVerified(line, fieldKey);
+  pendingFieldBulk = null;
+  els.fieldBulkDialog.close();
+  return updated.length;
+}
+
+function maybeOfferFieldBulk(fieldKey, oldValue, newValue, lineIndex) {
+  if (!oldValue || !newValue || fieldValuesMatch(fieldKey, oldValue, newValue)) return;
+  const others = countLinesWithFieldValue(state.lines, fieldKey, oldValue, lineIndex);
+  if (others > 0) openFieldBulkDialog(fieldKey, oldValue, newValue, others);
+}
 
 function syncPreviewLayout() {
   const open = state.lines.length > 0 && state.previewOpen;
@@ -372,20 +407,41 @@ function renderTable() {
       }
 
       if (!field.readonly) {
+        if (field.key in BULK_EDIT_FIELDS) {
+          input.addEventListener("focus", () => {
+            input.dataset.prevValue = line[field.key] ?? "";
+          });
+        }
         input.addEventListener("change", () => {
+          let oldValue = "";
+          let newValue = "";
+
           if (field.type === "number") {
             line[field.key] = Number(input.value) || 0;
           } else if (field.key === "taux" || field.key === "id_paie") {
             line[field.key] = Number(input.value);
           } else if (field.key === "ice_frs") {
+            oldValue = String(input.dataset.prevValue ?? line.ice_frs ?? "");
             const digits = input.value.replace(/\D/g, "").slice(0, 15);
             line.ice_frs = digits.length === 15 ? digits : "";
             input.value = line.ice_frs;
+            newValue = line.ice_frs;
+            line.ice_inferred = false;
           } else if (field.key === "if") {
-            line.if = input.value;
+            oldValue = String(input.dataset.prevValue ?? line.if ?? "");
+            line.if = input.value.trim();
+            input.value = line.if;
+            newValue = line.if;
+            line.if_inferred = false;
+          } else if (field.key === "lib_frss") {
+            oldValue = String(input.dataset.prevValue ?? line.lib_frss ?? "").trim();
+            newValue = String(input.value ?? "").trim();
+            line.lib_frss = newValue;
+            line.supplier_from_folder = false;
           } else {
             line[field.key] = input.value;
           }
+
           markFieldVerified(line, field.key);
           if (field.key === "date_paie") line.date_paie_from_bank = false;
           if (["m_ht", "taux"].includes(field.key)) {
@@ -395,7 +451,9 @@ function renderTable() {
           }
           renderTable();
           updateButtons();
-          return;
+          if (field.key in BULK_EDIT_FIELDS) {
+            maybeOfferFieldBulk(field.key, oldValue, newValue, index);
+          }
         });
       }
 
@@ -1053,6 +1111,17 @@ els.applyBankBtn.addEventListener("click", applyBankToLines);
 loadApiSettings();
 bindPreviewControls(previewUi);
 els.previewCloseBtn?.addEventListener("click", () => closeLinePreview());
+els.fieldBulkApplyAll?.addEventListener("click", () => {
+  applyPendingFieldBulk();
+  renderTable();
+  updateButtons();
+  if (state.previewOpen && state.selectedLineIndex != null) {
+    showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
+  }
+});
+els.fieldBulkDialog?.addEventListener("close", () => {
+  pendingFieldBulk = null;
+});
 loadClientSettings();
 updateFilenamePreview();
 updateButtons();
