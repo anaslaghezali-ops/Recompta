@@ -207,3 +207,29 @@ export async function kickImportJobWorker(apiUrl, { limit = 1 } = {}) {
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }
+
+export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
+  if (!apiUrl) {
+    return {
+      ok: false,
+      message:
+        "Configurez l'URL du Codespace (port 8000) : sans serveur actif, la file d'attente ne peut pas être traitée.",
+    };
+  }
+
+  const health = await fetchServerHealth(apiUrl);
+  if (!health.import_worker_enabled) {
+    return {
+      ok: false,
+      message:
+        "Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env du Codespace, puis redémarrez uvicorn.",
+    };
+  }
+
+  await kickImportJobWorker(apiUrl, { limit });
+  return {
+    ok: true,
+    message: "Traitement lancé sur le serveur.",
+    pollSeconds: health.import_worker_poll_seconds,
+  };
+}

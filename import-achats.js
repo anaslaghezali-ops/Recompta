@@ -14,9 +14,9 @@ import {
 } from "./document-preview.js?v=preview8";
 import {
   extractViaServer,
+  ensureImportWorkerRunning,
   fetchServerHealth,
   getApiUrl,
-  kickImportJobWorker,
   saveApiUrl,
 } from "./api-client.js";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
@@ -83,6 +83,29 @@ function setStatus(text, tone = "muted") {
   if (!els.saveStatus) return;
   els.saveStatus.textContent = text || "";
   els.saveStatus.dataset.tone = tone;
+}
+
+function setWorkerHint(message = "", tone = "muted") {
+  if (!els.workerHint) return;
+  els.workerHint.hidden = !message;
+  els.workerHint.textContent = message || "";
+  els.workerHint.dataset.tone = tone;
+}
+
+async function triggerWorkerProcessing() {
+  const apiUrl = resolvedApiUrl();
+  try {
+    const result = await ensureImportWorkerRunning(apiUrl, { limit: 2 });
+    if (!result.ok) {
+      setWorkerHint(result.message, "error");
+      return false;
+    }
+    setWorkerHint(result.message, "success");
+    return true;
+  } catch (error) {
+    setWorkerHint(error.message, "error");
+    return false;
+  }
 }
 
 function resolvedApiUrl() {
@@ -285,10 +308,7 @@ async function runQueue() {
     els.progressBar.style.width = "100%";
     setStatus("Import lancé — traitement en arrière-plan", "success");
 
-    const apiUrl = resolvedApiUrl();
-    if (apiUrl) {
-      kickImportJobWorker(apiUrl).catch(() => {});
-    }
+    await triggerWorkerProcessing();
 
     await renderJobsPanel();
     startJobsPolling();
@@ -353,11 +373,19 @@ async function renderJobsPanel() {
 
 function startJobsPolling() {
   stopJobPolling?.();
+  let kickCounter = 0;
   stopJobPolling = startImportJobPolling(session.dossierId, async (jobs) => {
     if (!jobs.length) {
+      setWorkerHint("");
       await reloadSessionLines();
       await renderJobsPanel();
       return;
+    }
+    if (jobs.some((job) => job.status === "queued")) {
+      kickCounter += 1;
+      if (kickCounter === 1 || kickCounter % 4 === 0) {
+        await triggerWorkerProcessing();
+      }
     }
     els.jobsPanel.hidden = false;
     els.jobsList.innerHTML = jobs.map(renderJobRow).join("");
@@ -483,7 +511,7 @@ function bindDropZone(zone, input) {
 export async function bootImportAchats() {
   [
     "contextBar", "saveStatus", "backLink", "dropZone", "fileInput", "fileQueue",
-    "queueBtn", "extractBtn", "queueHint", "jobsPanel", "jobsList",
+    "queueBtn", "extractBtn", "queueHint", "jobsPanel", "jobsList", "workerHint",
     "progressPanel", "progressText", "progressBar", "linesPanel",
     "linesBody", "lineCount", "anomalyCount", "fileCount", "duplicateCount",
     "apiUrl", "useAi", "engineBadge", "testApiBtn",
@@ -509,6 +537,10 @@ export async function bootImportAchats() {
   els.queueBtn.addEventListener("click", runQueue);
   els.extractBtn.addEventListener("click", runExtract);
   await renderJobsPanel();
+  const activeJobs = await listImportJobs(session.dossierId, { limit: 1, activeOnly: true });
+  if (activeJobs.some((job) => job.status === "queued")) {
+    await triggerWorkerProcessing();
+  }
   startJobsPolling();
   els.apiUrl?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.useAi?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });

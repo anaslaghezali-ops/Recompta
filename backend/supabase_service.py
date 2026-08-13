@@ -58,6 +58,27 @@ class SupabaseService:
             self._client = httpx.AsyncClient(timeout=120.0)
         return self._client
 
+    async def requeue_stale_processing_jobs(self, max_age_seconds: int = 1800) -> int:
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+        response = await self.client.patch(
+            f"{self.base}/rest/v1/import_jobs",
+            params={
+                "status": "eq.processing",
+                "updated_at": f"lt.{cutoff}",
+            },
+            headers={**service_headers(), "Prefer": "return=representation"},
+            json={
+                "status": "queued",
+                "error_summary": None,
+                "started_at": None,
+                "updated_at": _iso_now(),
+            },
+        )
+        response.raise_for_status()
+        return len(response.json())
+
     async def fetch_queued_jobs(self, limit: int = 1) -> list[dict[str, Any]]:
         response = await self.client.get(
             f"{self.base}/rest/v1/import_jobs",
