@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "supabase": {
+    "supabase-recompta": {
       "url": "https://mcp.supabase.com/mcp"
     }
   }
