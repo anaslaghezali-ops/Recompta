@@ -47,13 +47,40 @@ def folder_key(filename: str) -> str:
     return parts[0].lower().strip() if len(parts) > 1 else ""
 
 
+GENERIC_FOLDERS = {".", "..", "unknown", "factures", "invoices", "scans", "documents", "pdf"}
+
+
 def supplier_hint_from_path(filename: str) -> dict[str, str] | None:
     """Indice organisationnel (nom de dossier ZIP) — pas de règle fournisseur codée."""
     key = folder_key(filename)
-    if not key or key in {".", "..", "unknown", "factures", "invoices"}:
+    if not key or key in GENERIC_FOLDERS:
+        return None
+    # Un dossier nommé par période (« 2026-06 », « juin 2026 ») ne désigne pas
+    # un fournisseur.
+    if re.fullmatch(r"[\d\s._/-]+", key) or re.search(
+        r"\b(janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|"
+        r"novembre|d[ée]cembre|trimestre|semestre)\b",
+        key,
+    ):
         return None
     label = " ".join(word.capitalize() for word in re.split(r"[\s_-]+", key) if word)
     return {"lib_frss": label} if label else None
+
+
+def looks_like_supplier_name(name: str) -> bool:
+    """Écarte les restes d'OCR : codes produit, fragments, suites sans voyelle."""
+    text = (name or "").strip()
+    if len(text) < 4 or len(text) > 60:
+        return False
+    letters = [ch for ch in text if ch.isalpha()]
+    if len(letters) < 4:
+        return False
+    if sum(ch.isdigit() for ch in text) > len(text) / 4:
+        return False
+    if not any(ch.lower() in "aeiouyàâéèêîôûü" for ch in letters):
+        return False
+    # Un nom de société tient en quelques mots.
+    return len(text.split()) <= 6
 
 
 LEGAL_FORM_TOKENS = {
@@ -241,9 +268,17 @@ def normalize_extraction_results(
         if path_hint and not best_name:
             best_name = path_hint.get("lib_frss", "")
 
+        # Le dossier du ZIP est nommé par le comptable : il vaut mieux qu'un nom
+        # reconstitué par OCR sur un scan de mauvaise qualité.
+        folder_name = (path_hint or {}).get("lib_frss", "")
+
         for line in bucket["lines"]:
-            if best_name and not line.lib_frss:
+            if folder_name:
+                line.lib_frss = folder_name
+            elif best_name and not line.lib_frss:
                 line.lib_frss = best_name
+            elif not looks_like_supplier_name(line.lib_frss):
+                line.lib_frss = line.lib_frss.strip()
             if best_ice and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
                 line.ice_frs = best_ice
             if best_if and not line.if_fournisseur:

@@ -158,7 +158,9 @@ def _convert_ttc_amount_to_ht_line(line: InvoiceLine, ttc_value: float) -> Invoi
     return line
 
 
-def reconcile_line_amounts(line: InvoiceLine, text: str = "") -> InvoiceLine:
+def reconcile_line_amounts(
+    line: InvoiceLine, text: str = "", footer_ht: float | None = None
+) -> InvoiceLine:
     """Ne corrige que sur preuve, jamais sur la seule arithmétique.
 
     « HT=150, TVA=30 » (correct) et « TTC=150 pris pour du HT, TVA recalculée »
@@ -166,6 +168,11 @@ def reconcile_line_amounts(line: InvoiceLine, text: str = "") -> InvoiceLine:
     Le ratio TVA/HT est en revanche une preuve suffisante quand il vaut
     taux/(1+taux), impossible sur une ligne correcte.
     """
+    # Le document étiquette ce montant « Total HT » : ne pas le réinterpréter.
+    # Sur une facture à plusieurs taux, le ratio global (17,5 % par exemple)
+    # ressemble à tort à un montant TTC.
+    if footer_ht is not None and abs(abs(line.m_ht) - footer_ht) <= max(0.05, footer_ht * 0.01):
+        return line
     if _amount_labeled_ttc_in_text(text, line.m_ht):
         return _convert_ttc_amount_to_ht_line(line, line.m_ht)
     if _is_ttc_mislabeled_as_ht(line.m_ht, line.tva, line.taux):
@@ -246,6 +253,20 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
 
     # Corrections appuyées sur le document : pas de message, le tableau affiche
     # déjà les valeurs retenues.
+    footer_ht, _footer_tva, _footer_ttc = extract_footer_totals(text)
     result.lines = align_lines_with_footer_totals(result.lines, text)
-    result.lines = [reconcile_line_amounts(line, text) for line in result.lines]
+    result.lines = [reconcile_line_amounts(line, text, footer_ht) for line in result.lines]
+
+    # Un taux global entre 10 % et 20 % trahit une facture multi-taux résumée
+    # en une seule ligne : le comptable doit la ventiler lui-même.
+    for line in result.lines:
+        ht, tva = abs(line.m_ht), abs(line.tva)
+        if ht > 0.01 and tva > 0.01:
+            rate = tva / ht
+            if not (0.085 <= rate <= 0.115 or 0.185 <= rate <= 0.215):
+                result.warnings.append(
+                    f"Taux TVA global de {rate * 100:.1f} % sur {line.fact_num or 'cette pièce'} : "
+                    "facture probablement à plusieurs taux, à ventiler manuellement."
+                )
+                break
     return result

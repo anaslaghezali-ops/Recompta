@@ -199,11 +199,15 @@ async def ocr_pages_async(pages: list[bytes]) -> str:
 
 def _guess_designation(text: str) -> Designation:
     lowered = text.lower()
-    if any(word in lowered for word in ("orange", "inwi", "iam", "téléphon", "telephon")):
+    if any(word in lowered for word in ("téléphon", "telephon", "abonnement mobile", "forfait")):
         return Designation.TELEPHONIE
-    if any(word in lowered for word in ("banque", "bancaire", "relevé", "releve", "commission")):
+    if any(word in lowered for word in ("relevé de compte", "releve de compte", "agios", "frais bancaire")):
         return Designation.FRAIS_BANCAIRE
-    if any(word in lowered for word in ("prestation", "service", "honoraire", "glovo", "livraison")):
+    # « bon de livraison » accompagne une facture de marchandises : ce n'est pas
+    # une prestation de service.
+    if re.search(r"\b(prestation|honoraire|frais de service)\b", lowered) or re.search(
+        r"(?<!bon de )\bservice de livraison\b", lowered
+    ):
         return Designation.PRESTATIONS
     return Designation.MATIERES_CONSOMMABLES
 
@@ -243,6 +247,37 @@ def _extract_amounts(text: str) -> tuple[float | None, float | None, float | Non
         ttc = round(ht + tva, 2)
 
     ht, tva, ttc = (v if v is None else abs(v) for v in (ht, tva, ttc))
+    return ht, tva, ttc
+
+
+def _line_items_match_totals(
+    items: list[dict[str, float | str]], totals: tuple[float, float, float]
+) -> bool:
+    """Le détail par ligne n'est retenu que s'il est cohérent et recoupe les totaux."""
+    if not items:
+        return False
+
+    total_ht = 0.0
+    for item in items:
+        ht, tva, ttc = float(item["m_ht"]), float(item["tva"]), float(item["m_ttc"])
+        if ht <= 0 or ttc <= 0:
+            return False
+        if abs(ht + tva - ttc) > max(0.05, ttc * 0.01):
+            return False
+        total_ht += ht
+
+    return abs(round(total_ht, 2) - totals[0]) <= max(0.05, totals[0] * 0.01)
+
+
+def _document_totals(text: str) -> tuple[float, float, float] | None:
+    """Totaux du pied de page, retenus seulement s'ils sont cohérents entre eux."""
+    ht, tva, ttc = _extract_amounts(text)
+    if ht is None or ttc is None or ht <= 0 or ttc <= 0:
+        return None
+    if tva is None:
+        tva = round(ttc - ht, 2)
+    if abs(ht + tva - ttc) > max(0.05, ttc * 0.01):
+        return None
     return ht, tva, ttc
 
 
@@ -393,10 +428,16 @@ def _extract_invoice_number(text: str, filename: str) -> str:
     for pattern in (
         re.compile(r"(?:Facture|FACTURE)\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", re.I),
         re.compile(r"FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)", re.I),
+        # Codes pièce usuels : FV264554, V081505, FR26-003076, MA-FVR26...
+        re.compile(r"\b((?:F[VR]|BR|AV|V)\s?\d{2}[-/]?\d{3,}|[A-Z]{1,3}-?\d{4,})\b"),
     ):
         match = pattern.search(text)
-        if match and not _is_reference_mention(text, match.start()):
-            return match.group(1).strip()
+        if (
+            match
+            and _looks_like_document_number(match.group(1))
+            and not _is_reference_mention(text, match.start())
+        ):
+            return match.group(1).strip().replace(" ", "")
     return Path(filename).stem
 
 
@@ -532,12 +573,19 @@ def _is_reference_mention(text: str, match_start: int) -> bool:
     return bool(REFERENCE_MENTION.search(window))
 
 
+def _looks_like_document_number(value: str) -> bool:
+    """« Facture Vente N° FV264554 » : « Vente » n'est pas un numéro."""
+    token = value.strip()
+    return len(token) >= 3 and any(ch.isdigit() for ch in token)
+
+
 def document_number_matches(text: str) -> list[re.Match]:
     """Numéros qui ouvrent réellement un document, hors renvois à un autre."""
     return [
         match
         for match in INVOICE_NUM_PATTERN.finditer(text)
-        if not _is_reference_mention(text, match.start())
+        if _looks_like_document_number(match.group(1))
+        and not _is_reference_mention(text, match.start())
     ]
 
 
@@ -652,6 +700,19 @@ def _heuristic_extract_single(filename: str, text: str) -> ExtractionResult:
     ventilation = extract_vat_lines_from_text(text)
     invoice_lines: list[InvoiceLine] = []
 
+    # Les totaux du pied de page priment sur les lignes produit : sur un scan,
+    # l'OCR confond facilement un prix unitaire avec le total HT.
+    totals = _document_totals(text)
+    if totals and ventilation:
+        # Une ventilation valide se recoupe avec les totaux du document.
+        sum_ht = round(sum(item["m_ht"] for item in ventilation), 2)
+        if abs(sum_ht - totals[0]) > max(0.05, totals[0] * 0.01):
+            ventilation = []
+    if not ventilation and totals and not _line_items_match_totals(line_items, totals):
+        # Sur un scan, l'OCR confond un prix unitaire avec le total HT : on ne
+        # garde le détail par ligne que s'il se recoupe avec les totaux.
+        line_items = []
+
     source = ventilation
 
     if source:
@@ -700,7 +761,7 @@ def _heuristic_extract_single(filename: str, text: str) -> ExtractionResult:
                 )
             )
     else:
-        ht, tva, ttc = _extract_amounts(text)
+        ht, tva, ttc = totals if totals else _extract_amounts(text)
         if ht is None or ttc is None:
             ht2, tva2, ttc2 = _extract_mad_amounts(text)
             ht = ht or ht2

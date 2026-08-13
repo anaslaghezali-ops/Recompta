@@ -456,7 +456,13 @@ function isTtcMislabeledAsHt(mHt, tva, taux) {
 // Ne corrige que sur preuve : « HT=150, TVA=30 » (correct) et « TTC=150 pris
 // pour du HT avec TVA recalculée » donnent exactement les mêmes nombres.
 // Seul le document, ou un ratio TVA/HT impossible, permet de trancher.
-function fixTtcMislabeledLine(line, text = "") {
+function fixTtcMislabeledLine(line, text = "", footerHt = null) {
+  // Le document étiquette ce montant « Total HT » : ne pas le réinterpréter.
+  // Sur une facture à plusieurs taux, le ratio global (17,5 % par exemple)
+  // ressemble à tort à un montant TTC.
+  if (footerHt != null && Math.abs(Math.abs(Number(line.m_ht)) - footerHt) <= Math.max(0.05, footerHt * 0.01)) {
+    return line;
+  }
   if (amountLabeledTtcInText(text, line.m_ht)) return convertTtcAmountToHtLine(line, line.m_ht);
   if (isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux)) {
     return convertTtcAmountToHtLine(line, line.m_ht);
@@ -528,8 +534,9 @@ function applyTtcVentilationFixes(result) {
   }
 
   // Corrections appuyées sur le document : silencieuses, le tableau montre le résultat.
+  const footerHt = extractFooterTotals(text).ht ?? null;
   const aligned = alignLinesWithFooterTotals(result.lines || [], text);
-  const lines = aligned.map((line) => fixTtcMislabeledLine(line, text));
+  const lines = aligned.map((line) => fixTtcMislabeledLine(line, text, footerHt));
   return { ...result, lines, warnings };
 }
 
