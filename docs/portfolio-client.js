@@ -1,4 +1,5 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
+import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs2";
 import {
   formatMonthLabel,
   formatRelativeTime,
@@ -120,7 +121,7 @@ function pickActiveDossier(dossiers) {
   }, null);
 }
 
-export function buildPortfolioRow(client, workspaceByDossierId = {}) {
+export function buildPortfolioRow(client, workspaceByDossierId = {}, activeImportByDossierId = new Map()) {
   const activeDossier = pickActiveDossier(client.dossiers);
   const workspace = activeDossier ? workspaceByDossierId[activeDossier.id] : null;
   const lines = workspace?.lines || [];
@@ -188,6 +189,7 @@ export function buildPortfolioRow(client, workspaceByDossierId = {}) {
     isDone: statusKey === "exported",
     needsValidation: statusKey === "in_review" || anomalyCount > 0,
     openPeriodCount: (client.dossiers || []).filter((d) => d.status !== "exported").length,
+    importJob: activeDossier ? activeImportByDossierId.get(activeDossier.id) || null : null,
   };
 }
 
@@ -197,6 +199,7 @@ export function computePortfolioKpis(rows) {
   const aiExceptions = rows.reduce((sum, r) => sum + r.anomalyCount, 0);
   const exportsReady = rows.filter((r) => r.isDone).length;
   const tvaLate = rows.filter((r) => r.isLate).length;
+  const activeImports = rows.filter((r) => r.importJob).length;
 
   return {
     activeClients,
@@ -204,6 +207,7 @@ export function computePortfolioKpis(rows) {
     aiExceptions,
     exportsReady,
     tvaLate,
+    activeImports,
   };
 }
 
@@ -231,21 +235,26 @@ export async function listPortfolioRows(cabinetId) {
   const dossierIds = clients.flatMap((c) => (c.dossiers || []).map((d) => d.id));
 
   const workspaceByDossierId = {};
+  let activeImportByDossierId = new Map();
   if (dossierIds.length > 0) {
     const supabase = getSupabase();
     if (supabase) {
-      const { data, error } = await supabase
-        .from("dossier_workspaces")
-        .select("dossier_id, lines, bank_transactions, updated_at")
-        .in("dossier_id", dossierIds);
+      const [{ data, error }, importMap] = await Promise.all([
+        supabase
+          .from("dossier_workspaces")
+          .select("dossier_id, lines, bank_transactions, updated_at")
+          .in("dossier_id", dossierIds),
+        fetchActiveImportMap(dossierIds),
+      ]);
       if (error) throw error;
       for (const ws of data || []) {
         workspaceByDossierId[ws.dossier_id] = ws;
       }
+      activeImportByDossierId = importMap;
     }
   }
 
-  const rows = clients.map((client) => buildPortfolioRow(client, workspaceByDossierId));
+  const rows = clients.map((client) => buildPortfolioRow(client, workspaceByDossierId, activeImportByDossierId));
 
   rows.sort((a, b) => {
     const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3, done: 4 };
