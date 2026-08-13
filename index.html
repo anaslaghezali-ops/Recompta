@@ -216,8 +216,36 @@
   <dialog id="bankMatchDialog" class="review-dialog bank-match-dialog">
     <form method="dialog" id="bankMatchForm">
       <h2 id="bankMatchTitle">Rapprochement à confirmer</h2>
-      <p id="bankMatchIntro" class="hint"></p>
-      <div id="bankMatchProposals" class="bank-match-proposals" role="radiogroup" aria-labelledby="bankMatchTitle"></div>
+      <p id="bankMatchIntro" class="hint">Vérifiez la ligne du relevé et choisissez les factures correspondantes.</p>
+
+      <section class="bank-match-txn" aria-labelledby="bankMatchTxnHeading">
+        <h3 id="bankMatchTxnHeading">Ligne du relevé bancaire</h3>
+        <table class="bank-match-txn-table">
+          <tbody>
+            <tr>
+              <th scope="row">Date</th>
+              <td id="bankMatchTxnDate"></td>
+            </tr>
+            <tr>
+              <th scope="row">Montant</th>
+              <td id="bankMatchTxnAmount" class="bank-match-txn-amount"></td>
+            </tr>
+            <tr>
+              <th scope="row">Libellé</th>
+              <td id="bankMatchTxnLabel" class="bank-match-txn-label"></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <h3 class="bank-match-proposals-heading">Factures proposées</h3>
+      <div id="bankMatchProposals" class="bank-match-proposals" role="radiogroup" aria-labelledby="bankMatchProposalsHeading"></div>
+
+      <section id="bankMatchInvoiceDetail" class="bank-match-invoices" hidden aria-labelledby="bankMatchInvoiceHeading">
+        <h3 id="bankMatchInvoiceHeading">Détail des factures sélectionnées</h3>
+        <ul id="bankMatchInvoiceList" class="bank-match-invoice-list"></ul>
+      </section>
+
       <label id="bankMatchLearnWrap" class="checkbox-row bank-match-learn" hidden>
         <input id="bankMatchLearnAlias" type="checkbox" checked />
         Mémoriser ce libellé bancaire pour ce fournisseur (prochains relevés)
@@ -232,6 +260,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js?v=bankmatch1"></script>
+  <script type="module" src="app.js?v=bankmatch2"></script>
 </body>
 </html>

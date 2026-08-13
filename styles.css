@@ -817,6 +817,76 @@ td select.confidence-error {
   margin: 0.5rem 0 0.25rem;
 }
 
+.bank-match-txn {
+  margin: 0.75rem 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #c5d9f2;
+  border-radius: 8px;
+  background: #f5f9ff;
+}
+
+.bank-match-txn h3,
+.bank-match-proposals-heading,
+.bank-match-invoices h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text, #1a1a2e);
+}
+
+.bank-match-proposals-heading {
+  margin-top: 0.25rem;
+}
+
+.bank-match-txn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.bank-match-txn-table th {
+  width: 5.5rem;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.2rem 0.75rem 0.2rem 0;
+  color: var(--muted, #5c6370);
+  font-weight: 500;
+}
+
+.bank-match-txn-table td {
+  padding: 0.2rem 0;
+  vertical-align: top;
+}
+
+.bank-match-txn-amount {
+  font-weight: 600;
+  color: #b42318;
+}
+
+.bank-match-txn-label {
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.bank-match-invoices {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--border, #d8dee9);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.bank-match-invoice-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.bank-match-invoice-list li {
+  margin: 0.15rem 0;
+}
+
 .export-card {
   background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
   border-color: #b8d4f0;
