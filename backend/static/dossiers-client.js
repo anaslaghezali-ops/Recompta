@@ -28,6 +28,109 @@ export function formatMonthLabel(month) {
   return MONTH_LABELS[month - 1] || `Mois ${month}`;
 }
 
+export const STATUS_META = {
+  draft: { label: "Brouillon", tone: "neutral", icon: "circle-dashed" },
+  in_review: { label: "En revue", tone: "warn", icon: "clock-3" },
+  exported: { label: "Déclaré", tone: "success", icon: "check-circle-2" },
+};
+
+export function formatRelativeTime(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "À l'instant";
+  if (mins < 60) return `Il y a ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Il y a ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `Il y a ${days} j`;
+  return date.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function computeClientStats(client) {
+  const dossiers = client.dossiers || [];
+  const openCount = dossiers.filter((d) => d.status !== "exported").length;
+  const lastDossier = dossiers.reduce((latest, d) => {
+    if (!latest) return d;
+    const latestTs = new Date(latest.updated_at || latest.created_at || 0).getTime();
+    const currentTs = new Date(d.updated_at || d.created_at || 0).getTime();
+    return currentTs > latestTs ? d : latest;
+  }, null);
+
+  let statusKey = "draft";
+  let statusLabel = "Nouveau";
+  if (lastDossier) {
+    statusKey = lastDossier.status;
+    statusLabel = STATUS_META[lastDossier.status]?.label || "En cours";
+  } else if (dossiers.length > 0) {
+    statusKey = dossiers[0].status;
+    statusLabel = STATUS_META[statusKey]?.label || "En cours";
+  }
+
+  return {
+    periodCount: dossiers.length,
+    openCount,
+    lastActivity: lastDossier?.updated_at || lastDossier?.created_at || client.created_at,
+    statusKey,
+    statusLabel,
+    lastPeriod: lastDossier
+      ? `${formatMonthLabel(lastDossier.period_month)} ${lastDossier.period_year}`
+      : null,
+  };
+}
+
+export async function getClientWithDossiers(clientId, cabinetId) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase non configuré");
+
+  const { data: client, error: clientError } = await supabase
+    .from("cabinet_clients")
+    .select("id, name, ice, created_at, cabinet_id")
+    .eq("id", clientId)
+    .eq("cabinet_id", cabinetId)
+    .maybeSingle();
+  if (clientError) throw clientError;
+  if (!client) return null;
+
+  const { data: dossiers, error: dossierError } = await supabase
+    .from("client_dossiers")
+    .select("id, client_id, period_year, period_month, status, updated_at, created_at")
+    .eq("client_id", clientId)
+    .order("period_year", { ascending: false })
+    .order("period_month", { ascending: false });
+  if (dossierError) throw dossierError;
+
+  return { ...client, dossiers: dossiers || [] };
+}
+
+export function buildYearGrid(year, dossiers) {
+  const byMonth = Object.fromEntries(
+    (dossiers || [])
+      .filter((d) => d.period_year === year)
+      .map((d) => [d.period_month, d]),
+  );
+  return MONTH_LABELS.map((label, index) => {
+    const month = index + 1;
+    const dossier = byMonth[month] || null;
+    return {
+      month,
+      label,
+      short: label.slice(0, 3),
+      dossier,
+      status: dossier?.status || null,
+    };
+  });
+}
+
+export function listAvailableYears(dossiers, extraYear) {
+  const years = new Set((dossiers || []).map((d) => d.period_year));
+  if (extraYear) years.add(extraYear);
+  years.add(new Date().getFullYear());
+  return [...years].sort((a, b) => b - a);
+}
+
 export async function getUserCabinet() {
   const session = await getSession();
   if (!session?.user) return null;
