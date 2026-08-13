@@ -38,8 +38,14 @@ Si erreur réseau : l’Edge Function n’est pas encore déployée.
 Si vous lancez `uvicorn` avec `SUPABASE_SERVICE_ROLE_KEY` dans `backend/.env`,  
 l’app peut aussi appeler `POST /api/admin/cabinets` quand l’URL Codespace/Render est configurée dans l’outil TVA.
 
-## Flux cabinet
+## Flux
 
-1. Super-admin crée cabinet + owner sur **admin.html**
-2. Le responsable se connecte sur **login.html**
+1. **Super-admin uniquement** crée cabinet + owner sur **admin.html**
+2. Le responsable se connecte sur **login.html** (pas d'inscription publique)
 3. (Étape 3 à venir) tableau de bord cabinet + dossiers clients
+
+## Sécurité
+
+- RLS : `INSERT` sur `cabinets` et `cabinet_members` réservé au super-admin
+- Edge Function : vérifie le JWT super-admin avant `createUser`
+- Désactiver **Allow new users to sign up** dans Supabase Auth

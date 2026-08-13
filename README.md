@@ -33,7 +33,7 @@ Puis **Ports** → **8000** → **Open in Browser**.
 4. Vérifiez le tableau, corrigez si besoin
 5. **Télécharger Excel**
 
-> Auth super-admin (étape 1) : voir [docs/AUTH.md](docs/AUTH.md). L'outil solo reste utilisable sans compte.
+> Auth super-admin (étape 1) : voir [docs/AUTH.md](docs/AUTH.md). Admin cabinets (étape 2) : [docs/ADMIN.md](docs/ADMIN.md).
 
 ## Problème
 
