@@ -1895,6 +1895,37 @@
   color: #1e3a8a;
 }
 
+.ws-import-banner-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.45rem;
+}
+
+.ws-import-banner-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #bfdbfe;
+  overflow: hidden;
+}
+
+.ws-import-banner-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  transition: width 0.35s ease;
+}
+
+.ws-import-banner-progress span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  min-width: 2.2rem;
+  text-align: right;
+}
+
 @keyframes dash-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
