@@ -1,4 +1,5 @@
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
+import { attachFieldConfidence } from "./field-confidence.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
@@ -568,11 +569,13 @@ export function fillMissingTtc(line) {
   if (Math.abs(ttc) >= 0.01 || Math.abs(ht) < 0.01) return line;
   if (signsAreMixed(ht, tva, ttc)) return line;
   if (Math.abs(tva) < 0.01) {
-    if (Number(line.taux) === 0) return { ...line, m_ttc: Math.round(ht * 100) / 100 };
+    if (Number(line.taux) === 0) {
+      return { ...line, m_ttc: Math.round(ht * 100) / 100, ttc_reconstructed: true };
+    }
     return line;
   }
   if (Math.abs(tva) > Math.abs(ht) + 0.05) return line;
-  return { ...line, m_ttc: Math.round((ht + tva) * 100) / 100 };
+  return { ...line, m_ttc: Math.round((ht + tva) * 100) / 100, ttc_reconstructed: true };
 }
 
 function signsAreMixed(ht, tva, ttc) {
@@ -632,10 +635,21 @@ function rebuildFromTtc(line, ttcAbs, taux, sign) {
     tva: tvaAbs * sign,
     m_ttc: Math.round(ttcAbs * 100) / 100 * sign,
     taux,
+    amounts_sanitized: true,
+    tva_calculated: true,
   };
 }
 
+function finalizeSanitize(line, before) {
+  const after = [line.m_ht, line.tva, line.m_ttc, line.taux];
+  if (after.some((v, i) => v !== before[i]) && !line.amounts_sanitized) {
+    return { ...line, amounts_sanitized: true };
+  }
+  return line;
+}
+
 export function sanitizeImpossibleAmounts(line, isAvoir = false) {
+  const before = [line.m_ht, line.tva, line.m_ttc, line.taux];
   const sign = isAvoir ? -1 : 1;
   const ht = Math.abs(Number(line.m_ht) || 0) * sign;
   const tva = Math.abs(Number(line.tva) || 0) * sign;
@@ -645,7 +659,7 @@ export function sanitizeImpossibleAmounts(line, isAvoir = false) {
     : 0.2;
 
   if (isZeroRateLine(ht, tva, ttc)) {
-    return { ...line, m_ht: ht, tva, m_ttc: ttc, taux: 0 };
+    return finalizeSanitize({ ...line, m_ht: ht, tva, m_ttc: ttc, taux: 0 }, before);
   }
 
   const rateFromHt = htIsActuallyTheRate(ht, tva, ttc);
@@ -658,9 +672,9 @@ export function sanitizeImpossibleAmounts(line, isAvoir = false) {
   }
 
   const unified = { ...line, m_ht: ht, tva, m_ttc: ttc };
-  if (magnitudesCoherent(ht, tva, ttc, taux)) return unified;
+  if (magnitudesCoherent(ht, tva, ttc, taux)) return finalizeSanitize(unified, before);
   if (isBlendedMultiRate(ht, tva) && Math.abs(Math.abs(ht) + Math.abs(tva) - Math.abs(ttc)) <= 0.05) {
-    return unified;
+    return finalizeSanitize(unified, before);
   }
 
   const ordered = [Math.abs(ht), Math.abs(tva), Math.abs(ttc)].sort((a, b) => b - a);
@@ -668,15 +682,21 @@ export function sanitizeImpossibleAmounts(line, isAvoir = false) {
   if (largest > 0.01 && Math.abs(mid + small - largest) <= 0.05 && mid > 0.01) {
     const ratio = small / mid;
     if (Math.abs(ratio - 0.1) <= 0.025) {
-      return { ...line, m_ht: mid * sign, tva: small * sign, m_ttc: largest * sign, taux: 0.1 };
+      return finalizeSanitize(
+        { ...line, m_ht: mid * sign, tva: small * sign, m_ttc: largest * sign, taux: 0.1 },
+        before,
+      );
     }
     if (Math.abs(ratio - 0.2) <= 0.025) {
-      return { ...line, m_ht: mid * sign, tva: small * sign, m_ttc: largest * sign, taux: 0.2 };
+      return finalizeSanitize(
+        { ...line, m_ht: mid * sign, tva: small * sign, m_ttc: largest * sign, taux: 0.2 },
+        before,
+      );
     }
   }
 
   if (largest > 0.01) return rebuildFromTtc(line, largest, taux, sign);
-  return unified;
+  return finalizeSanitize(unified, before);
 }
 
 function shouldConsolidateGroup(group) {
@@ -774,8 +794,12 @@ export function normalizeExtractionResults(results) {
       line.designation = normalizeDesignation(line.designation);
       // Renseignée uniquement par le rapprochement bancaire.
       line.date_paie = "";
-      if (!line.lib_frss && bestName) line.lib_frss = bestName;
-      if (!line.lib_frss && pathHint?.lib_frss) line.lib_frss = pathHint.lib_frss;
+      if (pathHint?.lib_frss) {
+        line.lib_frss = pathHint.lib_frss;
+        line.supplier_from_folder = true;
+      } else if (!line.lib_frss && bestName) {
+        line.lib_frss = bestName;
+      }
       if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) {
         line.ice_frs = bestIce;
         line.ice_inferred = true;
@@ -790,6 +814,13 @@ export function normalizeExtractionResults(results) {
   // Dernier passage, tous fichiers confondus : une facture sans ICE hérite de
   // celui des autres factures du même fournisseur.
   completeSupplierIdentifiers(normalized.flatMap((result) => result.lines));
+
+  for (const result of normalized) {
+    for (const line of result.lines) {
+      line.extraction_engine = result.engine || line.extraction_engine || "";
+    }
+    attachFieldConfidence(result.lines, { documentWarnings: result.warnings || [] });
+  }
 
   return normalized;
 }

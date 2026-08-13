@@ -291,6 +291,15 @@ def _rebuild_from_ttc(line: InvoiceLine, ttc_abs: float, taux: float, sign: int)
     line.tva = tva_abs * sign
     line.m_ttc = round(ttc_abs, 2) * sign
     line.taux = taux
+    line.amounts_sanitized = True
+    line.tva_calculated = True
+    return line
+
+
+def _finalize_sanitize(line: InvoiceLine, before: tuple[float, float, float, float]) -> InvoiceLine:
+    after = (line.m_ht, line.tva, line.m_ttc, line.taux)
+    if after != before and not line.amounts_sanitized:
+        line.amounts_sanitized = True
     return line
 
 
@@ -300,6 +309,7 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
     Ne touche pas une ligne déjà cohérente (ex. Carrefour 150/30/180) ni une
     facture multi-taux résumée (taux global entre 10 % et 20 %).
     """
+    before = (line.m_ht, line.tva, line.m_ttc, line.taux)
     sign = -1 if is_avoir else 1
     ht, tva, ttc = abs(line.m_ht) * sign, abs(line.tva) * sign, abs(line.m_ttc) * sign
     taux = line.taux if line.taux in ALLOWED_TAUX else 0.2
@@ -307,7 +317,7 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
     if _is_zero_rate_line(ht, tva, ttc):
         line.m_ht, line.tva, line.m_ttc = ht, tva, ttc
         line.taux = 0.0
-        return line
+        return _finalize_sanitize(line, before)
 
     rate_from_ht = _ht_is_actually_the_rate(ht, tva, ttc)
     if rate_from_ht is not None:
@@ -318,9 +328,9 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
 
     line.m_ht, line.tva, line.m_ttc = ht, tva, ttc
     if _magnitudes_coherent(ht, tva, ttc, taux):
-        return line
+        return _finalize_sanitize(line, before)
     if _is_blended_multi_rate(ht, tva) and abs(abs(ht) + abs(tva) - abs(ttc)) <= 0.05:
-        return line
+        return _finalize_sanitize(line, before)
 
     abs_ht, abs_tva, abs_ttc = abs(ht), abs(tva), abs(ttc)
     ordered = sorted((abs_ht, abs_tva, abs_ttc), reverse=True)
@@ -332,15 +342,17 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
             if abs(ratio - 0.1) <= 0.025:
                 line.m_ht, line.tva, line.m_ttc = cand_ht * sign, cand_tva * sign, cand_ttc * sign
                 line.taux = 0.1
-                return line
+                return _finalize_sanitize(line, before)
             if abs(ratio - 0.2) <= 0.025:
                 line.m_ht, line.tva, line.m_ttc = cand_ht * sign, cand_tva * sign, cand_ttc * sign
                 line.taux = 0.2
-                return line
+                return _finalize_sanitize(line, before)
 
     if largest > 0.01:
-        return _rebuild_from_ttc(line, largest, taux, sign)
-    return line
+        result = _rebuild_from_ttc(line, largest, taux, sign)
+    else:
+        result = line
+    return _finalize_sanitize(result, before)
 
 
 def fill_missing_ttc(line: InvoiceLine) -> InvoiceLine:
@@ -353,10 +365,12 @@ def fill_missing_ttc(line: InvoiceLine) -> InvoiceLine:
     if abs(tva) < 0.01:
         if line.taux == 0.0:
             line.m_ttc = round(ht, 2)
+            line.ttc_reconstructed = True
         return line
     if abs(tva) > abs(ht) + 0.05:
         return line
     line.m_ttc = round(ht + tva, 2)
+    line.ttc_reconstructed = True
     return line
 
 

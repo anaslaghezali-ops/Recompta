@@ -465,9 +465,21 @@ td:nth-child(13) select { max-width: 3.5rem; }
   font-size: 0.85rem;
 }
 
-td input.inferred {
+td input.inferred,
+td input.confidence-warn,
+td select.confidence-warn {
   background: #fff8e6;
   border: 1px solid #e0b44a;
+}
+
+td input.confidence-error,
+td select.confidence-error {
+  background: #fde8e8;
+  border: 1px solid #cf222e;
+}
+
+.review-dialog li.review-error {
+  color: var(--danger);
 }
 
 .review-dialog {

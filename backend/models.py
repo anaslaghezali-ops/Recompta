@@ -8,6 +8,11 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class FieldConfidenceEntry(BaseModel):
+    level: str = Field("ok", description="ok | warn | error")
+    reason: str = Field("", description="Explication affichée au comptable")
+
+
 class Designation(str, Enum):
     MATIERES_CONSOMMABLES = "MATIERES CONSOMMABLES"
     PRESTATIONS = "PRESTATIONS"
@@ -109,6 +114,34 @@ class InvoiceLine(BaseModel):
     if_inferred: bool = Field(
         False,
         description="IF repris d'une autre facture du même fournisseur, pas lu sur cette pièce",
+    )
+    ttc_reconstructed: bool = Field(
+        False,
+        description="TTC calculé à partir de HT + TVA faute de total lisible sur la facture",
+    )
+    tva_calculated: bool = Field(
+        False,
+        description="TVA recalculée à partir de HT × taux (saisie ou correction)",
+    )
+    amounts_sanitized: bool = Field(
+        False,
+        description="Montants corrigés par la sanitization générique",
+    )
+    supplier_from_folder: bool = Field(
+        False,
+        description="Nom fournisseur issu du dossier ZIP, pas lu sur la facture",
+    )
+    date_paie_from_bank: bool = Field(
+        False,
+        description="Date de paiement issue du rapprochement bancaire",
+    )
+    extraction_engine: str = Field(
+        "",
+        description="Moteur d'extraction ayant produit la ligne (ai, text, scan, …)",
+    )
+    field_confidence: dict[str, FieldConfidenceEntry] = Field(
+        default_factory=dict,
+        description="Confiance par champ pour la revue comptable",
     )
     taux: float = Field(0.2, description="Taux TVA (0 exonéré, 0.1 ou 0.2)")
     id_paie: int = Field(4, description="Mode de paiement (1 ou 4)")

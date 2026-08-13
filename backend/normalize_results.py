@@ -283,6 +283,7 @@ def normalize_extraction_results(
         for line in bucket["lines"]:
             if folder_name:
                 line.lib_frss = folder_name
+                line.supplier_from_folder = True
             elif best_name and not line.lib_frss:
                 line.lib_frss = best_name
             elif not looks_like_supplier_name(line.lib_frss):
@@ -295,5 +296,17 @@ def normalize_extraction_results(
                 line.if_inferred = True
 
     complete_supplier_identifiers([line for item in normalized for line in item.lines])
+
+    from field_confidence import attach_field_confidence
+
+    for result in normalized:
+        for line in result.lines:
+            line.extraction_engine = result.engine
+        attach_field_confidence(
+            result.lines,
+            client_ice=client_ice,
+            engine=result.engine,
+            document_warnings=result.warnings,
+        )
 
     return normalized

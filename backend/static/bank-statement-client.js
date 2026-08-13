@@ -319,6 +319,7 @@ export function applyBankStatement(
       group.indices.forEach((idx) => {
         updated[idx].date_paie = txn.date;
         updated[idx].id_paie = 4;
+        updated[idx].date_paie_from_bank = true;
         usedLineIndices.add(idx);
       });
       usedGroupKeys.add(group.key);
@@ -344,6 +345,7 @@ export function applyBankStatement(
       const { index, line } = lineCandidates[0];
       updated[index].date_paie = txn.date;
       updated[index].id_paie = 4;
+      updated[index].date_paie_from_bank = true;
       usedLineIndices.add(index);
       matchedPayments.push({ txn, factNum: line.fact_num, lineCount: 1 });
     } else {

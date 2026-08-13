@@ -8,6 +8,11 @@ import {
 } from "./extract-client.js";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
+  applyConfidenceToInput,
+  countConfidenceIssues,
+  refreshLinesFieldConfidence,
+} from "./field-confidence.js";
+import {
   applyBankStatement,
   normalizeBankTransactions,
   parseBankFile,
@@ -58,6 +63,7 @@ const els = {
   lineCount: document.getElementById("lineCount"),
   fileCount: document.getElementById("fileCount"),
   duplicateBadge: document.getElementById("duplicateBadge"),
+  confidenceBadge: document.getElementById("confidenceBadge"),
   removeDuplicatesBtn: document.getElementById("removeDuplicatesBtn"),
   emptyState: document.getElementById("emptyState"),
   tableWrap: document.getElementById("tableWrap"),
@@ -86,11 +92,35 @@ function emptyLine(sourceFile = "") {
     ice_frs: "",
     ice_inferred: false,
     if_inferred: false,
+    ttc_reconstructed: false,
+    tva_calculated: false,
+    amounts_sanitized: false,
+    supplier_from_folder: false,
+    date_paie_from_bank: false,
+    extraction_engine: "",
+    user_verified_fields: [],
+    field_confidence: {},
     taux: 0.2,
     id_paie: 4,
     date_paie: "",
     date_fac: "",
   };
+}
+
+function refreshAllFieldConfidence() {
+  refreshLinesFieldConfidence(state.lines, {
+    clientIce: currentClientIce(),
+    duplicateIndexes: findDuplicateLineIndexes(state.lines),
+  });
+}
+
+function markFieldVerified(line, fieldKey) {
+  if (!line.user_verified_fields) line.user_verified_fields = [];
+  if (!line.user_verified_fields.includes(fieldKey)) {
+    line.user_verified_fields.push(fieldKey);
+  }
+  if (fieldKey === "ice_frs") line.ice_inferred = false;
+  if (fieldKey === "if") line.if_inferred = false;
 }
 
 function updateFilenamePreview() {
@@ -125,6 +155,16 @@ function updateButtons() {
   els.duplicateBadge.textContent = `${duplicateCount} doublon(s)`;
   els.removeDuplicatesBtn.hidden = duplicateCount === 0;
 
+  refreshAllFieldConfidence();
+  const { errors, warns } = countConfidenceIssues(state.lines);
+  const reviewCount = errors + warns;
+  if (els.confidenceBadge) {
+    els.confidenceBadge.hidden = reviewCount === 0;
+    els.confidenceBadge.textContent =
+      errors > 0 ? `${errors} critique(s), ${warns} à relire` : `${warns} champ(s) à relire`;
+    els.confidenceBadge.className = errors > 0 ? "badge danger" : "badge warn";
+  }
+
   const hasLines = state.lines.length > 0;
   els.emptyState.hidden = hasLines;
   els.tableWrap.hidden = !hasLines;
@@ -140,6 +180,8 @@ function recalcTva(line) {
   const rate = Number.isFinite(taux) ? taux : 0.2;
   line.tva = Math.round(ht * rate * 100) / 100;
   line.m_ttc = Math.round((ht + line.tva) * 100) / 100;
+  line.tva_calculated = true;
+  line.ttc_reconstructed = false;
 }
 
 function shortFilename(name) {
@@ -172,6 +214,7 @@ function formatSize(bytes) {
 }
 
 function renderTable() {
+  refreshAllFieldConfidence();
   els.linesTableBody.innerHTML = "";
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));
 
@@ -220,19 +263,17 @@ function renderTable() {
           input.maxLength = 15;
           input.inputMode = "numeric";
           input.placeholder = "15 chiffres";
-          if (line.ice_inferred) {
-            input.classList.add("inferred");
-            input.title = "ICE repris d'une autre facture du même fournisseur — confirmez-le.";
-          }
-        }
-        if (field.key === "if" && line.if_inferred) {
-          input.classList.add("inferred");
-          input.title = "IF repris d'une autre facture du même fournisseur — confirmez-le.";
         }
         const display =
           field.key === "source_file" ? shortFilename(line[field.key]) : (line[field.key] ?? "");
         input.value = display;
-        if (field.title && line[field.key]) input.title = line[field.key];
+        if (field.title && line[field.key] && field.key === "source_file") {
+          input.title = line[field.key];
+        }
+      }
+
+      if (field.key !== "source_file" && field.key !== "id_paie") {
+        applyConfidenceToInput(input, field.key, line);
       }
 
       if (!field.readonly) {
@@ -244,19 +285,22 @@ function renderTable() {
           } else if (field.key === "ice_frs") {
             const digits = input.value.replace(/\D/g, "").slice(0, 15);
             line.ice_frs = digits.length === 15 ? digits : "";
-            line.ice_inferred = false;
             input.value = line.ice_frs;
           } else if (field.key === "if") {
             line.if = input.value;
-            line.if_inferred = false;
           } else {
             line[field.key] = input.value;
           }
+          markFieldVerified(line, field.key);
+          if (field.key === "date_paie") line.date_paie_from_bank = false;
           if (["m_ht", "taux"].includes(field.key)) {
             recalcTva(line);
-            renderTable();
-            return;
+            markFieldVerified(line, "tva");
+            markFieldVerified(line, "m_ttc");
           }
+          renderTable();
+          updateButtons();
+          return;
         });
       }
 
@@ -526,6 +570,7 @@ async function extractFiles() {
             ...emptyLine(result.filename),
             ...line,
             source_file: result.filename,
+            extraction_engine: result.engine || line.extraction_engine || "",
             date_fac: line.date_fac ? String(line.date_fac).slice(0, 10) : "",
             date_paie: line.date_paie ? String(line.date_paie).slice(0, 10) : "",
           });
@@ -587,11 +632,26 @@ function downloadExcel() {
     const filename = exportDedTvaExcel({
       clientName: els.clientName.value.trim() || "CLIENT",
       period: els.period.value.trim(),
-      lines: state.lines.map(({ source_file, ice_inferred, if_inferred, ...line }) => ({
-        ...line,
-        taux: Number(line.taux),
-        id_paie: Number(line.id_paie),
-      })),
+      lines: state.lines.map(
+        ({
+          source_file,
+          ice_inferred,
+          if_inferred,
+          field_confidence,
+          user_verified_fields,
+          extraction_engine,
+          ttc_reconstructed,
+          tva_calculated,
+          amounts_sanitized,
+          supplier_from_folder,
+          date_paie_from_bank,
+          ...line
+        }) => ({
+          ...line,
+          taux: Number(line.taux),
+          id_paie: Number(line.id_paie),
+        }),
+      ),
     });
 
     els.extractionStatus.textContent = `Fichier ${filename} téléchargé avec succès.`;
@@ -606,10 +666,13 @@ function downloadExcel() {
 }
 
 function openExportReview(issues) {
+  const errors = issues.filter((issue) => issue.level === "error").length;
   const warns = issues.filter((issue) => issue.level === "warn").length;
-  els.exportReviewIntro.textContent = warns
-    ? `${warns} point(s) à relire. Corrigez les lignes ou exportez après confirmation — l'export n'est jamais bloqué.`
-    : "Certains identifiants ont été repris d'autres factures du même fournisseur. Confirmez puis exportez.";
+  els.exportReviewIntro.textContent = errors
+    ? `${errors} point(s) critique(s) et ${warns} à relire. Corrigez ou confirmez — l'export n'est jamais bloqué.`
+    : warns
+      ? `${warns} champ(s) à relire. Corrigez les lignes ou exportez après confirmation.`
+      : "Confirmez puis exportez.";
   els.exportReviewList.innerHTML = issues
     .map((issue) => `<li class="review-${issue.level}">${issue.text}</li>`)
     .join("");
@@ -623,6 +686,7 @@ function exportExcel() {
       return;
     }
 
+    refreshAllFieldConfidence();
     const issues = collectExportReview(state.lines, {
       clientIce: currentClientIce(),
       duplicateIndexes: findDuplicateLineIndexes(state.lines),
