@@ -31,6 +31,23 @@ function supplierNameKey(name) {
     .join("");
 }
 
+function isAvoirLine(line) {
+  const text = `${line.fact_num || ""} ${line.designation || ""} ${line.source_file || ""}`;
+  return /avoir/i.test(text);
+}
+
+/** TTC signé pour le rapprochement : les avoirs sont toujours soustraits. */
+function lineTtcAmount(line) {
+  const ttc = Number(line.m_ttc);
+  if (!Number.isFinite(ttc)) return 0;
+  if (isAvoirLine(line) || ttc < 0) return -Math.abs(ttc);
+  return ttc;
+}
+
+function roundMoney(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
 function normalizeText(value) {
   return String(value || "")
     .normalize("NFD")
@@ -248,7 +265,7 @@ function buildInvoiceGroups(lines) {
     }
     const group = groups.get(key);
     group.indices.push(index);
-    group.totalTtc += Number(line.m_ttc) || 0;
+    group.totalTtc = roundMoney(group.totalTtc + lineTtcAmount(line));
   });
   return [...groups.values()];
 }
@@ -267,7 +284,7 @@ function labelScore(label, libFrss, factNum) {
 }
 
 function amountsMatch(a, b) {
-  return Math.abs(Math.abs(a) - Math.abs(b)) <= AMOUNT_TOLERANCE;
+  return Math.abs(roundMoney(a) - roundMoney(b)) <= AMOUNT_TOLERANCE;
 }
 
 /** Sous-ensemble de groupes facture dont la somme TTC correspond au montant. */
@@ -368,7 +385,7 @@ export function applyBankStatement(
     const debitAmount = txn.absAmount;
 
     const groupCandidates = groups
-      .filter((g) => !usedGroupKeys.has(g.key) && amountsMatch(g.totalTtc, debitAmount))
+      .filter((g) => !usedGroupKeys.has(g.key) && g.totalTtc > 0 && amountsMatch(g.totalTtc, debitAmount))
       .map((g) => ({ ...g, score: labelScore(txn.label, g.lib_frss, g.fact_num) }))
       .sort((a, b) => b.score - a.score);
 
@@ -390,7 +407,8 @@ export function applyBankStatement(
       .filter(({ line, index }) => {
         if (line.designation === "FRAIS BANCAIRE") return false;
         if (usedLineIndices.has(index)) return false;
-        return amountsMatch(line.m_ttc, debitAmount);
+        const ttc = lineTtcAmount(line);
+        return ttc > 0 && amountsMatch(ttc, debitAmount);
       })
       .map(({ line, index }) => ({
         index,
