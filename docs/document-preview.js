@@ -373,6 +373,8 @@ export function bindPreviewControls(ui, onPageChange) {
   ui.canvasWrap.addEventListener(
     "wheel",
     (event) => {
+      // Molette / trackpad : défilement natif. Zoom uniquement avec Ctrl ou Cmd (pinch).
+      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
       changePreviewZoom(ui, delta);
