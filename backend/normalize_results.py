@@ -180,6 +180,11 @@ def parse_ttc_ventilation(text: str) -> list[dict[str, float]]:
     return items
 
 
+def reconcile_line_amounts(line: InvoiceLine) -> InvoiceLine:
+    """Corrige toute incohérence HT/TVA/TTC (générique, tous fournisseurs)."""
+    return fix_ttc_mislabeled_line(line)
+
+
 def apply_ttc_ventilation_fixes(result: ExtractionResult) -> ExtractionResult:
     text = result.raw_text or ""
     ventilation = parse_ttc_ventilation(text)
@@ -209,7 +214,7 @@ def apply_ttc_ventilation_fixes(result: ExtractionResult) -> ExtractionResult:
     changed = False
     for line in result.lines:
         before = (line.m_ht, line.tva, line.m_ttc)
-        fixed.append(fix_ttc_mislabeled_line(line))
+        fixed.append(reconcile_line_amounts(line))
         after = (fixed[-1].m_ht, fixed[-1].tva, fixed[-1].m_ttc)
         if before != after:
             changed = True
