@@ -407,20 +407,24 @@ tr.duplicate-row td:first-child {
 .empty-state p { margin: 0.25rem 0; }
 
 .review-layout {
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.review-layout--preview-open {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(380px, 46%);
   gap: 1rem;
   align-items: start;
-  margin-top: 0.5rem;
 }
 
-.container--review .review-layout {
+.container--review .review-layout--preview-open {
   grid-template-columns: minmax(0, 1fr) minmax(440px, 48%);
   gap: 1.25rem;
 }
 
 @media (min-width: 1400px) {
-  .container--review .review-layout {
+  .container--review .review-layout--preview-open {
     grid-template-columns: minmax(0, 52%) minmax(480px, 48%);
   }
 }
@@ -464,6 +468,13 @@ tr.duplicate-row td:first-child {
   align-items: flex-end;
   gap: 0.35rem;
   flex-shrink: 0;
+}
+
+.preview-close-btn {
+  align-self: flex-end;
+  min-width: 2rem;
+  padding: 0.25rem 0.45rem;
+  line-height: 1;
 }
 
 .preview-nav,
@@ -575,7 +586,7 @@ tr.selected-row td:first-child {
 }
 
 @media (max-width: 1000px) {
-  .review-layout {
+  .review-layout--preview-open {
     grid-template-columns: 1fr;
   }
 
