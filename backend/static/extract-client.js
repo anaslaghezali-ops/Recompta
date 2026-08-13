@@ -1412,28 +1412,26 @@ function duplicateSignatures(line) {
     .replace(/\\/g, "/")
     .split("/")
     .filter(Boolean)
-    .slice(-2)
     .join("/")
-    .toLowerCase()
-    .replace(/[^a-z0-9./]/g, "");
+    .toLowerCase();
+  const isBankFee = String(line.designation || "").toUpperCase().includes("FRAIS BANCAIRE");
 
   const keys = [];
   if (supplier && factNum) {
-    keys.push(`fact:${supplier}|${factNum}|${Number(line.taux)}|${ttc}`);
+    keys.push(`fact:${supplier}|${factNum}|${ttc}`);
   }
-  if (source && ttc !== 0) {
-    keys.push(`file:${source}|${ttc}`);
+  if (!isBankFee && source && factNum && ttc !== 0) {
+    keys.push(`file:${source}|${factNum}|${ttc}`);
   }
-  if (supplier && date && ttc) {
-    keys.push(`amt:${supplier}|${date}|${ttc}`);
+  if (!isBankFee && !factNum && source && date && ttc !== 0) {
+    keys.push(`filedate:${source}|${date}|${ttc}`);
   }
   return keys;
 }
 
 /**
- * Repère les lignes déjà présentes : même fournisseur + n° facture, ou même
- * fichier source + TTC, ou même fournisseur + date + TTC. La première
- * occurrence est conservée ; les suivantes sont des doublons.
+ * Doublon = même fournisseur + même n° de facture + même TTC.
+ * Les frais bancaires récurrents (même montant, dates différentes) ne sont pas des doublons.
  */
 export function findDuplicateLineIndexes(lines) {
   const seen = new Map();
