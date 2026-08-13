@@ -1463,29 +1463,75 @@ export async function extractAllFiles(files, onProgress) {
   return normalizeExtractionResults(results);
 }
 
+/** Champs pour lesquels une modification peut être propagée aux lignes ayant la même valeur. */
+export const BULK_EDIT_FIELDS = {
+  lib_frss: "Fournisseur",
+  ice_frs: "ICE",
+  if: "IF",
+};
+
 /** Même nom fournisseur (insensible à la casse, espaces en trop). */
 export function supplierNamesMatch(a, b) {
   return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 }
 
-/** Nombre de lignes (hors index exclu) avec ce nom fournisseur. */
-export function countLinesWithSupplier(lines, name, excludeIndex = -1) {
+export function iceValuesMatch(a, b) {
+  const da = String(a || "").replace(/\D/g, "");
+  const db = String(b || "").replace(/\D/g, "");
+  return da === db && da.length > 0;
+}
+
+export function ifValuesMatch(a, b) {
+  const left = String(a || "").trim().toUpperCase();
+  const right = String(b || "").trim().toUpperCase();
+  return left.length > 0 && left === right;
+}
+
+export function fieldValuesMatch(fieldKey, a, b) {
+  if (fieldKey === "lib_frss") return supplierNamesMatch(a, b);
+  if (fieldKey === "ice_frs") return iceValuesMatch(a, b);
+  if (fieldKey === "if") return ifValuesMatch(a, b);
+  return String(a || "").trim() === String(b || "").trim();
+}
+
+/** Nombre de lignes (hors index exclu) avec la même valeur sur ce champ. */
+export function countLinesWithFieldValue(lines, fieldKey, value, excludeIndex = -1) {
   return (lines || []).filter(
-    (line, index) => index !== excludeIndex && supplierNamesMatch(line.lib_frss, name),
+    (line, index) => index !== excludeIndex && fieldValuesMatch(fieldKey, line[fieldKey], value),
   ).length;
 }
 
+/** @deprecated utiliser countLinesWithFieldValue */
+export function countLinesWithSupplier(lines, name, excludeIndex = -1) {
+  return countLinesWithFieldValue(lines, "lib_frss", name, excludeIndex);
+}
+
 /**
- * Remplace l'ancien nom fournisseur par le nouveau sur toutes les lignes concernées.
+ * Remplace une valeur sur toutes les lignes qui l'avaient (fournisseur, ICE ou IF).
  * Renvoie les lignes modifiées.
  */
-export function applySupplierRename(lines, oldName, newName) {
+export function applyFieldValueBulk(lines, fieldKey, oldValue, newValue) {
   const updated = [];
   for (const line of lines || []) {
-    if (!supplierNamesMatch(line.lib_frss, oldName)) continue;
-    line.lib_frss = newName;
-    line.supplier_from_folder = false;
+    if (!fieldValuesMatch(fieldKey, line[fieldKey], oldValue)) continue;
+    if (fieldKey === "lib_frss") {
+      line.lib_frss = newValue;
+      line.supplier_from_folder = false;
+    } else if (fieldKey === "ice_frs") {
+      line.ice_frs = newValue;
+      line.ice_inferred = false;
+    } else if (fieldKey === "if") {
+      line.if = newValue;
+      line.if_inferred = false;
+    } else {
+      line[fieldKey] = newValue;
+    }
     updated.push(line);
   }
   return updated;
+}
+
+/** @deprecated utiliser applyFieldValueBulk */
+export function applySupplierRename(lines, oldName, newName) {
+  return applyFieldValueBulk(lines, "lib_frss", oldName, newName);
 }

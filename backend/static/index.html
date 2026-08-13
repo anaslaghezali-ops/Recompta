@@ -97,7 +97,7 @@
           </button>
         </div>
       </div>
-      <p class="hint">Cliquez <strong>Voir</strong> pour afficher une facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau sans défilement latéral.</p>
+      <p class="hint">Cliquez <strong>Voir</strong> pour afficher une facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau. En modifiant <strong>Fournisseur</strong>, <strong>ICE</strong> ou <strong>IF</strong>, vous pouvez appliquer la correction à toutes les lignes qui avaient la même valeur.</p>
       <div id="emptyState" class="empty-state">
         <p>Aucune ligne pour l'instant.</p>
       </div>
@@ -200,13 +200,13 @@
     </form>
   </dialog>
 
-  <dialog id="supplierRenameDialog" class="review-dialog">
+  <dialog id="fieldBulkDialog" class="review-dialog">
     <form method="dialog">
-      <h2>Fournisseur renommé</h2>
-      <p id="supplierRenameIntro" class="hint"></p>
+      <h2 id="fieldBulkTitle">Valeur modifiée</h2>
+      <p id="fieldBulkIntro" class="hint"></p>
       <div class="dialog-actions">
         <button value="cancel" class="secondary" type="submit">Cette ligne seulement</button>
-        <button id="supplierRenameAll" class="primary" type="button">Appliquer à toutes les lignes</button>
+        <button id="fieldBulkApplyAll" class="primary" type="button">Appliquer à toutes les lignes</button>
       </div>
     </form>
   </dialog>
@@ -214,6 +214,10 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<<<<<<< HEAD
   <script type="module" src="app.js?v=preview6"></script>
+=======
+  <script type="module" src="app.js?v=bulk1"></script>
+>>>>>>> 526f293 (feat(ui): propager une correction Fournisseur, ICE ou IF sur toutes les lignes)
 </body>
 </html>

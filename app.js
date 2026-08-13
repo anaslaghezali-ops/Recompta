@@ -1,13 +1,14 @@
 import {
-  applySupplierRename,
+  applyFieldValueBulk,
+  BULK_EDIT_FIELDS,
   completeSupplierIdentifiers,
-  countLinesWithSupplier,
+  countLinesWithFieldValue,
   expandUploadedFiles,
   extractInvoice,
+  fieldValuesMatch,
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
-  supplierNamesMatch,
 } from "./extract-client.js";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
@@ -113,9 +114,10 @@ const els = {
   exportReviewIntro: document.getElementById("exportReviewIntro"),
   exportReviewList: document.getElementById("exportReviewList"),
   exportReviewConfirm: document.getElementById("exportReviewConfirm"),
-  supplierRenameDialog: document.getElementById("supplierRenameDialog"),
-  supplierRenameIntro: document.getElementById("supplierRenameIntro"),
-  supplierRenameAll: document.getElementById("supplierRenameAll"),
+  fieldBulkDialog: document.getElementById("fieldBulkDialog"),
+  fieldBulkTitle: document.getElementById("fieldBulkTitle"),
+  fieldBulkIntro: document.getElementById("fieldBulkIntro"),
+  fieldBulkApplyAll: document.getElementById("fieldBulkApplyAll"),
 };
 
 const previewUi = {
@@ -139,23 +141,31 @@ const previewUi = {
   image: els.previewImage,
 };
 
-let pendingSupplierRename = null;
+let pendingFieldBulk = null;
 
-function openSupplierRenameDialog(oldName, newName, otherCount) {
-  pendingSupplierRename = { oldName, newName };
-  els.supplierRenameIntro.textContent =
-    `Remplacer « ${oldName} » par « ${newName} » sur ${otherCount} autre(s) ligne(s) ?`;
-  els.supplierRenameDialog.showModal();
+function openFieldBulkDialog(fieldKey, oldValue, newValue, otherCount) {
+  const label = BULK_EDIT_FIELDS[fieldKey] || fieldKey;
+  pendingFieldBulk = { fieldKey, oldValue, newValue };
+  els.fieldBulkTitle.textContent = `${label} modifié`;
+  els.fieldBulkIntro.textContent =
+    `Remplacer « ${oldValue} » par « ${newValue} » pour le champ ${label} sur ${otherCount} autre(s) ligne(s) ?`;
+  els.fieldBulkDialog.showModal();
 }
 
-function applyPendingSupplierRename() {
-  if (!pendingSupplierRename) return 0;
-  const { oldName, newName } = pendingSupplierRename;
-  const updated = applySupplierRename(state.lines, oldName, newName);
-  for (const line of updated) markFieldVerified(line, "lib_frss");
-  pendingSupplierRename = null;
-  els.supplierRenameDialog.close();
+function applyPendingFieldBulk() {
+  if (!pendingFieldBulk) return 0;
+  const { fieldKey, oldValue, newValue } = pendingFieldBulk;
+  const updated = applyFieldValueBulk(state.lines, fieldKey, oldValue, newValue);
+  for (const line of updated) markFieldVerified(line, fieldKey);
+  pendingFieldBulk = null;
+  els.fieldBulkDialog.close();
   return updated.length;
+}
+
+function maybeOfferFieldBulk(fieldKey, oldValue, newValue, lineIndex) {
+  if (!oldValue || !newValue || fieldValuesMatch(fieldKey, oldValue, newValue)) return;
+  const others = countLinesWithFieldValue(state.lines, fieldKey, oldValue, lineIndex);
+  if (others > 0) openFieldBulkDialog(fieldKey, oldValue, newValue, others);
 }
 
 function syncPreviewLayout() {
@@ -397,38 +407,41 @@ function renderTable() {
       }
 
       if (!field.readonly) {
-        if (field.key === "lib_frss") {
+        if (field.key in BULK_EDIT_FIELDS) {
           input.addEventListener("focus", () => {
-            input.dataset.prevSupplier = line.lib_frss ?? "";
+            input.dataset.prevValue = line[field.key] ?? "";
           });
         }
         input.addEventListener("change", () => {
+          let oldValue = "";
+          let newValue = "";
+
           if (field.type === "number") {
             line[field.key] = Number(input.value) || 0;
           } else if (field.key === "taux" || field.key === "id_paie") {
             line[field.key] = Number(input.value);
           } else if (field.key === "ice_frs") {
+            oldValue = String(input.dataset.prevValue ?? line.ice_frs ?? "");
             const digits = input.value.replace(/\D/g, "").slice(0, 15);
             line.ice_frs = digits.length === 15 ? digits : "";
             input.value = line.ice_frs;
+            newValue = line.ice_frs;
+            line.ice_inferred = false;
           } else if (field.key === "if") {
-            line.if = input.value;
+            oldValue = String(input.dataset.prevValue ?? line.if ?? "");
+            line.if = input.value.trim();
+            input.value = line.if;
+            newValue = line.if;
+            line.if_inferred = false;
           } else if (field.key === "lib_frss") {
-            const oldName = String(input.dataset.prevSupplier ?? line.lib_frss ?? "").trim();
-            const newName = String(input.value ?? "").trim();
-            line.lib_frss = newName;
+            oldValue = String(input.dataset.prevValue ?? line.lib_frss ?? "").trim();
+            newValue = String(input.value ?? "").trim();
+            line.lib_frss = newValue;
             line.supplier_from_folder = false;
-            markFieldVerified(line, field.key);
-            renderTable();
-            updateButtons();
-            if (oldName && newName && !supplierNamesMatch(oldName, newName)) {
-              const others = countLinesWithSupplier(state.lines, oldName, index);
-              if (others > 0) openSupplierRenameDialog(oldName, newName, others);
-            }
-            return;
           } else {
             line[field.key] = input.value;
           }
+
           markFieldVerified(line, field.key);
           if (field.key === "date_paie") line.date_paie_from_bank = false;
           if (["m_ht", "taux"].includes(field.key)) {
@@ -438,7 +451,9 @@ function renderTable() {
           }
           renderTable();
           updateButtons();
-          return;
+          if (field.key in BULK_EDIT_FIELDS) {
+            maybeOfferFieldBulk(field.key, oldValue, newValue, index);
+          }
         });
       }
 
@@ -1096,16 +1111,16 @@ els.applyBankBtn.addEventListener("click", applyBankToLines);
 loadApiSettings();
 bindPreviewControls(previewUi);
 els.previewCloseBtn?.addEventListener("click", () => closeLinePreview());
-els.supplierRenameAll?.addEventListener("click", () => {
-  applyPendingSupplierRename();
+els.fieldBulkApplyAll?.addEventListener("click", () => {
+  applyPendingFieldBulk();
   renderTable();
   updateButtons();
   if (state.previewOpen && state.selectedLineIndex != null) {
     showLinePreview(previewUi, state.lines[state.selectedLineIndex], state.selectedLineIndex);
   }
 });
-els.supplierRenameDialog?.addEventListener("close", () => {
-  pendingSupplierRename = null;
+els.fieldBulkDialog?.addEventListener("close", () => {
+  pendingFieldBulk = null;
 });
 loadClientSettings();
 updateFilenamePreview();
