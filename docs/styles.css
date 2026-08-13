@@ -465,6 +465,16 @@ td:nth-child(13) select { max-width: 3.5rem; }
   flex-wrap: wrap;
 }
 
+.upload-zone.bank-upload {
+  border-style: dashed;
+  border-color: #7eb8e8;
+  background: #f5faff;
+}
+
+.upload-zone.bank-upload .upload-icon {
+  font-size: 2rem;
+}
+
 @media (max-width: 700px) {
   .hero, .container { padding-left: 1rem; padding-right: 1rem; }
   .export-inner { flex-direction: column; align-items: stretch; }

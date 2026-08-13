@@ -6,17 +6,26 @@ import {
 } from "./extract-client.js";
 import { exportDedTvaExcel } from "./export-client.js";
 import {
+  applyBankStatement,
+  normalizeBankTransactions,
+  parseBankFile,
+} from "./bank-statement-client.js";
+import {
   extractViaServer,
   fetchServerHealth,
   getApiUrl,
   mergeWithAiRetry,
   needsAiRetry,
+  parseBankStatementViaServer,
   saveApiUrl,
 } from "./api-client.js";
 
 const state = {
   files: [],
   lines: [],
+  bankFile: null,
+  bankTransactions: [],
+  bankMeta: { filename: "", bankName: "BANQUE" },
 };
 
 const DESIGNATIONS = [
@@ -51,6 +60,11 @@ const els = {
   emptyState: document.getElementById("emptyState"),
   tableWrap: document.getElementById("tableWrap"),
   steps: document.querySelectorAll(".step"),
+  bankDropZone: document.getElementById("bankDropZone"),
+  bankFileInput: document.getElementById("bankFileInput"),
+  bankFileInfo: document.getElementById("bankFileInfo"),
+  applyBankBtn: document.getElementById("applyBankBtn"),
+  bankStatus: document.getElementById("bankStatus"),
 };
 
 function emptyLine(sourceFile = "") {
@@ -91,6 +105,8 @@ function updateButtons() {
   els.exportBtn.disabled = state.lines.length === 0;
 
   els.clearBtn.hidden = state.files.length === 0 && state.lines.length === 0;
+
+  els.applyBankBtn.disabled = state.lines.length === 0 || state.bankTransactions.length === 0;
 
   const uniqueFiles = new Set(state.lines.map((l) => l.source_file).filter(Boolean));
   els.lineCount.textContent = `${state.lines.length} ligne(s)`;
@@ -541,9 +557,107 @@ function exportExcel() {
   }
 }
 
+function clearBankState() {
+  state.bankFile = null;
+  state.bankTransactions = [];
+  state.bankMeta = { filename: "", bankName: "BANQUE" };
+  els.bankFileInput.value = "";
+  els.bankFileInfo.hidden = true;
+  els.bankFileInfo.innerHTML = "";
+  els.bankStatus.textContent = "";
+  els.bankStatus.className = "status";
+}
+
+function renderBankFileInfo() {
+  if (!state.bankFile) {
+    els.bankFileInfo.hidden = true;
+    return;
+  }
+  const payments = state.bankTransactions.filter((t) => t.type === "payment").length;
+  const fees = state.bankTransactions.filter((t) => t.type === "fee").length;
+  els.bankFileInfo.hidden = false;
+  els.bankFileInfo.innerHTML = `<div class="file-item">${shortFilename(state.bankFile.name)} — ${state.bankTransactions.length} mouvement(s) (${payments} paiement(s), ${fees} frais)</div>`;
+}
+
+async function loadBankFile(file) {
+  if (!file) return;
+  els.bankStatus.textContent = "Lecture du relevé…";
+  els.bankStatus.className = "status";
+
+  const lower = (file.name || "").toLowerCase();
+  const isSpreadsheet = lower.endsWith(".csv") || lower.endsWith(".txt") || lower.endsWith(".xlsx") || lower.endsWith(".xls");
+
+  try {
+    let transactions = [];
+    let bankName = "BANQUE";
+    const warnings = [];
+
+    if (isSpreadsheet) {
+      const parsed = await parseBankFile(file);
+      transactions = parsed.transactions;
+      if (parsed.warnings?.length) warnings.push(...parsed.warnings);
+      state.bankMeta = { filename: parsed.filename, bankName };
+    } else {
+      const apiUrl = resolvedApiUrl();
+      if (!apiUrl) {
+        throw new Error("Pour un relevé PDF/image, configurez l'URL du Codespace (port 8000).");
+      }
+      const result = await parseBankStatementViaServer(file, apiUrl);
+      transactions = normalizeBankTransactions(result.transactions);
+      bankName = result.bank_name || "BANQUE";
+      if (result.warnings?.length) warnings.push(...result.warnings);
+      if (!transactions.length) {
+        warnings.push("Aucun mouvement extrait — essayez un export CSV depuis votre banque.");
+      }
+      state.bankMeta = { filename: result.filename || file.name, bankName };
+    }
+
+    state.bankFile = file;
+    state.bankTransactions = transactions;
+    renderBankFileInfo();
+    updateButtons();
+
+    let msg = `${transactions.length} mouvement(s) chargé(s).`;
+    if (state.lines.length) msg += " Cliquez sur « Appliquer dates & frais ».";
+    els.bankStatus.textContent = msg;
+    if (warnings.length) {
+      els.bankStatus.textContent += ` ${warnings.join(" ")}`;
+      els.bankStatus.classList.add("warn");
+    }
+  } catch (error) {
+    clearBankState();
+    els.bankStatus.textContent = `Erreur relevé : ${error.message}`;
+    els.bankStatus.classList.add("error");
+    updateButtons();
+  }
+}
+
+function applyBankToLines() {
+  if (!state.bankTransactions.length || !state.lines.length) return;
+
+  const result = applyBankStatement(state.bankTransactions, state.lines, {
+    sourceFile: state.bankMeta.filename || "releve_bancaire",
+    bankName: state.bankMeta.bankName || "BANQUE",
+  });
+
+  state.lines = result.lines;
+  renderTable();
+  updateButtons();
+
+  const { paymentsMatched, paymentsUnmatched, feesAdded } = result.stats;
+  let msg = `${paymentsMatched} paiement(s) rapproché(s), ${feesAdded} ligne(s) frais bancaire ajoutée(s).`;
+  if (paymentsUnmatched) msg += ` ${paymentsUnmatched} débit(s) sans facture correspondante.`;
+
+  els.bankStatus.textContent = msg;
+  els.bankStatus.classList.remove("error", "warn");
+  if (paymentsUnmatched) els.bankStatus.classList.add("warn");
+  else els.bankStatus.classList.add("success");
+}
+
 function clearAll() {
   state.files = [];
   state.lines = [];
+  clearBankState();
   renderFileList();
   renderTable();
   els.extractionStatus.textContent = "";
@@ -574,6 +688,23 @@ els.addLineBtn.addEventListener("click", () => {
 });
 els.exportBtn.addEventListener("click", exportExcel);
 els.clearBtn.addEventListener("click", clearAll);
+els.bankFileInput.addEventListener("change", (e) => loadBankFile(e.target.files?.[0]));
+els.applyBankBtn.addEventListener("click", applyBankToLines);
+
+["dragenter", "dragover"].forEach((eventName) => {
+  els.bankDropZone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    els.bankDropZone.classList.add("dragover");
+  });
+});
+
+["dragleave", "drop"].forEach((eventName) => {
+  els.bankDropZone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    els.bankDropZone.classList.remove("dragover");
+    if (eventName === "drop") loadBankFile(e.dataTransfer.files?.[0]);
+  });
+});
 
 ["dragenter", "dragover"].forEach((eventName) => {
   els.dropZone.addEventListener(eventName, (e) => {

@@ -109,6 +109,27 @@
       </div>
     </section>
 
+    <section class="card">
+      <div class="section-header">
+        <h2>Relevé bancaire</h2>
+      </div>
+      <p class="hint">
+        Importez le relevé pour renseigner automatiquement les <strong>dates de paiement</strong>
+        (rapprochement par montant TTC) et ajouter les <strong>frais bancaires</strong> (commissions, agios).
+      </p>
+      <div class="upload-zone bank-upload" id="bankDropZone">
+        <input id="bankFileInput" type="file" accept=".csv,.txt,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.webp" />
+        <div class="upload-icon">🏦</div>
+        <p class="upload-title">Glissez votre relevé ici</p>
+        <p class="upload-hint">CSV, Excel ou PDF (IA via Codespace)</p>
+      </div>
+      <div id="bankFileInfo" class="file-list" hidden></div>
+      <div class="actions">
+        <button id="applyBankBtn" class="secondary" type="button" disabled>Appliquer dates &amp; frais</button>
+      </div>
+      <div id="bankStatus" class="status"></div>
+    </section>
+
     <section class="card export-card">
       <div class="export-inner">
         <div>
