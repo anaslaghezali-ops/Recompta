@@ -1,5 +1,6 @@
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
 import { attachFieldConfidence } from "./field-confidence.js";
+import { parseSourceFilename } from "./source-id.js";
 import { appendBlendedWarnings, tryApplyVentilationFromText } from "./vat-multi-rate.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -911,7 +912,7 @@ function extractInvoiceNumber(text, filename) {
     const match = text.match(pattern);
     if (match) return match[1].trim();
   }
-  const base = basename(filename);
+  const base = basename(parseSourceFilename(filename).filename);
   const dot = base.lastIndexOf(".");
   return dot >= 0 ? base.slice(0, dot) : base;
 }
@@ -1220,6 +1221,14 @@ async function imageToCanvas(content, mime) {
 }
 
 export async function extractInvoice(filename, content, mimeType, onOcrPage) {
+  const parsed = parseSourceFilename(filename);
+  const result = await extractInvoiceFromFile(parsed.filename || filename, content, mimeType, onOcrPage);
+  result.filename = parsed.filename || result.filename;
+  if (parsed.sourceId) result.source_id = parsed.sourceId;
+  return result;
+}
+
+async function extractInvoiceFromFile(filename, content, mimeType, onOcrPage) {
   if (mimeType === "application/pdf") {
     let pdf;
     try {
@@ -1447,6 +1456,7 @@ export async function extractAllFiles(files, onProgress) {
         onProgress(i + 1, expanded.length, item.filename, `OCR page ${page}/${total}`);
       }
     });
+    if (item.source_id && !result.source_id) result.source_id = item.source_id;
     results.push(result);
   }
 

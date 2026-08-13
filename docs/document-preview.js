@@ -3,9 +3,17 @@
  */
 
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs";
+import {
+  assignSourceIds,
+  normalizePath,
+  parseSourceFilename,
+  tagSourceFilename,
+} from "./source-id.js?v=preview6";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+
+export { assignSourceIds, parseSourceFilename, tagSourceFilename };
 
 const FIELD_LABELS = {
   fact_num: "N° facture",
@@ -58,10 +66,6 @@ export async function changePreviewZoom(ui, delta) {
   return setPreviewZoom(ui, currentZoom(ui) + delta);
 }
 
-function normalizePath(filename) {
-  return String(filename || "").replace(/\\/g, "/");
-}
-
 function pdfBytes(content) {
   if (content instanceof ArrayBuffer) return new Uint8Array(content.slice(0));
   if (ArrayBuffer.isView(content)) {
@@ -87,26 +91,19 @@ export function addSourceFiles(items) {
   return records;
 }
 
-/** Conserve les documents déjà extraits ; ajoute le lot courant (ordre = fichiers). */
+/** Conserve les documents déjà extraits ; ajoute le lot courant. */
 export function cacheSourceFiles(items) {
   return addSourceFiles(items);
 }
 
-export function resolveSourceId(recordsOrMap, filename, resultIndex = -1) {
+export function resolveSourceId(recordsOrMap, filename, _resultIndex = -1) {
+  const parsed = parseSourceFilename(filename);
   if (Array.isArray(recordsOrMap)) {
-    if (resultIndex >= 0 && recordsOrMap[resultIndex]) return recordsOrMap[resultIndex].id;
-    const key = normalizePath(filename);
-    const unused = recordsOrMap.filter((rec) => rec && !rec._taken);
-    const exact = unused.find((rec) => rec.filename === key);
-    if (exact) {
-      exact._taken = true;
-      return exact.id;
-    }
-    return "";
+    return (
+      assignSourceIds(recordsOrMap, [{ filename, source_id: parsed.sourceId }])[0] || ""
+    );
   }
-  const key = normalizePath(filename);
-  if (!key || !recordsOrMap?.size) return "";
-  if (recordsOrMap.has(key)) return recordsOrMap.get(key);
+  if (parsed.sourceId && sourceFiles.has(parsed.sourceId)) return parsed.sourceId;
   return "";
 }
 
@@ -128,11 +125,33 @@ export function getSourceFile(lineOrFilename, sourceId = "") {
 }
 
 async function openPdfDoc(sourceFile) {
-  const cacheKey = sourceFile.id || sourceFile.filename;
-  if (pdfDocs.has(cacheKey)) return pdfDocs.get(cacheKey);
+  const cacheKey = sourceFile.id;
+  if (cacheKey && pdfDocs.has(cacheKey)) return pdfDocs.get(cacheKey);
   const doc = await pdfjsLib.getDocument({ data: pdfBytes(sourceFile.content) }).promise;
-  pdfDocs.set(cacheKey, doc);
+  if (cacheKey) pdfDocs.set(cacheKey, doc);
   return doc;
+}
+
+function cancelPreviewRender(ui) {
+  if (ui._renderTask) {
+    try {
+      ui._renderTask.cancel();
+    } catch {
+      /* déjà terminé */
+    }
+    ui._renderTask = null;
+  }
+}
+
+function replacePreviewCanvas(ui) {
+  if (!ui.canvas || !ui.canvas.parentNode) return;
+  cancelPreviewRender(ui);
+  const fresh = ui.canvas.cloneNode(false);
+  fresh.removeAttribute("width");
+  fresh.removeAttribute("height");
+  fresh.hidden = true;
+  ui.canvas.replaceWith(fresh);
+  ui.canvas = fresh;
 }
 
 function isPdf(sourceFile) {
@@ -193,12 +212,16 @@ export async function showLinePreview(ui, line, lineIndex = null) {
     ? `Facture ${line.fact_num}${line.lib_frss ? ` — ${line.lib_frss}` : ""}`
     : shortName(line.source_file);
   if (ui.title) ui.title.textContent = label;
-  if (ui.subtitle) {
-    ui.subtitle.textContent = line.source_file ? shortName(line.source_file) : "";
-  }
   if (ui.issues) renderLineIssues(ui.issues, line);
 
   const source = getSourceFile(line);
+  if (ui.subtitle) {
+    ui.subtitle.textContent = source
+      ? shortName(source.filename)
+      : line.source_file
+        ? shortName(line.source_file)
+        : "";
+  }
   if (!source) {
     if (ui.missing) {
       ui.missing.hidden = false;
@@ -227,16 +250,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
   ui._previewState.pageCount = 1;
   applyDocumentZoom(ui);
   if (ui.zoom) ui.zoom.hidden = false;
-
-  if (ui.canvas) {
-    const ctx = ui.canvas.getContext("2d");
-    ctx.clearRect(0, 0, ui.canvas.width, ui.canvas.height);
-    ui.canvas.hidden = true;
-  }
-  if (ui.image) {
-    ui.image.removeAttribute("src");
-    ui.image.hidden = true;
-  }
+  replacePreviewCanvas(ui);
 
   try {
     if (isPdf(source)) {
@@ -245,7 +259,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
       ui._previewState.pdf = pdf;
       ui._previewState.pageCount = pdf.numPages;
       ui._previewState.page = 1;
-      await renderPdfPage(ui, pdf, 1);
+      await renderPdfPage(ui, pdf, 1, token);
       if (token !== ui._previewToken) return;
       if (ui.nav) ui.nav.hidden = ui._previewState.pageCount <= 1;
       updatePageInfo(ui);
@@ -287,16 +301,27 @@ function updatePageInfo(ui) {
   if (ui.nextBtn) ui.nextBtn.disabled = ui._previewState.page >= ui._previewState.pageCount;
 }
 
-async function renderPdfPage(ui, pdf, pageNumber) {
-  const page = await pdf.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
+async function renderPdfPage(ui, pdf, pageNumber, token = null) {
+  cancelPreviewRender(ui);
   const canvas = ui.canvas;
+  const page = await pdf.getPage(pageNumber);
+  if (token != null && token !== ui._previewToken) return;
+  if (!canvas || ui.canvas !== canvas) return;
+  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
   const ctx = canvas.getContext("2d");
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   canvas.hidden = false;
   if (ui.image) ui.image.hidden = true;
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  ui._renderTask = page.render({ canvasContext: ctx, viewport });
+  try {
+    await ui._renderTask.promise;
+  } catch (error) {
+    if (error?.name === "RenderingCancelledException") return;
+    throw error;
+  } finally {
+    if (ui._renderTask) ui._renderTask = null;
+  }
 }
 
 async function renderImage(ui, source) {
@@ -319,7 +344,7 @@ export async function changePreviewPage(ui, delta) {
   const next = ui._previewState.page + delta;
   if (next < 1 || next > ui._previewState.pageCount) return;
   ui._previewState.page = next;
-  await renderPdfPage(ui, ui._previewState.pdf, next);
+  await renderPdfPage(ui, ui._previewState.pdf, next, ui._previewToken);
   updatePageInfo(ui);
 }
 
