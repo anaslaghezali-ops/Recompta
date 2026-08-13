@@ -24,6 +24,48 @@ const FIELD_LABELS = {
 const sourceFiles = new Map();
 const pdfDocs = new Map();
 
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 0.25;
+const ZOOM_DEFAULT = 1;
+let zoomRenderTimer = null;
+
+function clampZoom(value) {
+  const rounded = Math.round(value / ZOOM_STEP) * ZOOM_STEP;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(rounded.toFixed(2))));
+}
+
+function currentZoom(ui) {
+  return ui._previewState?.zoom ?? ZOOM_DEFAULT;
+}
+
+function applyDocumentZoom(ui) {
+  const zoom = currentZoom(ui);
+  if (ui.canvasWrap) ui.canvasWrap.style.setProperty("--preview-zoom", String(zoom));
+  if (ui.zoomLabel) ui.zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+  if (ui.zoomOutBtn) ui.zoomOutBtn.disabled = zoom <= ZOOM_MIN;
+  if (ui.zoomInBtn) ui.zoomInBtn.disabled = zoom >= ZOOM_MAX;
+}
+
+export async function setPreviewZoom(ui, zoom, { rerender = true, delayMs = 0 } = {}) {
+  ui._previewState = ui._previewState || { page: 1, filename: "", zoom: ZOOM_DEFAULT };
+  ui._previewState.zoom = clampZoom(zoom);
+  applyDocumentZoom(ui);
+  if (!rerender || !ui._previewState.pdf) return;
+  if (delayMs > 0) {
+    clearTimeout(zoomRenderTimer);
+    zoomRenderTimer = setTimeout(() => {
+      renderPdfPage(ui, ui._previewState.pdf, ui._previewState.page);
+    }, delayMs);
+    return;
+  }
+  await renderPdfPage(ui, ui._previewState.pdf, ui._previewState.page);
+}
+
+export async function changePreviewZoom(ui, delta, options = {}) {
+  return setPreviewZoom(ui, currentZoom(ui) + delta, options);
+}
+
 function normalizePath(filename) {
   return String(filename || "").replace(/\\/g, "/");
 }
@@ -127,6 +169,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
     if (ui.canvasWrap) ui.canvasWrap.hidden = true;
     if (ui.issues) ui.issues.hidden = true;
     if (ui.nav) ui.nav.hidden = true;
+    if (ui.zoom) ui.zoom.hidden = true;
     return;
   }
 
@@ -150,19 +193,23 @@ export async function showLinePreview(ui, line, lineIndex = null) {
     }
     if (ui.canvasWrap) ui.canvasWrap.hidden = true;
     if (ui.nav) ui.nav.hidden = true;
+    if (ui.zoom) ui.zoom.hidden = true;
     return;
   }
 
   if (ui.missing) ui.missing.hidden = true;
   if (ui.canvasWrap) ui.canvasWrap.hidden = false;
 
-  ui._previewState = ui._previewState || { page: 1, filename: "" };
+  ui._previewState = ui._previewState || { page: 1, filename: "", zoom: ZOOM_DEFAULT };
+  if (ui._previewState.zoom == null) ui._previewState.zoom = ZOOM_DEFAULT;
   if (ui._previewState.filename !== source.filename) {
     ui._previewState.filename = source.filename;
     ui._previewState.page = 1;
     ui._previewState.pdf = null;
     ui._previewState.pageCount = 1;
   }
+  applyDocumentZoom(ui);
+  if (ui.zoom) ui.zoom.hidden = false;
 
   try {
     if (isPdf(source)) {
@@ -181,6 +228,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
         ui.missing.textContent = "Format non prévisualisable (PDF ou image attendu).";
       }
       if (ui.canvasWrap) ui.canvasWrap.hidden = true;
+      if (ui.zoom) ui.zoom.hidden = true;
     }
   } catch (error) {
     if (ui.missing) {
@@ -188,6 +236,7 @@ export async function showLinePreview(ui, line, lineIndex = null) {
       ui.missing.textContent = `Impossible d'afficher le document : ${error.message}`;
     }
     if (ui.canvasWrap) ui.canvasWrap.hidden = true;
+    if (ui.zoom) ui.zoom.hidden = true;
   }
 
   if (lineIndex != null && ui.panel.dataset) {
@@ -209,7 +258,8 @@ function updatePageInfo(ui) {
 
 async function renderPdfPage(ui, pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: 1.4 });
+  const zoom = currentZoom(ui);
+  const viewport = page.getViewport({ scale: 1.4 * zoom });
   const canvas = ui.canvas;
   const ctx = canvas.getContext("2d");
   canvas.width = viewport.width;
@@ -252,6 +302,27 @@ export function bindPreviewControls(ui, onPageChange) {
     ui.nextBtn.addEventListener("click", () => {
       changePreviewPage(ui, 1).then(onPageChange);
     });
+  }
+  if (ui.zoomInBtn) {
+    ui.zoomInBtn.addEventListener("click", () => changePreviewZoom(ui, ZOOM_STEP));
+  }
+  if (ui.zoomOutBtn) {
+    ui.zoomOutBtn.addEventListener("click", () => changePreviewZoom(ui, -ZOOM_STEP));
+  }
+  if (ui.zoomResetBtn) {
+    ui.zoomResetBtn.addEventListener("click", () => setPreviewZoom(ui, ZOOM_DEFAULT));
+  }
+  if (ui.canvasWrap) {
+    ui.canvasWrap.addEventListener(
+      "wheel",
+      (event) => {
+        if (!(event.ctrlKey || event.metaKey)) return;
+        event.preventDefault();
+        const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+        changePreviewZoom(ui, delta, { delayMs: 120 });
+      },
+      { passive: false },
+    );
   }
 }
 

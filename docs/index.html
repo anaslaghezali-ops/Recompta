@@ -97,7 +97,7 @@
           </button>
         </div>
       </div>
-      <p class="hint">Cliquez <strong>Voir</strong> sur une ligne pour afficher la facture scannée à côté du tableau.</p>
+      <p class="hint">Cliquez <strong>Voir</strong> sur une ligne pour afficher la facture à côté. Zoom : boutons <strong>+</strong> / <strong>−</strong> ou Ctrl + molette sur le document.</p>
       <div id="emptyState" class="empty-state">
         <p>Aucune ligne pour l'instant.</p>
       </div>
@@ -122,10 +122,18 @@
               <h3 id="previewTitle">Document</h3>
               <p id="previewSubtitle" class="hint preview-subtitle"></p>
             </div>
-            <div id="previewNav" class="preview-nav" hidden>
-              <button id="previewPrevPage" class="secondary small" type="button" aria-label="Page précédente">‹</button>
-              <span id="previewPageInfo">1 / 1</span>
-              <button id="previewNextPage" class="secondary small" type="button" aria-label="Page suivante">›</button>
+            <div class="preview-toolbar">
+              <div id="previewNav" class="preview-nav" hidden>
+                <button id="previewPrevPage" class="secondary small" type="button" aria-label="Page précédente">‹</button>
+                <span id="previewPageInfo">1 / 1</span>
+                <button id="previewNextPage" class="secondary small" type="button" aria-label="Page suivante">›</button>
+              </div>
+              <div id="previewZoom" class="preview-zoom" hidden>
+                <button id="previewZoomOut" class="secondary small" type="button" aria-label="Dézoomer">−</button>
+                <span id="previewZoomLabel">100%</span>
+                <button id="previewZoomIn" class="secondary small" type="button" aria-label="Zoomer">+</button>
+                <button id="previewZoomReset" class="secondary small" type="button">Ajuster</button>
+              </div>
             </div>
           </div>
           <div id="previewIssues" class="preview-issues" hidden></div>
