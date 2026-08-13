@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -114,6 +116,15 @@ async def reference() -> dict:
     }
 
 
+def extraction_concurrency() -> int:
+    """Extractions simultanées par requête (chaque appel IA dure plusieurs secondes)."""
+    try:
+        value = int(os.getenv("EXTRACTION_CONCURRENCY", "4"))
+    except ValueError:
+        return 4
+    return max(1, min(value, 12))
+
+
 @app.post("/api/extract", response_model=list[ExtractionResult])
 async def extract_files(
     files: Annotated[list[UploadFile], File(...)],
@@ -123,6 +134,7 @@ async def extract_files(
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
     results: list[ExtractionResult] = []
+    pending: list[tuple[str, bytes, str]] = []
     token = activate_client_ice_exclusions(client_ice)
     try:
         for upload in files:
@@ -145,10 +157,26 @@ async def extract_files(
 
             for relative_name, file_content, file_mime in invoice_files:
                 display_name = relative_name if relative_name != upload_name else upload_name
-                result = await extract_invoice(display_name, file_content, file_mime)
-                if len(invoice_files) > 1 or relative_name != upload_name:
-                    result.filename = display_name
-                results.append(result)
+                pending.append((display_name, file_content, file_mime))
+
+        semaphore = asyncio.Semaphore(extraction_concurrency())
+
+        async def extract_one(name: str, data: bytes, mime: str) -> ExtractionResult:
+            # Une facture illisible ne doit jamais faire échouer tout le lot.
+            async with semaphore:
+                try:
+                    result = await extract_invoice(name, data, mime)
+                    result.filename = name
+                    return result
+                except Exception as exc:  # noqa: BLE001
+                    return ExtractionResult(
+                        filename=name,
+                        lines=[],
+                        confidence="low",
+                        warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
+                    )
+
+        results.extend(await asyncio.gather(*(extract_one(*item) for item in pending)))
 
         return normalize_extraction_results(results, client_ice=client_ice)
     finally:

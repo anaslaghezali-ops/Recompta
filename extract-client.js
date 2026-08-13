@@ -1087,6 +1087,18 @@ export async function expandUploadedFiles(files) {
   return expanded;
 }
 
+/**
+ * Développe les ZIP côté navigateur pour que l'envoi au serveur puisse être
+ * découpé en lots (un ZIP de 100 factures resterait sinon une seule requête).
+ * Le chemin relatif est conservé dans le nom : il sert au regroupement par dossier.
+ */
+export async function expandUploadedFilesToFiles(files) {
+  const expanded = await expandUploadedFiles(files);
+  return expanded.map(
+    (item) => new File([item.content], item.filename, { type: item.mime }),
+  );
+}
+
 export async function extractAllFiles(files, onProgress) {
   const expanded = await expandUploadedFiles(files);
   const results = [];

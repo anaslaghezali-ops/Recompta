@@ -51,25 +51,66 @@ export async function fetchServerHealth(apiUrl) {
   return response.json();
 }
 
-export async function extractViaServer(files, apiUrl, { onProgress, clientIce } = {}) {
-  const formData = new FormData();
-  files.forEach((file) => formData.append("files", file));
-  const normalizedIce = (clientIce || "").replace(/\D/g, "");
-  if (normalizedIce.length === 15) {
-    formData.append("client_ice", normalizedIce);
-  }
+// Envoi par petits lots : une requête unique de 100 fichiers dépasserait
+// largement les délais du navigateur et du proxy Codespace.
+const DEFAULT_BATCH_SIZE = 4;
 
-  if (onProgress) onProgress(0, files.length, "Envoi au serveur IA…");
+async function extractBatch(batch, apiUrl, normalizedIce) {
+  const formData = new FormData();
+  batch.forEach((file) => formData.append("files", file));
+  if (normalizedIce.length === 15) formData.append("client_ice", normalizedIce);
 
   const response = await fetchOrExplain(`${apiUrl}/api/extract`, {
     method: "POST",
     body: formData,
   });
-
   if (!response.ok) throw await errorFromResponse(response);
-
-  if (onProgress) onProgress(files.length, files.length, "Terminé");
   return response.json();
+}
+
+export async function extractViaServer(
+  files,
+  apiUrl,
+  { onProgress, clientIce, batchSize = DEFAULT_BATCH_SIZE } = {},
+) {
+  const normalizedIce = (clientIce || "").replace(/\D/g, "");
+  const list = Array.from(files);
+
+  const batches = [];
+  for (let i = 0; i < list.length; i += batchSize) {
+    batches.push(list.slice(i, i + batchSize));
+  }
+
+  const results = [];
+  let done = 0;
+
+  for (const batch of batches) {
+    if (onProgress) {
+      onProgress(done, list.length, `Extraction IA — ${done}/${list.length} fichier(s)…`);
+    }
+
+    try {
+      results.push(...(await extractBatch(batch, apiUrl, normalizedIce)));
+    } catch (error) {
+      // Serveur injoignable : inutile d'insister sur les lots suivants.
+      if (error.message === UNREACHABLE_HINT) throw error;
+      batch.forEach((file) => {
+        results.push({
+          filename: file.name,
+          lines: [],
+          engine: "ai",
+          warnings: [`Lot en échec : ${error.message}`],
+        });
+      });
+    }
+
+    done += batch.length;
+    if (onProgress) {
+      onProgress(done, list.length, `Extraction IA — ${done}/${list.length} fichier(s)…`);
+    }
+  }
+
+  return results;
 }
 
 export function needsAiRetry(result) {

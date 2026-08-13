@@ -1,4 +1,9 @@
-import { extractAllFiles, normalizeExtractionResults, setExtractionContext } from "./extract-client.js";
+import {
+  expandUploadedFilesToFiles,
+  extractAllFiles,
+  normalizeExtractionResults,
+  setExtractionContext,
+} from "./extract-client.js";
 import { exportDedTvaExcel } from "./export-client.js";
 import {
   extractViaServer,
@@ -396,8 +401,9 @@ async function runExtraction(files) {
     try {
       const health = await fetchServerHealth(apiUrl);
       if (health.ai_verified) {
-        els.extractionStatus.textContent = "Extraction IA en cours (serveur)…";
-        return extractViaServer(files, apiUrl, {
+        els.extractionStatus.textContent = "Préparation des fichiers…";
+        const serverFiles = await expandUploadedFilesToFiles(files);
+        return extractViaServer(serverFiles, apiUrl, {
           clientIce,
           onProgress: (_c, _t, label) => {
             els.extractionStatus.textContent = label;
@@ -430,7 +436,9 @@ async function runExtraction(files) {
 
   try {
     els.extractionStatus.textContent = `Relance IA pour ${incomplete.length} fichier(s) incomplet(s)…`;
-    const aiResults = await extractViaServer(files, apiUrl, { clientIce });
+    const aiResults = await extractViaServer(await expandUploadedFilesToFiles(files), apiUrl, {
+      clientIce,
+    });
     return mergeWithAiRetry(localResults, aiResults);
   } catch {
     return localResults;
