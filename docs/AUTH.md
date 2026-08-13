@@ -12,11 +12,15 @@ Collez le contenu de `supabase/migrations/20260813190000_auth_super_admin.sql` �
 
 ## 2. Clé frontend (un seul fichier)
 
-GitHub Pages et le serveur Python lisent **uniquement** :
+Le site GitHub Pages publie la **racine** du dépôt. `login.html` à la racine redirige vers `docs/login.html`.
+
+La clé se colle **uniquement** dans :
 
 `docs/supabase-config.js`
 
-Dashboard → **Project Settings → API Keys** → copiez la clé **anon** (legacy) ou **publishable** du projet **Recompta** (`pbyoxfxngfutoiqjirkx`).
+Dashboard du projet **Recompta** (`https://pbyoxfxngfutoiqjirkx.supabase.co`) → **Project Settings → API Keys** → clé **anon**.
+
+Si le JWT contient un autre `ref` (ex. `hsojfhtabmfczhpiwuxs`), c’est le **mauvais projet** → `Invalid API key`.
 
 ```js
 const RAW_ANON_KEY = "eyJ...";
@@ -24,7 +28,7 @@ const RAW_ANON_KEY = "eyJ...";
 
 Ne commitez **jamais** la clé `service_role`.
 
-Après le commit, attendez 1–2 min que GitHub Pages se mette à jour, puis rechargez `login.html` (Ctrl+F5).
+Pour n’avoir que `docs/` en ligne : GitHub → Settings → Pages → Folder **`/docs`** (au lieu de `/`).
 
 ## 3. Premier compte
 
