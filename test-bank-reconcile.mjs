@@ -92,4 +92,48 @@ const paid = partialResult.lines.filter((line) => line.date_paie === "2025-07-01
 assert(paid.length === 2, "two lines paid (1000 + 2000)");
 assert(!partialResult.lines[2].date_paie, "third line still unpaid");
 
+const achibestWithAvoirLines = [
+  {
+    fact_num: "FV-001",
+    lib_frss: "Achibest",
+    designation: "Produit A",
+    m_ttc: 5200.5,
+    source_file: "achibest1.pdf",
+  },
+  {
+    fact_num: "FV-002",
+    lib_frss: "Achibest",
+    designation: "Produit B",
+    m_ttc: 4100.25,
+    source_file: "achibest2.pdf",
+  },
+  {
+    fact_num: "AVOIR-003",
+    lib_frss: "Achibest",
+    designation: "Avoir retour",
+    m_ttc: 936.05,
+    source_file: "achibest-avoir.pdf",
+  },
+  {
+    fact_num: "FV-004",
+    lib_frss: "Achibest",
+    designation: "Produit D",
+    m_ttc: 4699.25,
+    source_file: "achibest4.pdf",
+  },
+];
+
+const avoirTotal = achibestWithAvoirLines.reduce(
+  (sum, line) => sum + (line.fact_num.startsWith("AVOIR") ? -line.m_ttc : line.m_ttc),
+  0,
+);
+assert(Math.abs(avoirTotal - 13063.95) < 0.01, "avoir fixture total");
+
+const avoirResult = applyBankStatement([txn], achibestWithAvoirLines);
+assert(avoirResult.stats.paymentsMatched === 1, "avoir payment matched");
+assert(
+  avoirResult.lines.every((line) => line.lib_frss !== "Achibest" || line.date_paie === "2025-06-22"),
+  "all Achibest lines including avoir dated",
+);
+
 console.log("bank-reconcile tests ok");
