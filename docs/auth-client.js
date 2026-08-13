@@ -4,7 +4,18 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase-config.js";
 let client = null;
 
 export function isSupabaseConfigured() {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 20);
+  const key = SUPABASE_ANON_KEY || "";
+  const looksValid =
+    (key.startsWith("eyJ") || key.startsWith("sb_publishable_")) && key.length > 30;
+  return Boolean(SUPABASE_URL && looksValid);
+}
+
+export function authErrorMessage(error) {
+  const message = error?.message || "Échec de la connexion.";
+  if (/invalid api key/i.test(message)) {
+    return "Clé API invalide. Collez la clé anon du projet Recompta dans docs/supabase-config.js (Settings → API Keys), puis attendez le déploiement GitHub Pages.";
+  }
+  return message;
 }
 
 export function getSupabase() {

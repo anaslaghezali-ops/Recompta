@@ -10,17 +10,21 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 
 Collez le contenu de `supabase/migrations/20260813190000_auth_super_admin.sql` → **Run**.
 
-## 2. Clé frontend
+## 2. Clé frontend (un seul fichier)
 
-Dashboard → **Project Settings → API Keys** → copiez la clé **anon** / **publishable**.
+GitHub Pages et le serveur Python lisent **uniquement** :
 
-Collez-la dans `docs/supabase-config.js` (et les copies `backend/static/` + racine) :
+`docs/supabase-config.js`
+
+Dashboard → **Project Settings → API Keys** → copiez la clé **anon** (legacy) ou **publishable** du projet **Recompta** (`pbyoxfxngfutoiqjirkx`).
 
 ```js
-export const SUPABASE_ANON_KEY = "eyJ...";
+const RAW_ANON_KEY = "eyJ...";
 ```
 
 Ne commitez **jamais** la clé `service_role`.
+
+Après le commit, attendez 1–2 min que GitHub Pages se mette à jour, puis rechargez `login.html` (Ctrl+F5).
 
 ## 3. Premier compte
 
@@ -32,7 +36,7 @@ Ne commitez **jamais** la clé `service_role`.
 select private.grant_super_admin('votre@email.com');
 ```
 
-4. Déconnexion / reconnexion (le JWT doit se rafraîchir)
+4. Déconnexion / reconnexion
 
 Le bandeau de l'outil affiche **Super-admin**.
 
@@ -41,4 +45,4 @@ Le bandeau de l'outil affiche **Super-admin**.
 Authentication → Providers → Email :
 
 - Désactiver **Confirm email** le temps de créer le premier compte, ou confirmer le mail
-- Les inscriptions publiques pourront être coupées plus tard : les cabinets seront créés par le super-admin, pas par auto-inscription
+- Les inscriptions publiques pourront être coupées plus tard : les cabinets seront créés par le super-admin

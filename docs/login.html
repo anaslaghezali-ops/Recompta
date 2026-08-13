@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Connexion</title>
-  <link rel="stylesheet" href="styles.css?v=auth1" />
+  <link rel="stylesheet" href="styles.css?v=auth2" />
 </head>
 <body>
   <header class="hero">
@@ -19,8 +19,9 @@
     <section class="card login-card">
       <h2 id="loginTitle">Se connecter</h2>
       <p class="hint" id="configHint" hidden>
-        Ajoutez la clé anon dans <code>supabase-config.js</code>
-        (Dashboard → Project Settings → API Keys).
+        Clé API manquante. Un seul fichier à remplir :
+        <code>docs/supabase-config.js</code>
+        (Dashboard → Project Settings → API Keys → anon / publishable).
       </p>
       <form id="authForm">
         <label>Email
@@ -48,7 +49,8 @@
       getSession,
       signIn,
       signUp,
-    } from "./auth-client.js";
+      authErrorMessage,
+    } from "./auth-client.js?v=auth2";
 
     const form = document.getElementById("authForm");
     const title = document.getElementById("loginTitle");
@@ -114,7 +116,7 @@
         submitBtn.textContent = "Connexion";
         toggle.textContent = "Créer le compte super-admin";
       } catch (err) {
-        showError(err.message || "Échec de la connexion.");
+        showError(authErrorMessage(err));
       } finally {
         submitBtn.disabled = false;
       }
