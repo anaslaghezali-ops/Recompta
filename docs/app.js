@@ -1,8 +1,10 @@
 import {
   applyFieldValueBulk,
+  applySupplierFieldValueBulk,
   BULK_EDIT_FIELDS,
   completeSupplierIdentifiers,
   countLinesWithFieldValue,
+  countSupplierFieldTargets,
   expandUploadedFiles,
   extractInvoice,
   fieldValuesMatch,
@@ -143,19 +145,29 @@ const previewUi = {
 
 let pendingFieldBulk = null;
 
-function openFieldBulkDialog(fieldKey, oldValue, newValue, otherCount) {
+const SUPPLIER_SCOPED_BULK_FIELDS = new Set(["ice_frs", "if"]);
+
+function openFieldBulkDialog(fieldKey, oldValue, newValue, otherCount, { supplierName = "", scope = "value" } = {}) {
   const label = BULK_EDIT_FIELDS[fieldKey] || fieldKey;
-  pendingFieldBulk = { fieldKey, oldValue, newValue };
+  pendingFieldBulk = { fieldKey, oldValue, newValue, supplierName, scope };
   els.fieldBulkTitle.textContent = `${label} modifié`;
-  els.fieldBulkIntro.textContent =
-    `Remplacer « ${oldValue} » par « ${newValue} » pour le champ ${label} sur ${otherCount} autre(s) ligne(s) ?`;
+  if (scope === "supplier" && supplierName) {
+    els.fieldBulkIntro.textContent =
+      `Appliquer l'${label} « ${newValue} » aux ${otherCount} autre(s) facture(s) de « ${supplierName} » sans ${label} ?`;
+  } else {
+    els.fieldBulkIntro.textContent =
+      `Remplacer « ${oldValue} » par « ${newValue} » pour le champ ${label} sur ${otherCount} autre(s) ligne(s) ?`;
+  }
   els.fieldBulkDialog.showModal();
 }
 
 function applyPendingFieldBulk() {
   if (!pendingFieldBulk) return 0;
-  const { fieldKey, oldValue, newValue } = pendingFieldBulk;
-  const updated = applyFieldValueBulk(state.lines, fieldKey, oldValue, newValue);
+  const { fieldKey, oldValue, newValue, supplierName, scope } = pendingFieldBulk;
+  const updated =
+    scope === "supplier" && supplierName
+      ? applySupplierFieldValueBulk(state.lines, fieldKey, supplierName, oldValue, newValue)
+      : applyFieldValueBulk(state.lines, fieldKey, oldValue, newValue);
   for (const line of updated) markFieldVerified(line, fieldKey);
   pendingFieldBulk = null;
   els.fieldBulkDialog.close();
@@ -163,7 +175,25 @@ function applyPendingFieldBulk() {
 }
 
 function maybeOfferFieldBulk(fieldKey, oldValue, newValue, lineIndex) {
-  if (!oldValue || !newValue || fieldValuesMatch(fieldKey, oldValue, newValue)) return;
+  if (!newValue || fieldValuesMatch(fieldKey, oldValue, newValue)) return;
+
+  const line = state.lines[lineIndex];
+  const supplierName = String(line?.lib_frss || "").trim();
+  const emptyOldValue = !String(oldValue || "").trim();
+
+  if (emptyOldValue && SUPPLIER_SCOPED_BULK_FIELDS.has(fieldKey) && supplierName) {
+    const others = countSupplierFieldTargets(state.lines, fieldKey, supplierName, oldValue, lineIndex);
+    if (others > 0) {
+      openFieldBulkDialog(fieldKey, oldValue, newValue, others, {
+        supplierName,
+        scope: "supplier",
+      });
+    }
+    return;
+  }
+
+  if (emptyOldValue) return;
+
   const others = countLinesWithFieldValue(state.lines, fieldKey, oldValue, lineIndex);
   if (others > 0) openFieldBulkDialog(fieldKey, oldValue, newValue, others);
 }
