@@ -401,7 +401,7 @@ tr.duplicate-row td:first-child {
 
 .review-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 46%);
   gap: 1rem;
   align-items: start;
   margin-top: 0.5rem;
@@ -507,10 +507,17 @@ tr.duplicate-row td:first-child {
 
 .preview-canvas-wrap {
   overflow: auto;
-  max-height: min(70vh, 640px);
+  max-height: calc(100vh - 14rem);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
+  cursor: grab;
+  overscroll-behavior: contain;
+}
+
+.preview-canvas-wrap.is-panning {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .preview-canvas-wrap canvas,

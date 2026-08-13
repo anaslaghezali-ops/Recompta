@@ -29,16 +29,7 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.25;
 const ZOOM_DEFAULT = 1;
-let zoomRenderTimer = null;
-
-function clampZoom(value) {
-  const rounded = Math.round(value / ZOOM_STEP) * ZOOM_STEP;
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(rounded.toFixed(2))));
-}
-
-function currentZoom(ui) {
-  return ui._previewState?.zoom ?? ZOOM_DEFAULT;
-}
+const PDF_RENDER_SCALE = 2;
 
 function applyDocumentZoom(ui) {
   const zoom = currentZoom(ui);
@@ -48,23 +39,14 @@ function applyDocumentZoom(ui) {
   if (ui.zoomInBtn) ui.zoomInBtn.disabled = zoom >= ZOOM_MAX;
 }
 
-export async function setPreviewZoom(ui, zoom, { rerender = true, delayMs = 0 } = {}) {
+export async function setPreviewZoom(ui, zoom) {
   ui._previewState = ui._previewState || { page: 1, filename: "", zoom: ZOOM_DEFAULT };
   ui._previewState.zoom = clampZoom(zoom);
   applyDocumentZoom(ui);
-  if (!rerender || !ui._previewState.pdf) return;
-  if (delayMs > 0) {
-    clearTimeout(zoomRenderTimer);
-    zoomRenderTimer = setTimeout(() => {
-      renderPdfPage(ui, ui._previewState.pdf, ui._previewState.page);
-    }, delayMs);
-    return;
-  }
-  await renderPdfPage(ui, ui._previewState.pdf, ui._previewState.page);
 }
 
-export async function changePreviewZoom(ui, delta, options = {}) {
-  return setPreviewZoom(ui, currentZoom(ui) + delta, options);
+export async function changePreviewZoom(ui, delta) {
+  return setPreviewZoom(ui, currentZoom(ui) + delta);
 }
 
 function normalizePath(filename) {
@@ -294,8 +276,7 @@ function updatePageInfo(ui) {
 
 async function renderPdfPage(ui, pdf, pageNumber) {
   const page = await pdf.getPage(pageNumber);
-  const zoom = currentZoom(ui);
-  const viewport = page.getViewport({ scale: 1.4 * zoom });
+  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
   const canvas = ui.canvas;
   const ctx = canvas.getContext("2d");
   canvas.width = viewport.width;
@@ -348,18 +329,41 @@ export function bindPreviewControls(ui, onPageChange) {
   if (ui.zoomResetBtn) {
     ui.zoomResetBtn.addEventListener("click", () => setPreviewZoom(ui, ZOOM_DEFAULT));
   }
-  if (ui.canvasWrap) {
-    ui.canvasWrap.addEventListener(
-      "wheel",
-      (event) => {
-        if (!(event.ctrlKey || event.metaKey)) return;
-        event.preventDefault();
-        const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-        changePreviewZoom(ui, delta, { delayMs: 120 });
-      },
-      { passive: false },
-    );
-  }
+  if (!ui.canvasWrap) return;
+
+  ui.canvasWrap.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+      changePreviewZoom(ui, delta);
+    },
+    { passive: false },
+  );
+
+  let drag = null;
+  ui.canvasWrap.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    drag = {
+      x: event.clientX,
+      y: event.clientY,
+      left: ui.canvasWrap.scrollLeft,
+      top: ui.canvasWrap.scrollTop,
+    };
+    ui.canvasWrap.classList.add("is-panning");
+    ui.canvasWrap.setPointerCapture(event.pointerId);
+  });
+  ui.canvasWrap.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    ui.canvasWrap.scrollLeft = drag.left - (event.clientX - drag.x);
+    ui.canvasWrap.scrollTop = drag.top - (event.clientY - drag.y);
+  });
+  const endPan = () => {
+    drag = null;
+    ui.canvasWrap.classList.remove("is-panning");
+  };
+  ui.canvasWrap.addEventListener("pointerup", endPan);
+  ui.canvasWrap.addEventListener("pointercancel", endPan);
 }
 
 export function findFirstReviewLineIndex(lines) {
