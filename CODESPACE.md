@@ -31,12 +31,31 @@ bash ../scripts/check-codespace.sh
 
 ### 2. Lancer le serveur
 
+**Restez dans `backend/` pour toute la session.** Git fonctionne aussi depuis ce dossier.
+
 ```bash
-cd backend
+cd /workspaces/Recompta/backend
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+Ou, depuis la racine du repo :
+
+```bash
+bash scripts/start-local.sh
+```
+
 **Ne cliquez pas** sur « Open in Browser » — ce n'est pas nécessaire.
+
+**Ne coupez pas uvicorn pour faire un `git push`.** Ouvrez un **2ᵉ terminal** (Codespace : `+` à côté du terminal) :
+
+```bash
+cd /workspaces/Recompta/backend   # ou la racine, les deux marchent
+git add -A
+git commit -m "votre message"
+git push origin main
+```
+
+Uvicorn continue de tourner dans le premier terminal.
 
 ### 3. Rendre le port public
 
