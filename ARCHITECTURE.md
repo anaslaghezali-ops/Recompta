@@ -57,6 +57,23 @@
 
 L'IA seule ne suffit pas à 100 % : biais d'entraînement (HT avant TTC), scans flous, mises en page infinies. La couche mathématique corrige **sans connaître le fournisseur** — c'est la garantie SaaS.
 
+## Règle d'or de la réconciliation : corriger sur preuve
+
+Une ligne correcte `HT=150, TVA=30, TTC=180` et une ligne erronée où `150` est
+en réalité le TTC (avec TVA recalculée dessus) produisent **exactement les mêmes
+nombres**. Aucun contrôle arithmétique ne peut les distinguer.
+
+La correction n'est donc appliquée que sur **preuve** :
+
+| Preuve | Exemple |
+|--------|---------|
+| Libellé dans le document | `1905,00 TTC` lu dans le texte ou l'OCR |
+| Totaux du pied de page | `m_ht` égal au Total TTC et différent du Total HT |
+| Ratio impossible | `TVA/HT = 16,67 %` à un taux de 20 % |
+
+Toute règle basée sur la seule arithmétique génère des faux positifs et
+corrompt les factures correctes.
+
 ## Traitement en volume
 
 Un cabinet importe couramment 50 à 200 factures d'un coup. Une requête unique
