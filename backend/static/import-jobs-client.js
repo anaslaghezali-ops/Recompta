@@ -99,8 +99,51 @@ export function jobProgressPercent(job) {
   if (job.status === "processing" || job.status === "completed" || job.status === "failed") {
     return Math.round((job.processed_files / job.total_files) * 100);
   }
-  if (job.status === "queued") return 0;
+  if (job.status === "queued") {
+    if ((job.uploaded_files || 0) >= job.total_files) return 0;
+    return Math.round((job.uploaded_files / job.total_files) * 100);
+  }
   return 0;
+}
+
+const STATUS_PRIORITY = { uploading: 3, processing: 2, queued: 1 };
+
+export function aggregateActiveImportJobs(jobs) {
+  if (!jobs?.length) return null;
+  if (jobs.length === 1) return jobs[0];
+
+  const sorted = [...jobs].sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+  );
+  const base = sorted[0];
+  let uploadedFiles = 0;
+  let processedFiles = 0;
+  let totalFiles = 0;
+  let failedFiles = 0;
+  let bestStatus = "queued";
+  let bestPriority = 0;
+
+  for (const job of jobs) {
+    totalFiles += job.total_files || 0;
+    uploadedFiles += job.uploaded_files || 0;
+    processedFiles += job.processed_files || 0;
+    failedFiles += job.failed_files || 0;
+    const priority = STATUS_PRIORITY[job.status] || 0;
+    if (priority > bestPriority) {
+      bestPriority = priority;
+      bestStatus = job.status;
+    }
+  }
+
+  return {
+    ...base,
+    status: bestStatus,
+    total_files: totalFiles,
+    uploaded_files: uploadedFiles,
+    processed_files: processedFiles,
+    failed_files: failedFiles,
+    aggregated_job_count: jobs.length,
+  };
 }
 
 const STALE_IMPORT_MS = {
@@ -137,6 +180,19 @@ export function isImportJobActive(job, now = Date.now()) {
 
 export async function abandonStaleImportJob(job) {
   if (!isImportJobStale(job)) return false;
+
+  if (job.status === "uploading" && (job.uploaded_files || 0) > 0) {
+    const uploaded = job.uploaded_files || 0;
+    const total = job.total_files || uploaded;
+    await updateJob(job.id, {
+      status: "queued",
+      total_files: uploaded,
+      error_summary: uploaded < total
+        ? `Envoi interrompu — ${uploaded}/${total} fichier(s) reçu(s), traitement partiel.`
+        : null,
+    });
+    return true;
+  }
 
   const supabase = getSupabase();
   if (!supabase || !job?.id) return false;
@@ -221,11 +277,12 @@ export function formatActiveImportLabel(job) {
   const status = JOB_STATUS_LABELS[job.status] || job.status;
   const kind = importDocTypeLabel(job.doc_type);
   const counts = `${job.processed_files || 0}/${job.total_files || 0}`;
+  const batchNote = job.aggregated_job_count > 1 ? ` · ${job.aggregated_job_count} lots` : "";
   if (job.status === "processing" || job.status === "uploading") {
-    return `${kind} ${progress}% · ${counts} fichier(s)`;
+    return `${kind} ${progress}% · ${counts} fichier(s)${batchNote}`;
   }
   if (job.status === "queued") {
-    return `${kind} en attente · ${job.total_files || 0} fichier(s)`;
+    return `${kind} en attente · ${job.total_files || 0} fichier(s)${batchNote}`;
   }
   return `${kind} · ${status}`;
 }
@@ -399,8 +456,13 @@ export async function fetchActiveImportMap(dossierIds) {
   if (error) throw error;
 
   const map = new Map();
+  const byDossier = new Map();
   for (const job of await filterActiveImportJobs(data)) {
-    if (!map.has(job.dossier_id)) map.set(job.dossier_id, job);
+    if (!byDossier.has(job.dossier_id)) byDossier.set(job.dossier_id, []);
+    byDossier.get(job.dossier_id).push(job);
+  }
+  for (const [dossierId, jobs] of byDossier.entries()) {
+    map.set(dossierId, aggregateActiveImportJobs(jobs));
   }
   return map;
 }
@@ -410,14 +472,15 @@ export function countActiveImportJobs(importMap) {
 }
 
 /**
- * Étape 1 : prépare le lot, envoie les fichiers vers Storage, passe le job en `queued`.
- * Le traitement IA se fera côté worker (étape 2).
+ * Étape 1 : un job par fichier pour que le traitement serveur puisse démarrer
+ * pendant l'envoi et survivre à une fermeture de page (fichiers déjà en queue).
  */
 export async function queueInvoiceImport({
   dossierId,
   files,
   options = {},
   onProgress,
+  onFileQueued,
 }) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) throw new Error("Session ou dossier invalide.");
@@ -430,41 +493,52 @@ export async function queueInvoiceImport({
   const { data: userData } = await supabase.auth.getUser();
   const createdBy = userData?.user?.id || null;
 
-  const { data: job, error: jobError } = await supabase
-    .from("import_jobs")
-    .insert({
-      dossier_id: dossierId,
-      doc_type: "invoice",
-      status: "uploading",
-      total_files: expanded.length,
-      options,
-      created_by: createdBy,
-    })
-    .select("id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at")
-    .single();
-
-  if (jobError) throw jobError;
-
-  let uploaded = 0;
   const failures = [];
+  const jobs = [];
+  let uploaded = 0;
+  const total = expanded.length;
 
   for (let index = 0; index < expanded.length; index += 1) {
     const item = expanded[index];
     const sourceId = nextSourceId();
-    const storagePath = buildImportStoragePath(dossierId, job.id, item.filename);
     const mimeType = item.mime || "application/octet-stream";
     const blob = new Blob([item.content], { type: mimeType });
 
     onProgress?.(
-      `Envoi ${index + 1}/${expanded.length} — ${item.filename}`,
-      10 + Math.round((index / expanded.length) * 80),
+      `Envoi ${index + 1}/${total} — ${item.filename}`,
+      10 + Math.round((index / total) * 85),
     );
+
+    const { data: job, error: jobError } = await supabase
+      .from("import_jobs")
+      .insert({
+        dossier_id: dossierId,
+        doc_type: "invoice",
+        status: "uploading",
+        total_files: 1,
+        options,
+        created_by: createdBy,
+      })
+      .select("id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at")
+      .single();
+
+    if (jobError) {
+      failures.push({ filename: item.filename, error: jobError.message });
+      continue;
+    }
+
+    const storagePath = buildImportStoragePath(dossierId, job.id, item.filename);
 
     const { error: uploadError } = await supabase.storage
       .from(IMPORT_QUEUE_BUCKET)
       .upload(storagePath, blob, { contentType: mimeType, upsert: false });
 
     if (uploadError) {
+      await updateJob(job.id, {
+        status: "failed",
+        error_summary: uploadError.message,
+        finished_at: new Date().toISOString(),
+      });
       failures.push({ filename: item.filename, error: uploadError.message });
       continue;
     }
@@ -481,6 +555,11 @@ export async function queueInvoiceImport({
 
     if (fileError) {
       await supabase.storage.from(IMPORT_QUEUE_BUCKET).remove([storagePath]);
+      await updateJob(job.id, {
+        status: "failed",
+        error_summary: fileError.message,
+        finished_at: new Date().toISOString(),
+      });
       failures.push({ filename: item.filename, error: fileError.message });
       continue;
     }
@@ -494,35 +573,31 @@ export async function queueInvoiceImport({
       sourceId,
     }).catch(() => {});
 
+    await updateJob(job.id, {
+      status: "queued",
+      uploaded_files: 1,
+      total_files: 1,
+    });
+
     uploaded += 1;
-    await updateJob(job.id, { uploaded_files: uploaded });
+    jobs.push(await getImportJob(job.id));
+    await onFileQueued?.(job.id, uploaded, total);
   }
 
   if (uploaded === 0) {
-    await updateJob(job.id, {
-      status: "failed",
-      error_summary: failures[0]?.error || "Échec de l'envoi des fichiers.",
-      finished_at: new Date().toISOString(),
-    });
     throw new Error(failures[0]?.error || "Échec de l'envoi des fichiers.");
   }
 
-  const finalStatus = failures.length ? "queued" : "queued";
-  const errorSummary = failures.length
-    ? `${failures.length} fichier(s) non envoyé(s) sur ${expanded.length}.`
-    : null;
-
-  await updateJob(job.id, {
-    status: finalStatus,
-    uploaded_files: uploaded,
-    total_files: uploaded,
-    error_summary: errorSummary,
-  });
-
-  onProgress?.("Import mis en file d'attente.", 100);
+  onProgress?.(
+    failures.length
+      ? `${uploaded}/${total} fichier(s) en file d'attente (${failures.length} échec(s)).`
+      : "Tous les fichiers sont en file d'attente.",
+    100,
+  );
 
   return {
-    job: await getImportJob(job.id),
+    job: aggregateActiveImportJobs(jobs) || jobs[0],
+    jobs,
     uploaded,
     skipped: failures.length,
     failures,
@@ -619,6 +694,11 @@ export async function queueBankImport({
     job: await getImportJob(job.id),
     uploaded: 1,
   };
+}
+
+export async function getActiveImportSummary(dossierId) {
+  const jobs = await listImportJobs(dossierId, { limit: 50, activeOnly: true });
+  return aggregateActiveImportJobs(jobs);
 }
 
 export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {

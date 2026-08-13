@@ -230,14 +230,15 @@
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
+      getActiveImportSummary,
       importJobPageUrl,
       jobProgressPercent,
       JOB_STATUS_LABELS,
-      listImportJobs,
       reconcileStaleImportJobs,
       showImportCompletionToast,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs8";
+    } from "./import-jobs-client.js?v=jobs9";
+    import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
@@ -289,15 +290,14 @@
         return;
       }
 
-      let jobs = [];
+      let job = null;
       try {
-        jobs = await listImportJobs(selectedDossierId, { limit: 1, activeOnly: true });
+        job = await getActiveImportSummary(selectedDossierId);
       } catch {
         banner.hidden = true;
         return;
       }
 
-      const job = jobs[0];
       if (!job) {
         activeImportJob = null;
         if (hadActiveImport) {
@@ -318,6 +318,10 @@
       document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
       document.getElementById("importBannerProgressFill").style.width = `${percent}%`;
       document.getElementById("importBannerPercent").textContent = `${percent}%`;
+      if (job.status === "queued") {
+        const apiUrl = getApiUrl();
+        if (apiUrl) ensureImportWorkerRunning(apiUrl, { limit: 3 }).catch(() => {});
+      }
       startImportPolling();
       initLucide();
     }
