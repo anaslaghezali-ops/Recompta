@@ -6,6 +6,8 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+from bank_parser import normalize_ai_transactions, parse_bank_file
+from bank_statement import extract_bank_statement
 from invoice_extractor import extract_invoice
 from models import ExtractionResult, InvoiceLine
 from normalize_results import (
@@ -70,7 +72,144 @@ def extraction_concurrency() -> int:
     return max(1, min(value, 12))
 
 
-async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[str, Any]:
+def _is_spreadsheet(filename: str, mime_type: str) -> bool:
+    lower = (filename or "").lower()
+    if lower.endswith((".csv", ".txt", ".xlsx", ".xls")):
+        return True
+    return mime_type in (
+        "text/csv",
+        "text/plain",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> dict[str, Any]:
+    job_id = int(job["id"])
+    dossier_id = int(job["dossier_id"])
+    files = await db.fetch_job_files(job_id)
+
+    if not files:
+        await db.update_job(
+            job_id,
+            {
+                "status": "failed",
+                "error_summary": "Aucun fichier à traiter.",
+                "finished_at": _iso_now(),
+            },
+        )
+        return {"job_id": job_id, "processed": 0, "failed": 0, "status": "failed"}
+
+    file_row = files[0]
+    file_id = int(file_row["id"])
+    storage_path = file_row["storage_path"]
+    filename = file_row["original_filename"]
+    mime_type = file_row.get("mime_type") or "application/octet-stream"
+
+    processed = 0
+    failed = 0
+    transaction_count = 0
+
+    await db.update_job_file(file_id, {"status": "processing"})
+
+    try:
+        content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
+
+        if _is_spreadsheet(filename, mime_type):
+            transactions, bank_meta, warnings = parse_bank_file(filename, content)
+            engine = "spreadsheet"
+        else:
+            result = await extract_bank_statement(filename, content, mime_type)
+            transactions = normalize_ai_transactions(
+                [item.model_dump() for item in result.transactions]
+            )
+            bank_meta = {
+                "filename": filename,
+                "bankName": result.bank_name or "BANQUE",
+                "bankIce": result.bank_ice or "",
+                "bankIf": result.bank_if or "",
+            }
+            warnings = list(result.warnings or [])
+            engine = result.engine or "ai"
+
+        if not transactions:
+            raise RuntimeError(warnings[0] if warnings else "Aucun mouvement détecté dans le relevé.")
+
+        workspace = await db.load_workspace(dossier_id)
+        lines = list(workspace.get("lines") or [])
+
+        await db.save_workspace(
+            dossier_id,
+            lines=lines,
+            bank_transactions=transactions,
+            bank_meta=bank_meta,
+        )
+
+        transaction_count = len(transactions)
+        processed = 1
+        await db.update_job_file(
+            file_id,
+            {
+                "status": "done",
+                "line_count": transaction_count,
+                "processed_at": _iso_now(),
+                "error_message": None,
+            },
+        )
+        await db.update_job(job_id, {"processed_files": processed})
+
+        summary = f"Relevé importé — {transaction_count} mouvement(s)"
+        if warnings:
+            summary += f" ({warnings[0]})"
+
+        await db.log_activity(
+            dossier_id,
+            "import_job",
+            summary,
+            {
+                "job_id": job_id,
+                "doc_type": "bank",
+                "transactions": transaction_count,
+                "engine": engine,
+            },
+        )
+
+        final_status = "completed"
+        error_summary = None
+    except Exception as exc:  # noqa: BLE001
+        failed = 1
+        final_status = "failed"
+        error_summary = f"{type(exc).__name__}: {exc}"
+        await db.update_job_file(
+            file_id,
+            {
+                "status": "failed",
+                "error_message": error_summary,
+                "processed_at": _iso_now(),
+            },
+        )
+
+    await db.update_job(
+        job_id,
+        {
+            "status": final_status,
+            "processed_files": processed,
+            "failed_files": failed,
+            "error_summary": error_summary,
+            "finished_at": _iso_now(),
+        },
+    )
+
+    return {
+        "job_id": job_id,
+        "processed": processed,
+        "failed": failed,
+        "transactions": transaction_count,
+        "status": final_status,
+    }
+
+
+async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -> dict[str, Any]:
     job_id = int(job["id"])
     dossier_id = int(job["dossier_id"])
     options = job.get("options") or {}
@@ -144,12 +283,12 @@ async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[s
                 )
 
     token = activate_client_ice_exclusions(client_ice)
+    new_lines: list[dict[str, Any]] = []
     try:
         raw_results = await asyncio.gather(*(process_file(file_row) for file_row in files))
         extraction_results = [item for item in raw_results if item is not None]
 
         normalized = normalize_extraction_results(extraction_results, client_ice=client_ice)
-        new_lines: list[dict[str, Any]] = []
         for result in normalized:
             for line in result.lines:
                 new_lines.append(
@@ -200,9 +339,16 @@ async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[s
         "job_id": job_id,
         "processed": processed,
         "failed": failed,
-        "new_lines": len(new_lines) if "new_lines" in locals() else 0,
+        "new_lines": len(new_lines),
         "status": final_status,
     }
+
+
+async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[str, Any]:
+    doc_type = job.get("doc_type") or "invoice"
+    if doc_type == "bank":
+        return await process_bank_import_job(job, db)
+    return await process_invoice_import_job(job, db)
 
 
 async def process_pending_import_jobs(*, max_jobs: int = 1) -> list[dict[str, Any]]:

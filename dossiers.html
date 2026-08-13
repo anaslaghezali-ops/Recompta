@@ -149,7 +149,9 @@
     import {
       fetchActiveImportMap,
       formatActiveImportLabel,
-    } from "./import-jobs-client.js?v=jobs2";
+      showImportCompletionToast,
+      startImportCompletionWatcher,
+    } from "./import-jobs-client.js?v=jobs3";
 
     const portfolioRows = document.getElementById("portfolioRows");
     const portfolioList = document.getElementById("portfolioList");
@@ -177,6 +179,7 @@
     let activeFilter = "all";
     let searchQuery = "";
     let importPollTimer = null;
+    let stopCompletionWatcher = null;
 
     function updateImportBanner(rows) {
       const banner = document.getElementById("importBanner");
@@ -217,6 +220,19 @@
           /* ignore transient poll errors */
         }
       }, 8000);
+    }
+
+    function startCompletionWatcher() {
+      stopCompletionWatcher?.();
+      const dossierIds = allRows.map((row) => row.dossierId).filter(Boolean);
+      if (!dossierIds.length) return;
+      const nameByDossier = new Map(
+        allRows.filter((row) => row.dossierId).map((row) => [row.dossierId, row.name]),
+      );
+      stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
+        showImportCompletionToast(job, { dossierName: nameByDossier.get(job.dossier_id) || "" });
+        refreshClients().catch(() => {});
+      });
     }
 
     function showClientError(message) {
@@ -395,6 +411,7 @@
       try {
         allRows = await listPortfolioRows(cabinetId);
         renderPortfolio();
+        startCompletionWatcher();
       } catch (error) {
         portfolioRows.innerHTML = `<div class="dash-portfolio-loading">Erreur : ${escapeHtml(error.message || "chargement impossible")}</div>`;
       }

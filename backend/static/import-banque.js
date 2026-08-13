@@ -10,7 +10,16 @@ import {
   saveBankAlias,
 } from "./bank-match-client.js";
 import { parseBankStatementViaServer } from "./api-client.js";
-import { getApiUrl, saveApiUrl, fetchServerHealth } from "./api-client.js";
+import { getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
+import {
+  JOB_STATUS_LABELS,
+  jobProgressPercent,
+  listImportJobs,
+  queueBankImport,
+  showImportCompletionToast,
+  startImportJobPolling,
+} from "./import-jobs-client.js?v=jobs3";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import {
   createWorkspaceSaver,
@@ -28,6 +37,8 @@ let pendingBankMatchQueue = [];
 let lastBankApplyStats = null;
 let skipBankMatchCloseHandler = false;
 let bankFile = null;
+let queuing = false;
+let stopJobPolling = null;
 
 function setStatus(text, tone = "muted") {
   if (!els.saveStatus) return;
@@ -95,6 +106,7 @@ function renderTxnTable() {
 async function loadBankFile(file) {
   if (!file) return;
   bankFile = file;
+  updateFileActions();
   els.statusMessage.textContent = "Lecture du relevé…";
   els.statusMessage.className = "imp-status";
 
@@ -134,10 +146,154 @@ async function loadBankFile(file) {
   } catch (error) {
     session.bankTransactions = [];
     bankFile = null;
+    updateFileActions();
     renderTxnTable();
     els.statusMessage.textContent = `Erreur : ${error.message}`;
     els.statusMessage.className = "imp-status is-error";
   }
+}
+
+function updateFileActions() {
+  const hasFile = Boolean(bankFile);
+  if (els.queueBtn) els.queueBtn.disabled = !hasFile || queuing;
+  if (els.loadNowBtn) els.loadNowBtn.disabled = !hasFile || queuing;
+}
+
+function formatJobDate(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderJobRow(job) {
+  const progress = jobProgressPercent(job);
+  const statusLabel = JOB_STATUS_LABELS[job.status] || job.status;
+  const tone = job.status === "failed" ? "danger"
+    : job.status === "completed" ? "success"
+      : job.status === "processing" ? "accent" : "muted";
+
+  return `
+    <div class="imp-job-row">
+      <div class="imp-job-main">
+        <strong>Import relevé — ${formatJobDate(job.created_at)}</strong>
+        <span>${escapeHtml(statusLabel)} · ${job.processed_files}/${job.total_files} traité(s)${job.failed_files ? ` · ${job.failed_files} erreur(s)` : ""}</span>
+      </div>
+      <div class="imp-job-progress">
+        <div class="imp-progress-track"><div class="imp-progress-fill imp-job-fill-${tone}" style="width:${progress}%"></div></div>
+        <span>${progress}%</span>
+      </div>
+    </div>
+  `;
+}
+
+async function renderJobsPanel() {
+  const jobs = await listImportJobs(session.dossierId, { limit: 8 });
+  const active = jobs.filter((job) => ["uploading", "queued", "processing"].includes(job.status));
+  const display = active.length ? active : jobs.slice(0, 3);
+
+  if (!display.length) {
+    els.jobsPanel.hidden = true;
+    els.jobsList.innerHTML = "";
+    return;
+  }
+
+  els.jobsPanel.hidden = false;
+  els.jobsList.innerHTML = display.map(renderJobRow).join("");
+  initLucide();
+}
+
+async function reloadSessionBank() {
+  const workspace = await loadDossierWorkspace(session.dossierId);
+  session.bankTransactions = workspace?.bank_transactions || [];
+  session.bankMeta = {
+    filename: "",
+    bankName: "BANQUE",
+    bankIce: "",
+    bankIf: "",
+    ...(workspace?.bank_meta || {}),
+  };
+  session.updatedAt = workspace?.updated_at || session.updatedAt;
+  renderTxnTable();
+  if (session.bankTransactions.length) {
+    els.statusMessage.textContent = `${session.bankTransactions.length} mouvement(s) enregistré(s) — lancez le rapprochement.`;
+    els.statusMessage.className = "imp-status is-success";
+    setStatus(`Dernière sauvegarde : ${new Date(session.updatedAt || Date.now()).toLocaleString("fr-FR")}`, "success");
+  }
+}
+
+function startJobsPolling() {
+  stopJobPolling?.();
+  stopJobPolling = startImportJobPolling(session.dossierId, async (jobs) => {
+    if (!jobs.length) {
+      const recent = await listImportJobs(session.dossierId, { limit: 1 });
+      const last = recent[0];
+      if (last?.status === "completed" && last.doc_type === "bank") {
+        showImportCompletionToast(last, { dossierName: session.context.clientName });
+      }
+      await reloadSessionBank();
+      await renderJobsPanel();
+      return;
+    }
+    els.jobsPanel.hidden = false;
+    els.jobsList.innerHTML = jobs.map(renderJobRow).join("");
+    initLucide();
+  });
+}
+
+async function runQueue() {
+  if (!bankFile || queuing) return;
+  queuing = true;
+  updateFileActions();
+  els.progressPanel.hidden = false;
+  els.progressText.textContent = "Préparation de l'import…";
+  els.progressBar.style.width = "5%";
+
+  try {
+    const result = await queueBankImport({
+      dossierId: session.dossierId,
+      file: bankFile,
+      onProgress: (message, percent) => {
+        els.progressText.textContent = message;
+        els.progressBar.style.width = `${percent}%`;
+      },
+    });
+
+    bankFile = null;
+    if (els.fileInput) els.fileInput.value = "";
+    updateFileActions();
+
+    els.progressText.textContent = "Relevé en file d'attente. Vous pouvez quitter cette page.";
+    els.progressBar.style.width = "100%";
+    setStatus("Import lancé — traitement en arrière-plan", "success");
+
+    const apiUrl = resolvedApiUrl();
+    if (apiUrl) {
+      kickImportJobWorker(apiUrl).catch(() => {});
+    }
+
+    await renderJobsPanel();
+    startJobsPolling();
+  } catch (error) {
+    els.progressText.textContent = `Erreur : ${error.message}`;
+    els.progressBar.style.width = "0%";
+    setStatus(error.message, "error");
+  } finally {
+    queuing = false;
+    updateFileActions();
+    initLucide();
+  }
+}
+
+function onFileSelected(file) {
+  if (!file) return;
+  bankFile = file;
+  updateFileActions();
+  els.statusMessage.textContent = `${file.name} prêt — mettez en file d'attente ou chargez maintenant.`;
+  els.statusMessage.className = "imp-status";
 }
 
 function validBankMatchProposals(item) {
@@ -290,15 +446,20 @@ function bindDropZone(zone, input) {
     zone.addEventListener(ev, (e) => {
       e.preventDefault();
       zone.classList.remove("is-dragover");
-      if (ev === "drop") loadBankFile(e.dataTransfer.files?.[0]);
+      if (ev === "drop") onFileSelected(e.dataTransfer.files?.[0]);
     });
   });
-  input.addEventListener("change", (e) => loadBankFile(e.target.files?.[0]));
+  input.addEventListener("change", (e) => {
+    onFileSelected(e.target.files?.[0]);
+    input.value = "";
+  });
 }
 
 export async function bootImportBanque() {
   [
     "contextBar", "saveStatus", "backLink", "dropZone", "fileInput",
+    "queueBtn", "loadNowBtn", "queueHint", "progressPanel", "progressText", "progressBar",
+    "jobsPanel", "jobsList",
     "txnPanel", "txnBody", "txnCount", "paymentCount", "feeCount", "lineCountHint",
     "bankFileName", "bankFileMeta", "statusMessage", "applyBtn", "apiUrl",
     "bankMatchDialog", "bankMatchTxnDate", "bankMatchTxnAmount", "bankMatchTxnLabel",
@@ -324,7 +485,11 @@ export async function bootImportBanque() {
   }
 
   bindDropZone(els.dropZone, els.fileInput);
+  els.queueBtn?.addEventListener("click", runQueue);
+  els.loadNowBtn?.addEventListener("click", () => loadBankFile(bankFile));
   els.applyBtn.addEventListener("click", applyRapprochement);
+  await renderJobsPanel();
+  startJobsPolling();
   els.bankMatchConfirm?.addEventListener("click", (e) => { e.preventDefault(); confirmBankMatch(); });
   els.bankMatchProposals?.addEventListener("change", updateBankMatchInvoiceDetail);
   els.bankMatchDialog?.addEventListener("close", () => {

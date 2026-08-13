@@ -1,5 +1,5 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
-import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs2";
+import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs3";
 import {
   formatMonthLabel,
   formatRelativeTime,
