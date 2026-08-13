@@ -16,14 +16,29 @@ export function saveApiUrl(url) {
 }
 
 const UNREACHABLE_HINT =
-  "Serveur injoignable. Dans le Codespace : onglet Ports → 8000 → clic droit → " +
-  "Port Visibility → Public. La visibilité redevient Privée à chaque redémarrage du Codespace.";
+  "Connexion au serveur interrompue. Vérifiez, dans l'ordre : (1) uvicorn tourne " +
+  "toujours dans le Codespace, (2) port 8000 en Public, (3) l'URL correspond au " +
+  "Codespace actuel.";
 
 async function fetchOrExplain(url, options) {
   try {
     return await fetch(url, options);
   } catch {
     throw new Error(UNREACHABLE_HINT);
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Une coupure ponctuelle du tunnel Codespace ne doit pas perdre le lot. */
+async function fetchWithRetry(url, options, attempts = 2) {
+  for (let i = 0; ; i += 1) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      if (i >= attempts - 1) throw new Error(UNREACHABLE_HINT);
+      await sleep(1000 * (i + 1));
+    }
   }
 }
 
@@ -57,13 +72,35 @@ export async function fetchServerHealth(apiUrl, { refresh = false } = {}) {
 const DEFAULT_BATCH_SIZE = 4;
 // Deux lots en vol : l'envoi du suivant recouvre le traitement du précédent.
 const DEFAULT_PARALLEL_BATCHES = 2;
+// Les scans font souvent 1 à 2 Mo ; au-delà, le tunnel Codespace coupe.
+const MAX_BATCH_BYTES = 3 * 1024 * 1024;
+
+/** Lots bornés à la fois en nombre de fichiers et en octets. */
+function buildBatches(list, batchSize, maxBytes) {
+  const batches = [];
+  let current = [];
+  let bytes = 0;
+
+  for (const file of list) {
+    const size = file.size || 0;
+    if (current.length && (current.length >= batchSize || bytes + size > maxBytes)) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(file);
+    bytes += size;
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
 
 async function extractBatch(batch, apiUrl, normalizedIce) {
   const formData = new FormData();
   batch.forEach((file) => formData.append("files", file));
   if (normalizedIce.length === 15) formData.append("client_ice", normalizedIce);
 
-  const response = await fetchOrExplain(`${apiUrl}/api/extract`, {
+  const response = await fetchWithRetry(`${apiUrl}/api/extract`, {
     method: "POST",
     body: formData,
   });
@@ -84,10 +121,7 @@ export async function extractViaServer(
   const normalizedIce = (clientIce || "").replace(/\D/g, "");
   const list = Array.from(files);
 
-  const batches = [];
-  for (let i = 0; i < list.length; i += batchSize) {
-    batches.push(list.slice(i, i + batchSize));
-  }
+  const batches = buildBatches(list, batchSize, MAX_BATCH_BYTES);
 
   const results = new Array(batches.length);
   let nextIndex = 0;
