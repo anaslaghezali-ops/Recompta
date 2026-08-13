@@ -451,11 +451,15 @@ function isTtcMislabeledAsHt(mHt, tva, taux) {
   return Math.abs(tv / recomputedHt - rate) <= 0.025;
 }
 
+// Ne corrige que sur preuve : « HT=150, TVA=30 » (correct) et « TTC=150 pris
+// pour du HT avec TVA recalculée » donnent exactement les mêmes nombres.
+// Seul le document, ou un ratio TVA/HT impossible, permet de trancher.
 function fixTtcMislabeledLine(line, text = "") {
   if (amountLabeledTtcInText(text, line.m_ht)) return convertTtcAmountToHtLine(line, line.m_ht);
-  if (isHtFormulaOnTtcAmount(line.m_ht, line.tva, line.taux)) return convertTtcAmountToHtLine(line, line.m_ht);
-  if (!isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux)) return line;
-  return convertTtcAmountToHtLine(line, line.m_ht);
+  if (isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux)) {
+    return convertTtcAmountToHtLine(line, line.m_ht);
+  }
+  return line;
 }
 
 function extractFooterTotals(text) {
@@ -585,7 +589,8 @@ function consolidateLines(lines) {
 export function normalizeExtractionResults(results) {
   const normalized = results.map((result) => {
     const withAvoir = applyAvoirSigns({ ...result, lines: result.lines || [] });
-    const withTtc = applyTtcVentilationFixes(withAvoir);
+    const withIf = reconcileSupplierIf(withAvoir);
+    const withTtc = applyTtcVentilationFixes(withIf);
     return { ...withTtc, lines: consolidateLines(withTtc.lines || []) };
   });
 
@@ -674,6 +679,50 @@ function extractSupplierIf(text) {
   const footer = text.match(IF_FOOTER_PATTERN);
   if (footer) return footer[1].trim();
   return "";
+}
+
+/** R.C., patente, CNSS, capital : jamais des identifiants fiscaux. */
+function otherLegalIds(text) {
+  const found = new Set();
+  const patterns = [
+    /\b(?:R\.?\s?C\.?|Registre\s+de\s+commerce)\s*[:\s.]*(\d{3,10})\b/gi,
+    /\bPATENTE\s*[:\s.]*(\d{5,12})/gi,
+    /\bCNSS\s*[:\s.]*(\d{5,12})/gi,
+    /\bCAPITAL[^\n]*?(\d[\d .,]{4,})/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const digits = match[1].replace(/\D/g, "");
+      if (digits) found.add(digits);
+    }
+  }
+  return found;
+}
+
+function reconcileSupplierIf(result) {
+  const text = result.raw_text || "";
+  if (!text.trim()) return result;
+
+  const correct = extractSupplierIf(text);
+  if (!correct) return result;
+
+  const wrong = otherLegalIds(text);
+  let corrected = false;
+  for (const line of result.lines || []) {
+    const current = String(line.if || "").replace(/\D/g, "");
+    if (current === correct) continue;
+    if (!current || wrong.has(current)) {
+      line.if = correct;
+      corrected = true;
+    }
+  }
+  if (corrected) {
+    result.warnings = [
+      ...(result.warnings || []),
+      `IF corrigé depuis le pied de page du document (${correct}).`,
+    ];
+  }
+  return result;
 }
 
 function extractInvoiceNumber(text, filename) {
