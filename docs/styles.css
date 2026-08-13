@@ -489,11 +489,19 @@ tr.duplicate-row td:first-child {
   flex-shrink: 0;
 }
 
+.preview-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .preview-close-btn {
-  align-self: flex-end;
   min-width: 2rem;
   padding: 0.25rem 0.45rem;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .preview-nav,

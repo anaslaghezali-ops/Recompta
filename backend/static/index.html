@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Recompta — Déclaration TVA</title>
-  <link rel="stylesheet" href="styles.css?v=wide3" />
+  <link rel="stylesheet" href="styles.css?v=wide4" />
 </head>
 <body>
   <header class="hero">
@@ -123,25 +123,27 @@
               <p id="previewSubtitle" class="hint preview-subtitle"></p>
             </div>
             <div class="preview-toolbar">
-              <button
-                id="previewCloseBtn"
-                class="secondary small preview-close-btn"
-                type="button"
-                aria-label="Fermer l'aperçu"
-                title="Fermer l'aperçu"
-              >
-                ✕
-              </button>
+              <div class="preview-toolbar-row">
+                <div id="previewZoom" class="preview-zoom" hidden>
+                  <button id="previewZoomOut" class="secondary small" type="button" aria-label="Dézoomer">−</button>
+                  <span id="previewZoomLabel">100%</span>
+                  <button id="previewZoomIn" class="secondary small" type="button" aria-label="Zoomer">+</button>
+                  <button id="previewZoomReset" class="secondary small" type="button" title="Réinitialiser le zoom">100%</button>
+                </div>
+                <button
+                  id="previewCloseBtn"
+                  class="secondary small preview-close-btn"
+                  type="button"
+                  aria-label="Fermer l'aperçu"
+                  title="Fermer l'aperçu"
+                >
+                  ✕
+                </button>
+              </div>
               <div id="previewNav" class="preview-nav" hidden>
                 <button id="previewPrevPage" class="secondary small" type="button" aria-label="Page précédente">‹</button>
                 <span id="previewPageInfo">1 / 1</span>
                 <button id="previewNextPage" class="secondary small" type="button" aria-label="Page suivante">›</button>
-              </div>
-              <div id="previewZoom" class="preview-zoom" hidden>
-                <button id="previewZoomOut" class="secondary small" type="button" aria-label="Dézoomer">−</button>
-                <span id="previewZoomLabel">100%</span>
-                <button id="previewZoomIn" class="secondary small" type="button" aria-label="Zoomer">+</button>
-                <button id="previewZoomReset" class="secondary small" type="button">100%</button>
               </div>
             </div>
           </div>
