@@ -225,7 +225,7 @@
     }
 
     function openDossierTool(dossierId) {
-      window.location.href = `index.html?dossier=${dossierId}`;
+      window.location.href = `production.html?dossier=${dossierId}`;
     }
 
     function setTab(tab) {
@@ -368,10 +368,10 @@
       };
 
       const quickActions = [
-        { icon: "landmark", label: "Banque", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-input", label: "Achats", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-spreadsheet", label: "Export TVA", href: cockpit.dossier ? `index.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "landmark", label: "Banque", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "file-input", label: "Achats", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "sparkles", label: "Contrôles IA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "file-spreadsheet", label: "Export TVA", href: cockpit.dossier ? `production.html?dossier=${cockpit.dossier.id}` : null },
       ];
 
       document.getElementById("quickActions").innerHTML = quickActions.map((item) => `

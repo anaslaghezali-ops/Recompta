@@ -1585,19 +1585,26 @@ async function renderHeroAuth() {
       "'": "&#39;",
     }[char]));
   if (!isSupabaseConfigured()) {
-    root.innerHTML = `<a href="login.html" class="hero-auth-link">Connexion</a>`;
+    root.innerHTML = `
+      <a href="index.html" class="hero-auth-link">Accueil</a>
+      <a href="login.html" class="hero-auth-link">Connexion</a>
+    `;
     return;
   }
   try {
     const session = await getSession();
     if (!session?.user) {
-      root.innerHTML = `<a href="login.html" class="hero-auth-link">Connexion</a>`;
+      root.innerHTML = `
+        <a href="index.html" class="hero-auth-link">Accueil</a>
+        <a href="login.html" class="hero-auth-link">Connexion</a>
+      `;
       return;
     }
     const admin = await isSuperAdmin(session.user.id);
     const membership = admin ? null : await getUserCabinetMembership();
     const email = escapeHtml(session.user.email || "");
     root.innerHTML = `
+      <a href="index.html" class="hero-auth-link">Accueil</a>
       ${admin ? `<a href="admin.html" class="hero-auth-link">Admin cabinets</a>` : ""}
       ${membership ? `<a href="dossiers.html" class="hero-auth-link">Mes dossiers</a>` : ""}
       ${admin ? `<span class="hero-auth-role">Super-admin</span>` : ""}
@@ -1609,6 +1616,9 @@ async function renderHeroAuth() {
       window.location.reload();
     });
   } catch {
-    root.innerHTML = `<a href="login.html" class="hero-auth-link">Connexion</a>`;
+    root.innerHTML = `
+      <a href="index.html" class="hero-auth-link">Accueil</a>
+      <a href="login.html" class="hero-auth-link">Connexion</a>
+    `;
   }
 }
