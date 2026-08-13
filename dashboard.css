@@ -1963,6 +1963,112 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Documents dossier */
+.ws-docs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.ws-docs-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+
+.ws-docs-filters {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.2rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  background: var(--dash-surface-2);
+}
+
+.ws-docs-filters button {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--dash-muted);
+  cursor: pointer;
+}
+
+.ws-docs-filters button.active {
+  background: #fff;
+  color: var(--dash-text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.ws-docs-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ws-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ws-doc-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--dash-surface-2);
+  color: var(--dash-primary);
+  flex-shrink: 0;
+}
+
+.ws-doc-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-doc-meta strong {
+  display: block;
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-doc-meta span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--dash-muted);
+  margin-top: 0.1rem;
+}
+
+.ws-docs-empty {
+  margin: 0;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--dash-muted);
+  border: 1px dashed var(--dash-border);
+  border-radius: 12px;
+  background: var(--dash-surface-2);
+}
+
+.ws-docs-loading {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--dash-muted);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 900px) {
   .imp-grid { grid-template-columns: 1fr; }
   .imp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=jobs3" />
+  <link rel="stylesheet" href="dashboard.css?v=docs2" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -56,6 +56,7 @@
 
         <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
           <button type="button" class="active" data-tab="cockpit" role="tab">Période active</button>
+          <button type="button" data-tab="documents" role="tab">Documents</button>
           <button type="button" data-tab="history" role="tab">Historique des périodes</button>
         </div>
 
@@ -138,6 +139,25 @@
           </div>
         </div>
 
+
+        <div id="documentsView" hidden>
+          <section class="ws-section">
+            <div class="ws-docs-header">
+              <div>
+                <h2>Documents importés</h2>
+                <p id="documentsPeriodHint">Factures et relevés stockés pour cette période TVA</p>
+              </div>
+              <div class="ws-docs-filters" id="docFilters" role="tablist" aria-label="Filtrer les documents">
+                <button type="button" class="active" data-filter="all">Tous</button>
+                <button type="button" data-filter="invoice">Factures</button>
+                <button type="button" data-filter="bank">Relevés</button>
+              </div>
+            </div>
+            <div id="documentsList" class="ws-docs-list"></div>
+            <p class="ws-docs-empty" id="documentsEmpty" hidden>Aucun document importé pour cette période.</p>
+          </section>
+        </div>
+
         <div id="historyView" hidden>
           <section class="ws-section">
             <div class="ws-history-header">
@@ -196,10 +216,20 @@
     } from "./dossiers-client.js?v=dash2";
     import { listClientActivity } from "./dossier-persistence.js?v=persist1";
     import {
+      DOC_TYPE_ICONS,
+      DOC_TYPE_LABELS,
+      downloadDossierDocument,
+      listDossierDocuments,
+    } from "./dossier-documents.js?v=doc1";
+    import { formatFileSize } from "./import-dossier.js?v=imp1";
+    import {
       formatActiveImportLabel,
+      importJobPageUrl,
       JOB_STATUS_LABELS,
       listImportJobs,
-    } from "./import-jobs-client.js?v=jobs2";
+      showImportCompletionToast,
+      startImportCompletionWatcher,
+    } from "./import-jobs-client.js?v=jobs3";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace2";
     import {
       bindSidebarMobile,
@@ -234,6 +264,9 @@
     let activeTab = "cockpit";
     let importPollTimer = null;
     let hadActiveImport = false;
+    let stopCompletionWatcher = null;
+    let documentsCache = [];
+    let documentFilter = "all";
 
     function showPeriodError(message) {
       periodError.hidden = !message;
@@ -271,10 +304,21 @@
       document.getElementById("importBannerTitle").textContent =
         JOB_STATUS_LABELS[job.status] || "Import en cours";
       document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
-      document.getElementById("importBannerLink").href =
-        `import-achats.html?dossier=${selectedDossierId}`;
+      document.getElementById("importBannerLink").href = importJobPageUrl(job, selectedDossierId);
       startImportPolling();
       initLucide();
+    }
+
+    function startCompletionWatcher() {
+      stopCompletionWatcher?.();
+      const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
+      if (!dossierIds.length) return;
+      stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
+        showImportCompletionToast(job, { dossierName: client?.name || "" });
+        if (job.dossier_id === selectedDossierId) {
+          reloadCockpit(selectedDossierId).catch(() => {});
+        }
+      });
     }
 
     function startImportPolling() {
@@ -290,6 +334,101 @@
       importPollTimer = null;
     }
 
+    function renderDocumentsList() {
+      const listEl = document.getElementById("documentsList");
+      const emptyEl = document.getElementById("documentsEmpty");
+      const filtered = documentFilter === "all"
+        ? documentsCache
+        : documentsCache.filter((doc) => doc.doc_type === documentFilter);
+
+      if (!selectedDossierId) {
+        listEl.innerHTML = "";
+        emptyEl.hidden = false;
+        emptyEl.textContent = "Sélectionnez une période TVA pour voir ses documents.";
+        return;
+      }
+
+      if (!filtered.length) {
+        listEl.innerHTML = "";
+        emptyEl.hidden = false;
+        emptyEl.textContent = documentsCache.length
+          ? "Aucun document dans cette catégorie."
+          : "Aucun document importé pour cette période.";
+        return;
+      }
+
+      emptyEl.hidden = true;
+      listEl.innerHTML = filtered.map((doc) => {
+        const icon = DOC_TYPE_ICONS[doc.doc_type] || "file";
+        const typeLabel = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
+        const dateLabel = new Date(doc.created_at).toLocaleString("fr-FR", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return `
+          <div class="ws-doc-row" data-doc-id="${doc.id}">
+            <span class="ws-doc-icon"><i data-lucide="${icon}"></i></span>
+            <div class="ws-doc-meta">
+              <strong title="${escapeHtml(doc.original_filename)}">${escapeHtml(doc.original_filename)}</strong>
+              <span>${escapeHtml(typeLabel)} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
+            </div>
+            <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}">
+              <i data-lucide="download"></i> Télécharger
+            </button>
+          </div>
+        `;
+      }).join("");
+
+      listEl.querySelectorAll("[data-download-doc]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const doc = documentsCache.find((row) => String(row.id) === btn.dataset.downloadDoc);
+          if (!doc) return;
+          btn.disabled = true;
+          try {
+            await downloadDossierDocument(doc);
+          } catch (error) {
+            alert(error.message || "Échec du téléchargement.");
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+      initLucide();
+    }
+
+    async function renderDocuments() {
+      const listEl = document.getElementById("documentsList");
+      const emptyEl = document.getElementById("documentsEmpty");
+      const hintEl = document.getElementById("documentsPeriodHint");
+
+      if (!selectedDossierId) {
+        documentsCache = [];
+        renderDocumentsList();
+        return;
+      }
+
+      if (cockpit?.dossier) {
+        hintEl.textContent = `Documents de ${cockpit.periodLabel} — factures et relevés stockés sur la plateforme`;
+      }
+
+      listEl.innerHTML = `<div class="ws-docs-loading">Chargement des documents…</div>`;
+      emptyEl.hidden = true;
+
+      try {
+        documentsCache = await listDossierDocuments(selectedDossierId);
+        renderDocumentsList();
+      } catch {
+        documentsCache = [];
+        listEl.innerHTML = "";
+        emptyEl.hidden = false;
+        emptyEl.textContent = "Impossible de charger les documents. Vérifiez la migration Supabase.";
+      }
+    }
+
+
     function openDossierTool(dossierId, href) {
       if (href) {
         window.location.href = href;
@@ -304,10 +443,14 @@
         btn.classList.toggle("active", btn.dataset.tab === tab);
       });
       document.getElementById("cockpitView").hidden = tab !== "cockpit";
+      document.getElementById("documentsView").hidden = tab !== "documents";
       document.getElementById("historyView").hidden = tab !== "history";
       if (tab === "history") {
         renderYearTabs();
         renderMonthGrid();
+      }
+      if (tab === "documents") {
+        renderDocuments();
       }
       initLucide();
     }
@@ -575,6 +718,7 @@
       renderCockpit();
       await renderTimeline();
       await renderImportBanner();
+      if (activeTab === "documents") await renderDocuments();
     }
 
     function openNewPeriodModal(presetMonth) {
@@ -611,6 +755,7 @@
 
           renderClientHeader();
           await reloadCockpit(dossierParam);
+          startCompletionWatcher();
           initLucide();
         }
       }
