@@ -397,13 +397,17 @@ async function runExtraction(files) {
     throw new Error("Indiquez l'URL du serveur Recompta (ex. https://recompta.onrender.com).");
   }
 
+  let serverFailed = false;
+
   if (wantAi && apiUrl) {
     try {
       const health = await fetchServerHealth(apiUrl);
       if (health.ai_verified) {
         els.extractionStatus.textContent = "Préparation des fichiers…";
         const serverFiles = await expandUploadedFilesToFiles(files);
-        return extractViaServer(serverFiles, apiUrl, {
+        // En cas d'échec réseau, on bascule sur l'OCR local plutôt que de
+        // laisser l'utilisateur sans aucun résultat.
+        return await extractViaServer(serverFiles, apiUrl, {
           clientIce,
           onProgress: (_c, _t, label) => {
             els.extractionStatus.textContent = label;
@@ -418,6 +422,7 @@ async function runExtraction(files) {
       }
     } catch (error) {
       if (error.message.includes("Clé OpenAI")) throw error;
+      serverFailed = true;
       els.extractionStatus.textContent = `Serveur IA indisponible (${error.message}) — repli OCR local…`;
     }
   }
@@ -429,7 +434,7 @@ async function runExtraction(files) {
       : `Fichier ${current}/${total} — ${label}…`;
   });
 
-  if (!wantAi || !apiUrl) return localResults;
+  if (!wantAi || !apiUrl || serverFailed) return localResults;
 
   const incomplete = localResults.filter(needsAiRetry);
   if (!incomplete.length) return localResults;
