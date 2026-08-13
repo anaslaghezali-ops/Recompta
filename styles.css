@@ -781,6 +781,42 @@ td select.confidence-error {
   flex-wrap: wrap;
 }
 
+.bank-match-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.bank-match-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border, #d8dee9);
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fafbfc;
+}
+
+.bank-match-option:has(input:checked) {
+  border-color: var(--primary, #2563eb);
+  background: #f0f7ff;
+}
+
+.bank-match-option input {
+  margin-top: 0.2rem;
+}
+
+.bank-match-option strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.bank-match-learn {
+  margin: 0.5rem 0 0.25rem;
+}
+
 .export-card {
   background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
   border-color: #b8d4f0;

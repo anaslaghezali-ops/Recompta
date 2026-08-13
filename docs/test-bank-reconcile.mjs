@@ -1,8 +1,51 @@
-import { applyBankStatement } from "./bank-statement-client.js";
+import {
+  applyBankStatement,
+  applyPaymentToLineIndices,
+  extractBankBeneficiaryToken,
+  findSupplierAmountCandidates,
+} from "./bank-statement-client.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+
+assert(extractBankBeneficiaryToken("EMISSION VIREMENT EN FAVEUR DE MPro , BMCE") === "MPRO", "beneficiary token");
+
+const modeFoodLines = [
+  { fact_num: "F1", lib_frss: "Mode Food", m_ttc: 1284, designation: "A", source_file: "a.pdf" },
+  { fact_num: "F2", lib_frss: "Mode Food", m_ttc: 450, designation: "B", source_file: "b.pdf" },
+  { fact_num: "F3", lib_frss: "Mode Food", m_ttc: 1740, designation: "C", source_file: "c.pdf" },
+];
+
+const mproTxn = {
+  id: "mpro-1",
+  date: "2025-06-15",
+  label: "EMISSION D'UN VIREMENT EN FAVEUR DE MPro , BMCE CASABLANCA",
+  amount: -3474,
+  absAmount: 3474,
+  type: "payment",
+};
+
+const pendingResult = applyBankStatement([mproTxn], modeFoodLines);
+assert(pendingResult.stats.paymentsMatched === 0, "MPro without alias not auto-matched");
+assert(pendingResult.pendingMatches.length === 1, "one pending match for MPro");
+assert(pendingResult.pendingMatches[0].proposals.length === 1, "one Mode Food proposal");
+assert(pendingResult.pendingMatches[0].proposals[0].invoiceCount === 3, "three invoices proposed");
+assert(pendingResult.pendingMatches[0].bankToken === "MPRO", "bank token for learning");
+
+const aliasResult = applyBankStatement([mproTxn], modeFoodLines, {
+  supplierAliases: { MPRO: "MODEFOOD" },
+});
+assert(aliasResult.stats.paymentsMatched === 1, "MPro auto-matched with learned alias");
+assert(aliasResult.pendingMatches.length === 0, "no pending with alias");
+
+const ambiguousLines = [
+  { fact_num: "A1", lib_frss: "Mode Food", m_ttc: 3474, designation: "x", source_file: "a.pdf" },
+  { fact_num: "B1", lib_frss: "Eat Meat", m_ttc: 3474, designation: "y", source_file: "b.pdf" },
+];
+const ambiguousTxn = { ...mproTxn, id: "amb-1", absAmount: 3474, amount: -3474 };
+const ambiguousResult = applyBankStatement([ambiguousTxn], ambiguousLines);
+assert(ambiguousResult.pendingMatches[0].proposals.length === 2, "two proposals when ambiguous");
 
 const achibestLines = [
   {

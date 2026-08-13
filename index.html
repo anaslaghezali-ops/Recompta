@@ -213,9 +213,25 @@
     </form>
   </dialog>
 
+  <dialog id="bankMatchDialog" class="review-dialog bank-match-dialog">
+    <form method="dialog" id="bankMatchForm">
+      <h2 id="bankMatchTitle">Rapprochement à confirmer</h2>
+      <p id="bankMatchIntro" class="hint"></p>
+      <div id="bankMatchProposals" class="bank-match-proposals" role="radiogroup" aria-labelledby="bankMatchTitle"></div>
+      <label id="bankMatchLearnWrap" class="checkbox-row bank-match-learn" hidden>
+        <input id="bankMatchLearnAlias" type="checkbox" checked />
+        Mémoriser ce libellé bancaire pour ce fournisseur (prochains relevés)
+      </label>
+      <div class="dialog-actions">
+        <button value="skip" class="secondary" type="submit">Ignorer ce virement</button>
+        <button id="bankMatchConfirm" class="primary" type="button">Valider le rapprochement</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-  <script type="module" src="app.js?v=propagation1"></script>
+  <script type="module" src="app.js?v=bankmatch1"></script>
 </body>
 </html>
