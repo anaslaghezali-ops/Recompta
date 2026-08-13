@@ -538,8 +538,18 @@ function applyTtcVentilationFixes(result) {
   // Corrections appuyées sur le document : silencieuses, le tableau montre le résultat.
   const footerHt = extractFooterTotals(text).ht ?? null;
   const aligned = alignLinesWithFooterTotals(result.lines || [], text);
-  const lines = aligned.map((line) => fixTtcMislabeledLine(line, text, footerHt));
+  const lines = aligned.map((line) => fillMissingTtc(fixTtcMislabeledLine(line, text, footerHt)));
   return { ...result, lines, warnings };
+}
+
+export function fillMissingTtc(line) {
+  const ht = Number(line.m_ht) || 0;
+  const tva = Number(line.tva) || 0;
+  const ttc = Number(line.m_ttc) || 0;
+  if (Math.abs(ttc) < 0.01 && Math.abs(ht) >= 0.01 && Math.abs(tva) >= 0.01) {
+    return { ...line, m_ttc: Math.round((ht + tva) * 100) / 100 };
+  }
+  return line;
 }
 
 function shouldConsolidateGroup(group) {
@@ -601,7 +611,7 @@ export function normalizeExtractionResults(results) {
     const withTtc = applyTtcVentilationFixes(withIf);
     return {
       ...withTtc,
-      lines: consolidateLines(withTtc.lines || []),
+      lines: consolidateLines(withTtc.lines || []).map(fillMissingTtc),
       warnings: [...new Set(withTtc.warnings || [])],
     };
   });
@@ -634,8 +644,14 @@ export function normalizeExtractionResults(results) {
       line.date_paie = "";
       if (!line.lib_frss && bestName) line.lib_frss = bestName;
       if (!line.lib_frss && pathHint?.lib_frss) line.lib_frss = pathHint.lib_frss;
-      if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) line.ice_frs = bestIce;
-      if (bestIf && !line.if) line.if = bestIf;
+      if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) {
+        line.ice_frs = bestIce;
+        line.ice_inferred = true;
+      }
+      if (bestIf && !line.if) {
+        line.if = bestIf;
+        line.if_inferred = true;
+      }
     }
   }
 
@@ -1210,6 +1226,7 @@ export function completeSupplierIdentifiers(lines) {
 
     if (!normalizeIceDigits(line.ice_frs) && group?.ices.length) {
       line.ice_frs = pickMostCommon(group.ices);
+      line.ice_inferred = true;
       completed += 1;
     }
 
@@ -1218,6 +1235,7 @@ export function completeSupplierIdentifiers(lines) {
       const candidates = (ice && ifByIce.get(ice)) || group?.ifs || [];
       if (candidates.length) {
         line.if = pickMostCommon(candidates);
+        line.if_inferred = true;
         completed += 1;
       }
     }

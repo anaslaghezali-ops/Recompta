@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 from models import ExtractionResult, InvoiceLine
-from vat_intelligence import apply_vat_reconciliation
+from vat_intelligence import apply_vat_reconciliation, fill_missing_ttc
 
 # Rétrocompatibilité imports internes
 from vat_intelligence import parse_ttc_ventilation  # noqa: F401
@@ -120,6 +120,7 @@ def complete_supplier_identifiers(lines: list[InvoiceLine]) -> int:
 
         if not normalize_ice_digits(line.ice_frs) and group and group["ices"]:
             line.ice_frs = pick_most_common(group["ices"])
+            line.ice_inferred = True
             completed += 1
 
         if not (line.if_fournisseur or "").strip():
@@ -127,6 +128,7 @@ def complete_supplier_identifiers(lines: list[InvoiceLine]) -> int:
             candidates = if_by_ice.get(ice) or (group["ifs"] if group else [])
             if candidates:
                 line.if_fournisseur = pick_most_common(candidates)
+                line.if_inferred = True
                 completed += 1
 
     return completed
@@ -236,7 +238,7 @@ def normalize_extraction_results(
     for result in results:
         item = apply_avoir_signs(result.model_copy(deep=True))
         item = apply_vat_reconciliation(item)
-        item.lines = consolidate_lines(item.lines)
+        item.lines = [fill_missing_ttc(line) for line in consolidate_lines(item.lines)]
         # La date de paiement ne vient que du relevé bancaire : une facture ne
         # prouve pas son règlement, même si l'IA propose une date.
         for line in item.lines:
@@ -281,8 +283,10 @@ def normalize_extraction_results(
                 line.lib_frss = line.lib_frss.strip()
             if best_ice and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
                 line.ice_frs = best_ice
+                line.ice_inferred = True
             if best_if and not line.if_fournisseur:
                 line.if_fournisseur = best_if
+                line.if_inferred = True
 
     complete_supplier_identifiers([line for item in normalized for line in item.lines])
 

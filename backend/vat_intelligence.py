@@ -226,6 +226,13 @@ def result_needs_escalation(result: ExtractionResult) -> bool:
     return any(not line_is_coherent(line) for line in result.lines)
 
 
+def fill_missing_ttc(line: InvoiceLine) -> InvoiceLine:
+    """Si le TTC n'est pas lisible, HT + TVA suffisent à le reconstituer."""
+    if abs(line.m_ttc) < 0.01 and abs(line.m_ht) >= 0.01 and abs(line.tva) >= 0.01:
+        line.m_ttc = round(line.m_ht + line.tva, 2)
+    return line
+
+
 def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     """Réconciliation TVA générique post-extraction (IA ou OCR)."""
     from models import InvoiceLine
@@ -249,6 +256,7 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
             )
             for item in ventilation
         ]
+        result.lines = [fill_missing_ttc(line) for line in result.lines]
         return result
 
     # Corrections appuyées sur le document : pas de message, le tableau affiche
@@ -269,4 +277,5 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
                     "facture probablement à plusieurs taux, à ventiler manuellement."
                 )
                 break
+    result.lines = [fill_missing_ttc(line) for line in result.lines]
     return result

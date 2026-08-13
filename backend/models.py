@@ -69,6 +69,14 @@ class InvoiceLine(BaseModel):
     if_fournisseur: str = Field("", alias="if", description="Identifiant fiscal fournisseur")
     lib_frss: str = Field("", description="Nom du fournisseur")
     ice_frs: str = Field("", description="ICE fournisseur (15 chiffres)")
+    ice_inferred: bool = Field(
+        False,
+        description="ICE repris d'une autre facture du même fournisseur, pas lu sur cette pièce",
+    )
+    if_inferred: bool = Field(
+        False,
+        description="IF repris d'une autre facture du même fournisseur, pas lu sur cette pièce",
+    )
     taux: float = Field(0.2, description="Taux TVA (0.1 ou 0.2)")
     id_paie: int = Field(4, description="Mode de paiement (1 ou 4)")
     date_paie: Optional[date] = None

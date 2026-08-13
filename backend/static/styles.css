@@ -465,6 +465,60 @@ td:nth-child(13) select { max-width: 3.5rem; }
   font-size: 0.85rem;
 }
 
+td input.inferred {
+  background: #fff8e6;
+  border: 1px solid #e0b44a;
+}
+
+.review-dialog {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0;
+  max-width: 38rem;
+  width: calc(100% - 2rem);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.review-dialog::backdrop {
+  background: rgba(15, 28, 46, 0.45);
+}
+
+.review-dialog form {
+  padding: 1.25rem 1.5rem 1.35rem;
+}
+
+.review-dialog h2 {
+  margin-bottom: 0.4rem;
+}
+
+.review-dialog ul {
+  margin: 0.85rem 0 1.2rem;
+  padding-left: 1.15rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  font-size: 0.88rem;
+}
+
+.review-dialog li {
+  margin: 0.4rem 0;
+}
+
+.review-dialog li.review-warn {
+  color: var(--warn);
+}
+
+.review-dialog li.review-info {
+  color: var(--muted);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .export-card {
   background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
   border-color: #b8d4f0;

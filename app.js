@@ -6,7 +6,7 @@ import {
   normalizeExtractionResults,
   setExtractionContext,
 } from "./extract-client.js";
-import { exportDedTvaExcel } from "./export-client.js";
+import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyBankStatement,
   normalizeBankTransactions,
@@ -69,6 +69,10 @@ const els = {
   bankFileInfo: document.getElementById("bankFileInfo"),
   applyBankBtn: document.getElementById("applyBankBtn"),
   bankStatus: document.getElementById("bankStatus"),
+  exportReviewDialog: document.getElementById("exportReviewDialog"),
+  exportReviewIntro: document.getElementById("exportReviewIntro"),
+  exportReviewList: document.getElementById("exportReviewList"),
+  exportReviewConfirm: document.getElementById("exportReviewConfirm"),
 };
 
 function emptyLine(sourceFile = "") {
@@ -82,6 +86,8 @@ function emptyLine(sourceFile = "") {
     if: "",
     lib_frss: "",
     ice_frs: "",
+    ice_inferred: false,
+    if_inferred: false,
     taux: 0.2,
     id_paie: 4,
     date_paie: "",
@@ -215,6 +221,14 @@ function renderTable() {
           input.maxLength = 15;
           input.inputMode = "numeric";
           input.placeholder = "15 chiffres";
+          if (line.ice_inferred) {
+            input.classList.add("inferred");
+            input.title = "ICE repris d'une autre facture du même fournisseur — confirmez-le.";
+          }
+        }
+        if (field.key === "if" && line.if_inferred) {
+          input.classList.add("inferred");
+          input.title = "IF repris d'une autre facture du même fournisseur — confirmez-le.";
         }
         const display =
           field.key === "source_file" ? shortFilename(line[field.key]) : (line[field.key] ?? "");
@@ -231,7 +245,11 @@ function renderTable() {
           } else if (field.key === "ice_frs") {
             const digits = input.value.replace(/\D/g, "").slice(0, 15);
             line.ice_frs = digits.length === 15 ? digits : "";
+            line.ice_inferred = false;
             input.value = line.ice_frs;
+          } else if (field.key === "if") {
+            line.if = input.value;
+            line.if_inferred = false;
           } else {
             line[field.key] = input.value;
           }
@@ -559,7 +577,7 @@ async function extractFiles() {
   }
 }
 
-function exportExcel() {
+function downloadExcel() {
   setStep(4);
   els.exportBtn.disabled = true;
   els.exportBtn.textContent = "Génération…";
@@ -568,7 +586,7 @@ function exportExcel() {
     const filename = exportDedTvaExcel({
       clientName: els.clientName.value.trim() || "CLIENT",
       period: els.period.value.trim(),
-      lines: state.lines.map(({ source_file, ...line }) => ({
+      lines: state.lines.map(({ source_file, ice_inferred, if_inferred, ...line }) => ({
         ...line,
         taux: Number(line.taux),
         id_paie: Number(line.id_paie),
@@ -583,6 +601,39 @@ function exportExcel() {
   } finally {
     els.exportBtn.textContent = "Télécharger Excel";
     updateButtons();
+  }
+}
+
+function openExportReview(issues) {
+  const warns = issues.filter((issue) => issue.level === "warn").length;
+  els.exportReviewIntro.textContent = warns
+    ? `${warns} point(s) à relire. Corrigez les lignes ou exportez après confirmation — l'export n'est jamais bloqué.`
+    : "Certains identifiants ont été repris d'autres factures du même fournisseur. Confirmez puis exportez.";
+  els.exportReviewList.innerHTML = issues
+    .map((issue) => `<li class="review-${issue.level}">${issue.text}</li>`)
+    .join("");
+  els.exportReviewDialog.showModal();
+}
+
+function exportExcel() {
+  try {
+    if (!/^\d{6}$/.test(els.period.value.trim())) {
+      alert("La période doit être au format MMAAAA (ex: 062026).");
+      return;
+    }
+
+    const issues = collectExportReview(state.lines, {
+      clientIce: currentClientIce(),
+      duplicateIndexes: findDuplicateLineIndexes(state.lines),
+    });
+
+    if (!issues.length) {
+      downloadExcel();
+      return;
+    }
+    openExportReview(issues);
+  } catch (error) {
+    alert(`Export impossible : ${error.message}`);
   }
 }
 
@@ -736,6 +787,11 @@ els.addLineBtn.addEventListener("click", () => {
   updateButtons();
 });
 els.exportBtn.addEventListener("click", exportExcel);
+els.exportReviewConfirm.addEventListener("click", (event) => {
+  event.preventDefault();
+  els.exportReviewDialog.close();
+  downloadExcel();
+});
 els.removeDuplicatesBtn.addEventListener("click", removeDuplicates);
 els.clearBtn.addEventListener("click", clearAll);
 els.bankFileInput.addEventListener("change", (e) => loadBankFile(e.target.files?.[0]));

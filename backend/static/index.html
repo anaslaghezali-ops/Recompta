@@ -138,12 +138,24 @@
       <div class="export-inner">
         <div>
           <h2>Exporter le fichier DED TVA</h2>
-          <p class="hint">Format Excel prêt pour la déclaration TVA marocaine.</p>
+          <p class="hint">Format Excel prêt pour la déclaration TVA marocaine. Les points à relire s'affichent avant le téléchargement — l'export n'est jamais bloqué.</p>
         </div>
         <button id="exportBtn" class="primary large" disabled>Télécharger Excel</button>
       </div>
     </section>
   </main>
+
+  <dialog id="exportReviewDialog" class="review-dialog">
+    <form method="dialog">
+      <h2>Vérification avant export</h2>
+      <p id="exportReviewIntro" class="hint"></p>
+      <ul id="exportReviewList"></ul>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary" type="submit">Annuler</button>
+        <button id="exportReviewConfirm" class="primary" type="button">J'ai vérifié, exporter</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
