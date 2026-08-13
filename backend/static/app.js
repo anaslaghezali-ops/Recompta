@@ -18,13 +18,15 @@ import {
   parseBankFile,
 } from "./bank-statement-client.js";
 import {
+  assignSourceIds,
   bindPreviewControls,
   cacheSourceFiles,
   clearSourceFiles,
   findFirstReviewLineIndex,
-  resolveSourceId,
+  parseSourceFilename,
   showLinePreview,
-} from "./document-preview.js?v=preview4";
+  tagSourceFilename,
+} from "./document-preview.js?v=preview6";
 import {
   extractViaServer,
   fetchServerHealth,
@@ -579,6 +581,7 @@ async function extractFromExpanded(expanded, onProgress) {
     const item = expanded[i];
     if (onProgress) onProgress(i + 1, expanded.length, item.filename);
     const result = await extractInvoice(item.filename, item.content, item.mime);
+    if (item.source_id && !result.source_id) result.source_id = item.source_id;
     results.push(result);
   }
   return normalizeExtractionResults(results);
@@ -651,7 +654,12 @@ async function extractFiles() {
   try {
     const expanded = await expandUploadedFiles(filesToProcess);
     const sourceRecords = cacheSourceFiles(expanded);
-    const results = normalizeExtractionResults(await runExtraction(expanded));
+    const tagged = expanded.map((item, index) => ({
+      ...item,
+      filename: tagSourceFilename(item.filename, sourceRecords[index].id),
+    }));
+    const results = normalizeExtractionResults(await runExtraction(tagged));
+    const sourceIds = assignSourceIds(sourceRecords, results);
     const firstNewIndex = state.lines.length;
 
     let newLines = 0;
@@ -660,14 +668,16 @@ async function extractFiles() {
     const warnings = [];
 
     results.forEach((result, resultIndex) => {
+      const parsed = parseSourceFilename(result.filename);
+      const sourceId = result.source_id || parsed.sourceId || sourceIds[resultIndex] || "";
+      const displayName = parsed.filename || result.filename;
       if (result.lines?.length) {
         okFiles += 1;
-        const sourceId = resolveSourceId(sourceRecords, result.filename, resultIndex);
         result.lines.forEach((line) => {
           state.lines.push({
-            ...emptyLine(result.filename),
+            ...emptyLine(displayName),
             ...line,
-            source_file: result.filename,
+            source_file: displayName,
             source_id: sourceId,
             extraction_engine: result.engine || line.extraction_engine || "",
             date_fac: line.date_fac ? String(line.date_fac).slice(0, 10) : "",
@@ -680,7 +690,7 @@ async function extractFiles() {
       }
       if (result.warnings?.length) {
         const eng = engineLabel(result.engine);
-        warnings.push(`[${eng}] ${shortFilename(result.filename)}: ${result.warnings.join(", ")}`);
+        warnings.push(`[${eng}] ${shortFilename(displayName)}: ${result.warnings.join(", ")}`);
       }
     });
 

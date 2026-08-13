@@ -26,6 +26,7 @@ from normalize_results import (
     deactivate_client_ice_exclusions,
     normalize_extraction_results,
 )
+from source_id import split_source_tag
 from zip_utils import iter_invoice_files
 
 app = FastAPI(title="Recompta API", version="0.2.0")
@@ -153,19 +154,21 @@ async def extract_files(
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
 
     results: list[ExtractionResult] = []
-    pending: list[tuple[str, bytes, str]] = []
+    pending: list[tuple[str, bytes, str, str]] = []
     token = activate_client_ice_exclusions(client_ice)
     try:
         for upload in files:
             content = await upload.read()
             upload_name = upload.filename or "inconnu"
+            original_name, source_id = split_source_tag(upload_name)
             mime_type = upload.content_type or "application/octet-stream"
-            invoice_files = iter_invoice_files(upload_name, content, mime_type)
+            invoice_files = iter_invoice_files(original_name, content, mime_type)
 
             if not invoice_files:
                 results.append(
                     ExtractionResult(
-                        filename=upload_name,
+                        filename=original_name,
+                        source_id=source_id,
                         lines=[],
                         warnings=[
                             "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
@@ -175,21 +178,25 @@ async def extract_files(
                 continue
 
             for relative_name, file_content, file_mime in invoice_files:
-                display_name = relative_name if relative_name != upload_name else upload_name
-                pending.append((display_name, file_content, file_mime))
+                display_name = relative_name if relative_name != original_name else original_name
+                pending.append((display_name, file_content, file_mime, source_id))
 
         semaphore = asyncio.Semaphore(extraction_concurrency())
 
-        async def extract_one(name: str, data: bytes, mime: str) -> ExtractionResult:
+        async def extract_one(
+            name: str, data: bytes, mime: str, source_id: str
+        ) -> ExtractionResult:
             # Une facture illisible ne doit jamais faire échouer tout le lot.
             async with semaphore:
                 try:
                     result = await extract_invoice(name, data, mime)
                     result.filename = name
+                    result.source_id = source_id
                     return result
                 except Exception as exc:  # noqa: BLE001
                     return ExtractionResult(
                         filename=name,
+                        source_id=source_id,
                         lines=[],
                         confidence="low",
                         warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
