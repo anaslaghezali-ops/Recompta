@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
+from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
@@ -133,6 +134,16 @@ async def extract_files(
         return normalize_extraction_results(results, client_ice=client_ice)
     finally:
         deactivate_client_ice_exclusions(token)
+
+
+@app.post("/api/import-bank-statement", response_model=BankStatementResult)
+async def import_bank_statement(
+    file: Annotated[UploadFile, File(...)],
+) -> BankStatementResult:
+    content = await file.read()
+    upload_name = file.filename or "releve_bancaire"
+    mime_type = file.content_type or "application/octet-stream"
+    return await extract_bank_statement(upload_name, content, mime_type)
 
 
 @app.post("/api/export")
