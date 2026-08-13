@@ -2059,7 +2059,47 @@
 
 .ws-docs-list {
   display: grid;
-  gap: 0.5rem;
+  gap: 1.15rem;
+}
+
+.ws-doc-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.ws-doc-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.15rem 0.15rem 0.35rem;
+}
+
+.ws-doc-group-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--dash-surface-2);
+  color: var(--dash-primary);
+  flex-shrink: 0;
+}
+
+.ws-doc-group-header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.ws-doc-group-header p {
+  margin: 0.05rem 0 0;
+  font-size: 0.72rem;
+  color: var(--dash-muted);
+}
+
+.ws-doc-group-list {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .ws-doc-row {
