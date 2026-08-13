@@ -51,7 +51,7 @@ import {
   isSuperAdmin,
   isSupabaseConfigured,
   signOut,
-} from "./auth-client.js";
+} from "./auth-client.js?v=auth4";
 
 const state = {
   files: [],
@@ -1399,6 +1399,7 @@ async function renderHeroAuth() {
     const admin = await isSuperAdmin(session.user.id);
     const email = escapeHtml(session.user.email || "");
     root.innerHTML = `
+      ${admin ? `<a href="admin.html" class="hero-auth-link">Admin cabinets</a>` : ""}
       ${admin ? `<span class="hero-auth-role">Super-admin</span>` : ""}
       <span class="hero-auth-email" title="${email}">${email}</span>
       <button type="button" id="signOutBtn">Déconnexion</button>

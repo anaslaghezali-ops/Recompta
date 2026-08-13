@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recompta — Admin cabinets</title>
+  <link rel="stylesheet" href="styles.css?v=admin1" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-top">
+      <div class="hero-content">
+        <p class="eyebrow">Recompta</p>
+        <h1>Administration</h1>
+        <p class="subtitle">Créez les cabinets comptables et le compte du responsable (owner).</p>
+      </div>
+      <div class="hero-auth">
+        <a href="index.html" class="hero-auth-link">Outil TVA</a>
+        <button type="button" id="signOutBtn" class="hero-auth-link">Déconnexion</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container admin-layout">
+    <section class="card">
+      <h2>Nouveau cabinet</h2>
+      <form id="createCabinetForm" class="admin-form">
+        <div class="grid two">
+          <label>Nom du cabinet
+            <input id="cabinetName" type="text" required minlength="2" placeholder="Cabinet Dupont" />
+          </label>
+          <label>Identifiant (slug)
+            <input id="cabinetSlug" type="text" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="cabinet-dupont" />
+          </label>
+        </div>
+        <p class="hint">Le slug sert d’identifiant technique (minuscules, chiffres, tirets).</p>
+        <div class="grid two">
+          <label>Email du responsable
+            <input id="ownerEmail" type="email" required autocomplete="off" />
+          </label>
+          <label>Nom affiché (optionnel)
+            <input id="displayName" type="text" autocomplete="off" />
+          </label>
+        </div>
+        <label>Mot de passe initial
+          <input id="ownerPassword" type="password" required minlength="6" autocomplete="new-password" />
+        </label>
+        <p class="hint error" id="formError" hidden></p>
+        <p class="hint success" id="formOk" hidden></p>
+        <div class="actions">
+          <button class="primary" type="submit" id="submitBtn">Créer le cabinet</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="section-header">
+        <h2>Cabinets existants</h2>
+        <button type="button" class="secondary small" id="refreshBtn">Actualiser</button>
+      </div>
+      <p class="hint" id="listHint">Chargement…</p>
+      <div class="table-wrap" id="tableWrap" hidden>
+        <table class="admin-table" id="cabinetsTable">
+          <thead>
+            <tr>
+              <th>Cabinet</th>
+              <th>Slug</th>
+              <th>Responsable</th>
+              <th>Créé le</th>
+            </tr>
+          </thead>
+          <tbody id="cabinetsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { signOut } from "./auth-client.js?v=auth4";
+    import {
+      createCabinetWithOwner,
+      guardSuperAdminPage,
+      isValidSlug,
+      listCabinetsWithOwners,
+      slugify,
+    } from "./admin-client.js?v=admin1";
+
+    const form = document.getElementById("createCabinetForm");
+    const cabinetName = document.getElementById("cabinetName");
+    const cabinetSlug = document.getElementById("cabinetSlug");
+    const ownerEmail = document.getElementById("ownerEmail");
+    const displayName = document.getElementById("displayName");
+    const ownerPassword = document.getElementById("ownerPassword");
+    const formError = document.getElementById("formError");
+    const formOk = document.getElementById("formOk");
+    const submitBtn = document.getElementById("submitBtn");
+    const listHint = document.getElementById("listHint");
+    const tableWrap = document.getElementById("tableWrap");
+    const cabinetsBody = document.getElementById("cabinetsBody");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+
+    let slugTouched = false;
+
+    function showError(message) {
+      formError.hidden = !message;
+      formError.textContent = message || "";
+      formOk.hidden = true;
+    }
+
+    function showOk(message) {
+      formOk.hidden = !message;
+      formOk.textContent = message || "";
+      formError.hidden = true;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function formatDate(iso) {
+      if (!iso) return "—";
+      try {
+        return new Date(iso).toLocaleString("fr-FR");
+      } catch {
+        return iso;
+      }
+    }
+
+    async function refreshList() {
+      listHint.hidden = false;
+      listHint.textContent = "Chargement…";
+      tableWrap.hidden = true;
+      try {
+        const rows = await listCabinetsWithOwners();
+        if (!rows.length) {
+          listHint.textContent = "Aucun cabinet pour l’instant.";
+          return;
+        }
+        listHint.hidden = true;
+        tableWrap.hidden = false;
+        cabinetsBody.innerHTML = rows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.name)}</td>
+            <td><code>${escapeHtml(row.slug)}</code></td>
+            <td>${escapeHtml(row.owner?.email || "—")}</td>
+            <td>${escapeHtml(formatDate(row.created_at))}</td>
+          </tr>
+        `).join("");
+      } catch (err) {
+        listHint.textContent = err.message || "Impossible de charger la liste.";
+      }
+    }
+
+    await guardSuperAdminPage();
+
+    signOutBtn.addEventListener("click", async () => {
+      await signOut();
+      window.location.href = "login.html";
+    });
+
+    cabinetName.addEventListener("input", () => {
+      if (!slugTouched) {
+        cabinetSlug.value = slugify(cabinetName.value);
+      }
+    });
+    cabinetSlug.addEventListener("input", () => {
+      slugTouched = cabinetSlug.value.trim().length > 0;
+    });
+
+    refreshBtn.addEventListener("click", refreshList);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      showOk("");
+      const slug = cabinetSlug.value.trim().toLowerCase();
+      if (!isValidSlug(slug)) {
+        showError("Slug invalide.");
+        return;
+      }
+      submitBtn.disabled = true;
+      try {
+        await createCabinetWithOwner({
+          cabinetName: cabinetName.value,
+          slug,
+          ownerEmail: ownerEmail.value,
+          ownerPassword: ownerPassword.value,
+          displayName: displayName.value,
+        });
+        showOk(`Cabinet « ${cabinetName.value.trim()} » créé. Le responsable peut se connecter sur login.html.`);
+        form.reset();
+        slugTouched = false;
+        await refreshList();
+      } catch (err) {
+        let msg = err.message || "Échec de la création.";
+        if (/failed to fetch|network/i.test(msg)) {
+          msg += " Déployez l’Edge Function admin-create-cabinet (voir docs/ADMIN.md).";
+        }
+        showError(msg);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    await refreshList();
+  </script>
+</body>
+</html>

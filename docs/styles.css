@@ -129,6 +129,43 @@ button.linkish {
   text-decoration: underline;
 }
 
+.admin-layout {
+  display: grid;
+  gap: 1.25rem;
+  max-width: var(--layout-max);
+}
+
+.admin-form .actions {
+  margin-top: 0.5rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.admin-table code {
+  font-size: 0.85em;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.1em;
