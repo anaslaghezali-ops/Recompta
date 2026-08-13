@@ -117,10 +117,15 @@ function importJobTouchedAt(job) {
 
 export function isImportJobStale(job, now = Date.now()) {
   if (!job) return false;
-  const maxAge = STALE_IMPORT_MS[job.status];
-  if (!maxAge) return false;
   const touched = importJobTouchedAt(job);
   if (!touched) return false;
+
+  if (job.status === "uploading" && (job.uploaded_files || 0) === 0) {
+    return now - touched > 5 * 60 * 1000;
+  }
+
+  const maxAge = STALE_IMPORT_MS[job.status];
+  if (!maxAge) return false;
   return now - touched > maxAge;
 }
 
@@ -147,6 +152,7 @@ export async function abandonStaleImportJob(job) {
     .eq("id", job.id)
     .in("status", ["uploading", "queued", "processing"]);
 
+  if (!error) markImportJobSeen(job.id);
   return !error;
 }
 
@@ -162,6 +168,40 @@ async function filterActiveImportJobs(jobs) {
     }
   }
   return active;
+}
+
+export async function reconcileStaleImportJobs(dossierIds) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierIds?.length) return;
+
+  const { data, error } = await supabase
+    .from("import_jobs")
+    .select(
+      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, error_summary, created_at, started_at, finished_at, updated_at",
+    )
+    .in("dossier_id", dossierIds)
+    .in("status", ["uploading", "queued", "processing"]);
+
+  if (error) throw error;
+
+  for (const job of data || []) {
+    if (isImportJobStale(job)) {
+      await abandonStaleImportJob(job);
+    }
+  }
+
+  const { data: failedRecent, error: failedError } = await supabase
+    .from("import_jobs")
+    .select("id")
+    .in("dossier_id", dossierIds)
+    .eq("status", "failed")
+    .gte("finished_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+  if (!failedError) {
+    for (const job of failedRecent || []) {
+      markImportJobSeen(job.id);
+    }
+  }
 }
 
 export function importDocTypeLabel(docType) {
@@ -253,7 +293,7 @@ export async function requestImportNotificationPermission() {
 }
 
 export function showImportCompletionToast(job, { dossierName = "" } = {}) {
-  if (!job) return;
+  if (!job || job.status === "failed") return;
   markImportJobSeen(job.id);
 
   const message = formatImportCompletionMessage(job);
@@ -307,7 +347,7 @@ export async function pollImportCompletions(dossierIds, onComplete, { sinceMinut
       "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, error_summary, finished_at, updated_at",
     )
     .in("dossier_id", dossierIds)
-    .in("status", ["completed", "failed"])
+    .eq("status", "completed")
     .gte("finished_at", since)
     .order("finished_at", { ascending: false })
     .limit(20);
