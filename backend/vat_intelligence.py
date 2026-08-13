@@ -159,9 +159,14 @@ def _convert_ttc_amount_to_ht_line(line: InvoiceLine, ttc_value: float) -> Invoi
 
 
 def reconcile_line_amounts(line: InvoiceLine, text: str = "") -> InvoiceLine:
+    """Ne corrige que sur preuve, jamais sur la seule arithmétique.
+
+    « HT=150, TVA=30 » (correct) et « TTC=150 pris pour du HT, TVA recalculée »
+    donnent exactement les mêmes nombres : seul le document permet de trancher.
+    Le ratio TVA/HT est en revanche une preuve suffisante quand il vaut
+    taux/(1+taux), impossible sur une ligne correcte.
+    """
     if _amount_labeled_ttc_in_text(text, line.m_ht):
-        return _convert_ttc_amount_to_ht_line(line, line.m_ht)
-    if _is_ht_formula_on_ttc_amount(line.m_ht, line.tva, line.taux):
         return _convert_ttc_amount_to_ht_line(line, line.m_ht)
     if _is_ttc_mislabeled_as_ht(line.m_ht, line.tva, line.taux):
         return _convert_ttc_amount_to_ht_line(line, line.m_ht)
