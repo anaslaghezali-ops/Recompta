@@ -30,23 +30,38 @@ Ne commitez **jamais** la clé `service_role`.
 
 Pour n’avoir que `docs/` en ligne : GitHub → Settings → Pages → Folder **`/docs`** (au lieu de `/`).
 
-## 3. Premier compte
+## 3. Premier compte super-admin (bootstrap unique)
 
-1. Ouvrez `login.html`
-2. **Créer le compte super-admin** avec votre email
-3. Dans le SQL Editor :
+La page `login.html` ne propose **pas** d'inscription. Créez le premier compte dans le dashboard Supabase :
+
+1. **Authentication → Users → Add user** (email + mot de passe, confirmer l'email)
+2. SQL Editor :
 
 ```sql
 select private.grant_super_admin('votre@email.com');
 ```
 
-4. Déconnexion / reconnexion
+3. Connectez-vous sur `login.html` → redirection vers **admin.html**
 
 Le bandeau de l'outil affiche **Super-admin**.
 
-## 4. Auth dashboard (recommandé pour le bootstrap)
+## 4. Fermer l'inscription publique (obligatoire)
+
+**Authentication → Providers → Email** :
+
+- Désactiver **Allow new users to sign up**
+
+Seul le super-admin crée des comptes cabinet via **admin.html** (Edge Function `admin-create-cabinet`).  
+Les responsables de cabinet se connectent avec les identifiants que vous leur fournissez.
+
+## 5. Migration RLS (création cabinets)
+
+Appliquez aussi `supabase/migrations/20260813210000_lock_cabinet_creation.sql` dans le SQL Editor  
+(défense en profondeur : `INSERT` sur `cabinets` et `cabinet_members` réservé au super-admin).
+
+## 6. Auth email
 
 Authentication → Providers → Email :
 
-- Désactiver **Confirm email** le temps de créer le premier compte, ou confirmer le mail
-- Les inscriptions publiques pourront être coupées plus tard : les cabinets seront créés par le super-admin
+- **Confirm email** : au choix (désactivé simplifie les tests)
+- Avec l'inscription publique coupée, seuls les comptes créés par le super-admin existent

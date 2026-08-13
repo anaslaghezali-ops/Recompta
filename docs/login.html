@@ -36,6 +36,9 @@
       </form>
       <p class="hint">
         <a href="index.html">Retour à l'outil solo</a>
+        <span id="adminLinkWrap" hidden>
+          · <a href="admin.html">Administration cabinets</a> (super-admin)
+        </span>
       </p>
     </section>
   </main>
@@ -44,6 +47,7 @@
     import {
       isSupabaseConfigured,
       getSession,
+      isSuperAdmin,
       signIn,
       authErrorMessage,
       redirectAfterLogin,
@@ -53,6 +57,7 @@
     const submitBtn = document.getElementById("submitBtn");
     const errorEl = document.getElementById("authError");
     const configHint = document.getElementById("configHint");
+    const adminLinkWrap = document.getElementById("adminLinkWrap");
     const email = document.getElementById("email");
     const password = document.getElementById("password");
 
@@ -79,9 +84,20 @@
         const result = await signIn(email.value.trim(), password.value);
         window.location.href = await redirectAfterLogin(result.user.id);
       } catch (err) {
-        showError(authErrorMessage(err));
+        const msg = authErrorMessage(err);
+        if (/signups not allowed|user registration/i.test(msg)) {
+          showError("Inscription fermée. Demandez vos identifiants à l’administrateur Recompta.");
+        } else {
+          showError(msg);
+        }
       } finally {
         submitBtn.disabled = false;
+      }
+    });
+
+    getSession().then(async (session) => {
+      if (session?.user && await isSuperAdmin(session.user.id)) {
+        adminLinkWrap.hidden = false;
       }
     });
   </script>
