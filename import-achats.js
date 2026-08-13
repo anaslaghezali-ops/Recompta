@@ -31,7 +31,7 @@ import {
   listImportJobs,
   queueInvoiceImport,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs3";
+} from "./import-jobs-client.js?v=jobs5";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -41,6 +41,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
+import { uploadDossierDocumentFromBlob } from "./dossier-documents.js?v=doc1";
 
 const els = {};
 let session = null;
@@ -421,6 +422,19 @@ async function runExtract() {
     });
 
     completeSupplierIdentifiers(session.lines);
+
+    const uploadTasks = tagged.map((item, index) =>
+      uploadDossierDocumentFromBlob({
+        dossierId: session.dossierId,
+        filename: parseSourceFilename(item.filename).filename || item.filename,
+        content: item.content,
+        mime: item.mime,
+        docType: "invoice",
+        sourceId: sourceRecords[index]?.id || sourceIds[index] || null,
+      }).catch(() => null),
+    );
+    await Promise.all(uploadTasks);
+
     pendingFiles = [];
     renderFileQueue();
     renderLinesTable();

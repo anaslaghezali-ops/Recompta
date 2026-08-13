@@ -1,5 +1,6 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { expandUploadedFiles } from "./extract-client.js";
+import { uploadDossierDocument, uploadDossierDocumentFromBlob } from "./dossier-documents.js?v=doc1";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
 
@@ -376,6 +377,15 @@ export async function queueInvoiceImport({
       continue;
     }
 
+    uploadDossierDocumentFromBlob({
+      dossierId,
+      filename: item.filename,
+      content: item.content,
+      mime: mimeType,
+      docType: "invoice",
+      sourceId,
+    }).catch(() => {});
+
     uploaded += 1;
     await updateJob(job.id, { uploaded_files: uploaded });
   }
@@ -481,6 +491,13 @@ export async function queueBankImport({
     });
     throw new Error(fileError.message);
   }
+
+  uploadDossierDocument({
+    dossierId,
+    file,
+    docType: "bank",
+    sourceId,
+  }).catch(() => {});
 
   await updateJob(job.id, {
     status: "queued",
