@@ -30,9 +30,9 @@ import {
   aggregateActiveImportJobs,
   jobProgressPercent,
   listImportJobs,
-  queueInvoiceImport,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs10";
+  startInvoiceImportUpload,
+} from "./import-jobs-client.js?v=jobs11";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -50,7 +50,6 @@ let saver = null;
 let pendingFiles = [];
 let extracting = false;
 let stopJobPolling = null;
-let uploadInProgress = false;
 
 function emptyLine(sourceFile = "") {
   return {
@@ -278,19 +277,31 @@ function addFiles(fileList) {
 async function runQueue() {
   if (!pendingFiles.length || extracting) return;
   extracting = true;
-  uploadInProgress = true;
   els.queueBtn.disabled = true;
   els.extractBtn.disabled = true;
   els.progressPanel.hidden = false;
   els.progressText.textContent = "Préparation de l'import…";
   els.progressBar.style.width = "5%";
 
+  const filesToSend = [...pendingFiles];
+  pendingFiles = [];
+  renderFileQueue();
+  startJobsPolling();
+
+  const apiUrl = resolvedApiUrl();
+  if (!apiUrl) {
+    setWorkerHint("Configurez l'URL du Codespace pour envoyer via le serveur.", "error");
+    extracting = false;
+    els.queueBtn.disabled = false;
+    return;
+  }
+
   try {
-    const result = await queueInvoiceImport({
+    await startInvoiceImportUpload({
       dossierId: session.dossierId,
-      files: pendingFiles,
+      files: filesToSend,
       options: {
-        api_url: resolvedApiUrl(),
+        api_url: apiUrl,
         use_ai: Boolean(els.useAi?.checked),
         client_ice: session.context.clientIce,
       },
@@ -299,28 +310,42 @@ async function runQueue() {
         els.progressBar.style.width = `${percent}%`;
       },
       onFileQueued: async () => {
+        await renderJobsPanel();
+      },
+      onComplete: async (result) => {
+        els.progressText.textContent =
+          "Envoi terminé. Traitement en cours sur le serveur — vous pouvez quitter cette page.";
+        els.progressBar.style.width = "100%";
+        setStatus("Import lancé — traitement en arrière-plan", "success");
         await triggerWorkerProcessing();
+        await renderJobsPanel();
+        extracting = false;
+        els.queueBtn.disabled = !pendingFiles.length;
+        els.extractBtn.disabled = !pendingFiles.length;
+        initLucide();
+      },
+      onError: (error) => {
+        els.progressText.textContent = `Erreur : ${error.message}`;
+        els.progressBar.style.width = "0%";
+        setStatus(error.message, "error");
+        extracting = false;
+        els.queueBtn.disabled = !pendingFiles.length;
+        els.extractBtn.disabled = !pendingFiles.length;
+        initLucide();
       },
     });
 
-    pendingFiles = [];
-    renderFileQueue();
-
     els.progressText.textContent =
-      "Envoi terminé. Le serveur décompresse le ZIP et traite les factures — vous pouvez quitter cette page.";
-    els.progressBar.style.width = "100%";
-    setStatus("Import lancé — traitement en arrière-plan", "success");
-
-    await triggerWorkerProcessing();
-
-    await renderJobsPanel();
-    startJobsPolling();
+      "Envoi démarré — ouvrez le workspace dans un autre onglet pour suivre. Gardez cet onglet ouvert pendant l'envoi.";
+    els.progressBar.style.width = "12%";
+    setStatus("Envoi en cours", "success");
+    extracting = false;
+    els.queueBtn.disabled = !pendingFiles.length;
+    els.extractBtn.disabled = !pendingFiles.length;
   } catch (error) {
     els.progressText.textContent = `Erreur : ${error.message}`;
     els.progressBar.style.width = "0%";
     setStatus(error.message, "error");
-  } finally {
-    uploadInProgress = false;
     extracting = false;
     els.queueBtn.disabled = !pendingFiles.length;
     els.extractBtn.disabled = !pendingFiles.length;
@@ -540,11 +565,6 @@ export async function bootImportAchats() {
   bindDropZone(els.dropZone, els.fileInput);
   els.queueBtn.addEventListener("click", runQueue);
   els.extractBtn.addEventListener("click", runExtract);
-  window.addEventListener("beforeunload", (event) => {
-    if (!uploadInProgress) return;
-    event.preventDefault();
-    event.returnValue = "";
-  });
   await renderJobsPanel();
   const activeJobs = await listImportJobs(session.dossierId, { limit: 1, activeOnly: true });
   if (activeJobs.some((job) => job.status === "queued")) {

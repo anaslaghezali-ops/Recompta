@@ -1,6 +1,7 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { isInvoiceFile, isZipFile } from "./extract-client.js";
 import { uploadDossierDocument } from "./dossier-documents.js?v=doc1";
+import { uploadImportJobFile } from "./api-client.js";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
 
@@ -491,6 +492,211 @@ async function packFilesForQueue(files, onProgress) {
   return [new File([blob], `import-${Date.now()}.zip`, { type: "application/zip" })];
 }
 
+async function createUploadingInvoiceJob(dossierId, options, createdBy) {
+  const supabase = getSupabase();
+  const { data: job, error } = await supabase
+    .from("import_jobs")
+    .insert({
+      dossier_id: dossierId,
+      doc_type: "invoice",
+      status: "uploading",
+      total_files: 1,
+      options,
+      created_by: createdBy,
+    })
+    .select("id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at")
+    .single();
+  if (error) throw error;
+  return job;
+}
+
+async function uploadInvoiceJobViaServer(apiUrl, jobId, file, { onProgress, onFileQueued } = {}) {
+  const result = await uploadImportJobFile(apiUrl, jobId, file, {
+    onProgress,
+  });
+  await onFileQueued?.(jobId);
+  return result.job || (await getImportJob(jobId));
+}
+
+async function uploadInvoiceJobViaClient(dossierId, job, file, { onFileQueued } = {}) {
+  const supabase = getSupabase();
+  const sourceId = nextSourceId();
+  const mimeType = file.type || (isZipFile(file.name) ? "application/zip" : "application/octet-stream");
+  const storagePath = buildImportStoragePath(dossierId, job.id, file.name);
+
+  const { error: uploadError } = await supabase.storage
+    .from(IMPORT_QUEUE_BUCKET)
+    .upload(storagePath, file, { contentType: mimeType, upsert: false });
+
+  if (uploadError) {
+    await updateJob(job.id, {
+      status: "failed",
+      error_summary: uploadError.message,
+      finished_at: new Date().toISOString(),
+    });
+    throw new Error(uploadError.message);
+  }
+
+  const { error: fileError } = await supabase.from("import_job_files").insert({
+    job_id: job.id,
+    original_filename: file.name,
+    storage_path: storagePath,
+    mime_type: mimeType,
+    size_bytes: file.size,
+    status: "uploaded",
+    source_id: sourceId,
+  });
+
+  if (fileError) {
+    await supabase.storage.from(IMPORT_QUEUE_BUCKET).remove([storagePath]);
+    await updateJob(job.id, {
+      status: "failed",
+      error_summary: fileError.message,
+      finished_at: new Date().toISOString(),
+    });
+    throw new Error(fileError.message);
+  }
+
+  await updateJob(job.id, {
+    status: "queued",
+    uploaded_files: 1,
+    total_files: 1,
+  });
+
+  await onFileQueued?.(job.id);
+  return getImportJob(job.id);
+}
+
+async function runInvoiceUploadBatch({
+  dossierId,
+  packed,
+  options,
+  createdBy,
+  apiUrl,
+  onProgress,
+  onFileQueued,
+}) {
+  const failures = [];
+  const jobs = [];
+  const total = packed.length;
+
+  for (let index = 0; index < packed.length; index += 1) {
+    const file = packed[index];
+    try {
+      const job = await createUploadingInvoiceJob(dossierId, options, createdBy);
+      onProgress?.(
+        total === 1 ? `Envoi — ${file.name}` : `Envoi ${index + 1}/${total} — ${file.name}`,
+        12 + Math.round((index / total) * 8),
+      );
+      const uploadedJob = apiUrl
+        ? await uploadInvoiceJobViaServer(apiUrl, job.id, file, { onProgress, onFileQueued })
+        : await uploadInvoiceJobViaClient(dossierId, job, file, { onFileQueued });
+      jobs.push(uploadedJob);
+    } catch (error) {
+      failures.push({ filename: file.name, error: error.message });
+    }
+  }
+
+  if (!jobs.length && failures.length) {
+    throw new Error(failures[0]?.error || "Échec de l'envoi des fichiers.");
+  }
+
+  onProgress?.(
+    "Envoi terminé. Le serveur décompresse et traite les factures — vous pouvez quitter cette page.",
+    100,
+  );
+
+  return {
+    job: aggregateActiveImportJobs(jobs) || jobs[0],
+    jobs,
+    uploaded: jobs.length,
+    skipped: failures.length,
+    failures,
+  };
+}
+
+/**
+ * Démarre l'envoi sans bloquer la page : le job apparaît tout de suite, l'upload continue en arrière-plan.
+ */
+export async function startInvoiceImportUpload({
+  dossierId,
+  files,
+  options = {},
+  onProgress,
+  onFileQueued,
+  onComplete,
+  onError,
+}) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierId) throw new Error("Session ou dossier invalide.");
+  if (!files?.length) throw new Error("Aucun fichier sélectionné.");
+
+  const apiUrl = options?.api_url?.replace(/\/$/, "") || "";
+  if (!apiUrl) {
+    const result = await queueInvoiceImport({ dossierId, files, options, onProgress, onFileQueued });
+    onComplete?.(result);
+    return result;
+  }
+
+  onProgress?.("Préparation de l'envoi…", 5);
+  const packed = await packFilesForQueue(files, onProgress);
+  const { data: userData } = await supabase.auth.getUser();
+  const createdBy = userData?.user?.id || null;
+
+  const pending = [];
+  for (const file of packed) {
+    const job = await createUploadingInvoiceJob(dossierId, options, createdBy);
+    pending.push({ job, file });
+    await onFileQueued?.(job.id);
+  }
+
+  onProgress?.(
+    "Envoi démarré — suivez la progression ici ou sur le workspace (nouvel onglet).",
+    8,
+  );
+
+  (async () => {
+    const failures = [];
+    const jobs = [];
+    try {
+      for (let index = 0; index < pending.length; index += 1) {
+        const { job, file } = pending[index];
+        try {
+          const uploadedJob = await uploadInvoiceJobViaServer(apiUrl, job.id, file, {
+            onProgress,
+            onFileQueued,
+          });
+          jobs.push(uploadedJob);
+        } catch (error) {
+          failures.push({ filename: file.name, error: error.message });
+        }
+      }
+      if (!jobs.length && failures.length) {
+        throw new Error(failures[0]?.error || "Échec de l'envoi des fichiers.");
+      }
+      onProgress?.(
+        "Envoi terminé. Le serveur décompresse et traite les factures — vous pouvez quitter cette page.",
+        100,
+      );
+      onComplete?.({
+        job: aggregateActiveImportJobs(jobs) || jobs[0],
+        jobs,
+        uploaded: jobs.length,
+        skipped: failures.length,
+        failures,
+      });
+    } catch (error) {
+      onError?.(error);
+    }
+  })();
+
+  return {
+    started: true,
+    fileCount: pending.length,
+    jobs: pending.map((item) => item.job),
+  };
+}
+
 /**
  * Envoie les fichiers originaux (ZIP inclus) sans les décompresser dans le navigateur.
  * Le worker backend décompresse et traite les factures après l'envoi.
@@ -508,109 +714,19 @@ export async function queueInvoiceImport({
 
   onProgress?.("Préparation de l'envoi…", 5);
   const packed = await packFilesForQueue(files, onProgress);
-
   const { data: userData } = await supabase.auth.getUser();
   const createdBy = userData?.user?.id || null;
+  const apiUrl = options?.api_url?.replace(/\/$/, "") || "";
 
-  const failures = [];
-  const jobs = [];
-  let uploaded = 0;
-  const total = packed.length;
-
-  for (let index = 0; index < packed.length; index += 1) {
-    const file = packed[index];
-    const sourceId = nextSourceId();
-    const mimeType = file.type || (isZipFile(file.name) ? "application/zip" : "application/octet-stream");
-
-    onProgress?.(
-      total === 1
-        ? `Envoi — ${file.name}`
-        : `Envoi ${index + 1}/${total} — ${file.name}`,
-      15 + Math.round((index / total) * 75),
-    );
-
-    const { data: job, error: jobError } = await supabase
-      .from("import_jobs")
-      .insert({
-        dossier_id: dossierId,
-        doc_type: "invoice",
-        status: "uploading",
-        total_files: 1,
-        options,
-        created_by: createdBy,
-      })
-      .select("id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, created_at")
-      .single();
-
-    if (jobError) {
-      failures.push({ filename: file.name, error: jobError.message });
-      continue;
-    }
-
-    const storagePath = buildImportStoragePath(dossierId, job.id, file.name);
-
-    const { error: uploadError } = await supabase.storage
-      .from(IMPORT_QUEUE_BUCKET)
-      .upload(storagePath, file, { contentType: mimeType, upsert: false });
-
-    if (uploadError) {
-      await updateJob(job.id, {
-        status: "failed",
-        error_summary: uploadError.message,
-        finished_at: new Date().toISOString(),
-      });
-      failures.push({ filename: file.name, error: uploadError.message });
-      continue;
-    }
-
-    const { error: fileError } = await supabase.from("import_job_files").insert({
-      job_id: job.id,
-      original_filename: file.name,
-      storage_path: storagePath,
-      mime_type: mimeType,
-      size_bytes: file.size,
-      status: "uploaded",
-      source_id: sourceId,
-    });
-
-    if (fileError) {
-      await supabase.storage.from(IMPORT_QUEUE_BUCKET).remove([storagePath]);
-      await updateJob(job.id, {
-        status: "failed",
-        error_summary: fileError.message,
-        finished_at: new Date().toISOString(),
-      });
-      failures.push({ filename: file.name, error: fileError.message });
-      continue;
-    }
-
-    await updateJob(job.id, {
-      status: "queued",
-      uploaded_files: 1,
-      total_files: 1,
-    });
-
-    uploaded += 1;
-    jobs.push(await getImportJob(job.id));
-    await onFileQueued?.(job.id, uploaded, total);
-  }
-
-  if (uploaded === 0) {
-    throw new Error(failures[0]?.error || "Échec de l'envoi des fichiers.");
-  }
-
-  onProgress?.(
-    "Fichier(s) en file d'attente. Le serveur décompresse et traite les factures — vous pouvez quitter cette page.",
-    100,
-  );
-
-  return {
-    job: aggregateActiveImportJobs(jobs) || jobs[0],
-    jobs,
-    uploaded,
-    skipped: failures.length,
-    failures,
-  };
+  return runInvoiceUploadBatch({
+    dossierId,
+    packed,
+    options,
+    createdBy,
+    apiUrl,
+    onProgress,
+    onFileQueued,
+  });
 }
 
 /**
