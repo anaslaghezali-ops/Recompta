@@ -17,7 +17,8 @@ SQL Editor :
 
 https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 
-Collez `supabase/migrations/20260813220000_cabinet_clients_dossiers.sql` → **Run**.
+1. `supabase/migrations/20260813220000_cabinet_clients_dossiers.sql` → **Run**
+2. Si erreur RLS à la création de dossier : `supabase/migrations/20260813230000_fix_dossiers_rls.sql` → **Run**
 
 ## Flux cabinet
 
