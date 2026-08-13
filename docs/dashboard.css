@@ -1754,6 +1754,79 @@
 .bank-match-txn-table th { text-align: left; color: var(--dash-muted); padding: 0.25rem 0.5rem 0.25rem 0; }
 .bank-match-txn-amount { font-weight: 700; }
 
+.imp-queue-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--dash-muted);
+}
+
+.imp-jobs-header {
+  margin-bottom: 0.75rem;
+}
+
+.imp-jobs-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+
+.imp-jobs-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.imp-job-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  background: var(--dash-surface-2);
+}
+
+.imp-job-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.imp-job-main strong {
+  display: block;
+  font-size: 0.84rem;
+}
+
+.imp-job-main span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--dash-muted);
+}
+
+.imp-job-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 140px;
+}
+
+.imp-job-progress .imp-progress-track {
+  flex: 1;
+  height: 6px;
+}
+
+.imp-job-progress span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--dash-muted);
+  min-width: 2.2rem;
+  text-align: right;
+}
+
+.imp-job-fill-accent { background: var(--dash-accent); }
+.imp-job-fill-success { background: #10b981; }
+.imp-job-fill-danger { background: #ef4444; }
+.imp-job-fill-muted { background: #94a3b8; }
+
 @media (max-width: 900px) {
   .imp-grid { grid-template-columns: 1fr; }
   .imp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
