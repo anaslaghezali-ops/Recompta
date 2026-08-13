@@ -52,7 +52,7 @@ import {
   isSuperAdmin,
   isSupabaseConfigured,
   signOut,
-} from "./auth-client.js?v=auth5";
+} from "./auth-client.js?v=auth6";
 import {
   formatMonthLabel,
   loadDossierContext,

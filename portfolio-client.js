@@ -1,4 +1,4 @@
-import { getSupabase } from "./auth-client.js?v=auth5";
+import { getSupabase } from "./auth-client.js?v=auth6";
 import {
   formatMonthLabel,
   formatRelativeTime,
