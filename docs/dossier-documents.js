@@ -197,9 +197,9 @@ export function getZipChildDocuments(zipDoc, docs) {
 
 export function isInvoiceDocumentProcessed(doc, processedKeys) {
   const sid = doc?.source_id ? `sid:${doc.source_id}` : null;
+  if (sid) return processedKeys.has(sid);
   const keys = documentIdentityKeys(doc?.original_filename || "");
-  return (sid && processedKeys.has(sid))
-    || [...keys].some((key) => processedKeys.has(key));
+  return [...keys].some((key) => processedKeys.has(key));
 }
 
 export function shouldSkipZipForAnalysis(doc, documents, processedKeys) {
