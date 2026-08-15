@@ -225,6 +225,33 @@ def _doc_already_inflight(
     return bool(doc_keys & inflight_filename_keys)
 
 
+def _documents_are_exact_duplicates(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    if not a or not b:
+        return False
+    if a.get("id") and b.get("id") and a["id"] == b["id"]:
+        return True
+    if a.get("storage_path") and b.get("storage_path") and a["storage_path"] == b["storage_path"]:
+        return True
+    if a.get("source_id") and b.get("source_id") and a["source_id"] == b["source_id"]:
+        return True
+    return False
+
+
+def _dedupe_documents(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    for doc in docs:
+        duplicate_index = next(
+            (index for index, row in enumerate(kept) if _documents_are_exact_duplicates(row, doc)),
+            None,
+        )
+        if duplicate_index is None:
+            kept.append(doc)
+            continue
+        if str(doc.get("created_at") or "") > str(kept[duplicate_index].get("created_at") or ""):
+            kept[duplicate_index] = doc
+    return kept
+
+
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:
     params: dict[str, str] = {
         "dossier_id": f"eq.{dossier_id}",
@@ -271,6 +298,8 @@ async def queue_dossier_analysis(
             pending = [doc for doc in documents if not _is_bank_processed(doc, workspace)]
         else:
             raise ValueError(f"Type de document non supporté : {doc_type}")
+
+        pending = _dedupe_documents(pending)
 
         inflight_source_ids, inflight_filename_keys = await _inflight_analysis_doc_keys(
             db, dossier_id, doc_type=doc_type,

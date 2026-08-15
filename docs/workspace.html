@@ -427,7 +427,7 @@
       dismissHistoricImportJobs,
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs23";
+    } from "./import-jobs-client.js?v=jobs24";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace9";
     import {
@@ -913,7 +913,8 @@
       }
 
       await refreshPendingAnalysis({ forceDocuments: true });
-      const pendingForType = docType === "bank" ? bankPendingCount : invoicePendingCount;
+      const pendingAtLaunch = docType === "bank" ? bankPendingCount : invoicePendingCount;
+      const pendingForType = pendingAtLaunch;
       if (!pendingForType) {
         await reloadCockpit(selectedDossierId);
         showWorkspaceToast({
@@ -957,10 +958,10 @@
       }
 
       analysisLaunchQueued = queuedJobs;
-      analysisProgress = { processed: 0, total: queuedJobs };
+      analysisProgress = { processed: 0, total: pendingAtLaunch || queuedJobs };
       renderProductionCard();
       showExtractionStartedToast({
-        fileCount: queuedJobs,
+        fileCount: pendingAtLaunch || queuedJobs,
         dossierName: client?.name || "",
         label: docType === "bank" ? "Extraction du relevé lancée" : "Extraction lancée",
       });
