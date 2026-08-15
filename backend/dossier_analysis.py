@@ -32,8 +32,8 @@ def _processed_invoice_keys(lines: list[dict[str, Any]]) -> set[str]:
 
 def _is_invoice_processed(doc: dict[str, Any], processed_keys: set[str]) -> bool:
     source_id = str(doc.get("source_id") or "").strip()
-    if source_id and f"sid:{source_id}" in processed_keys:
-        return True
+    if source_id:
+        return f"sid:{source_id}" in processed_keys
     doc_keys = _document_identity_keys(doc.get("original_filename") or "")
     return bool(doc_keys & processed_keys)
 

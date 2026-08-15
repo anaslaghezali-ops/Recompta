@@ -1,6 +1,6 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { isInvoiceFile, isZipFile } from "./extract-client.js";
-import { documentIdentityKeys } from "./dossier-documents.js?v=doc3";
+import { documentIdentityKeys } from "./dossier-documents.js?v=doc4";
 import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
@@ -971,7 +971,7 @@ export function countPendingAnalysis(documents, workspace) {
       const sid = doc.source_id ? `sid:${doc.source_id}` : null;
       const keys = documentIdentityKeys(doc.original_filename || "");
       const processed = (sid && processedKeys.has(sid))
-        || [...keys].some((key) => processedKeys.has(key));
+        || (!doc.source_id && [...keys].some((key) => processedKeys.has(key)));
       if (!processed) invoicePending += 1;
     } else if (doc.doc_type === "bank" && bank.length === 0) {
       bankPending += 1;

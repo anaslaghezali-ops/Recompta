@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocument } from "./dossier-documents.js?v=doc3";
+import { uploadDossierDocument } from "./dossier-documents.js?v=doc4";
 
 const els = {};
 let session = null;
@@ -288,6 +288,7 @@ async function runQueue() {
   renderFileQueue();
 
   let uploaded = 0;
+  let reused = 0;
   const failures = [];
 
   for (let index = 0; index < filesToSend.length; index += 1) {
@@ -296,24 +297,31 @@ async function runQueue() {
     els.progressText.textContent = `Envoi ${index + 1}/${filesToSend.length} — ${file.name}`;
     els.progressBar.style.width = `${percent}%`;
     try {
-      await uploadDossierDocument({
+      const saved = await uploadDossierDocument({
         dossierId: session.dossierId,
         file,
         docType: "invoice",
       });
-      uploaded += 1;
+      if (saved?.reused) reused += 1;
+      else uploaded += 1;
     } catch (error) {
       failures.push({ name: file.name, message: error.message });
     }
   }
 
   els.progressBar.style.width = "100%";
+  const stored = uploaded + reused;
   if (failures.length) {
-    els.progressText.textContent = `${uploaded} envoyé(s), ${failures.length} erreur(s).`;
-    setStatus(`${uploaded} document(s) importé(s) — ${failures.length} échec(s)`, "warn");
+    els.progressText.textContent = `${stored}/${filesToSend.length} reçu(s), ${failures.length} erreur(s).`;
+    setStatus(`${uploaded} nouveau(x), ${reused} déjà présent(s), ${failures.length} échec(s)`, "warn");
   } else {
-    els.progressText.textContent = `${uploaded} document(s) importé(s). Retournez au workspace pour lancer l'analyse IA.`;
-    setStatus(`${uploaded} document(s) prêt(s) — lancez l'analyse depuis le workspace`, "success");
+    els.progressText.textContent = `${stored} fichier(s) reçu(s) sur ${filesToSend.length}. Lancez l'analyse IA depuis le workspace.`;
+    setStatus(
+      reused
+        ? `${uploaded} importé(s), ${reused} ignoré(s) (même nom et taille déjà présents)`
+        : `${uploaded} document(s) importé(s) — lancez l'analyse depuis le workspace`,
+      reused ? "warn" : "success",
+    );
   }
 
   extracting = false;

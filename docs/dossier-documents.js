@@ -52,13 +52,18 @@ export function documentsShareIdentity(a, b) {
   return false;
 }
 
+export function documentsAreExactDuplicates(a, b) {
+  if (!a || !b) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  if (a.storage_path && b.storage_path && a.storage_path === b.storage_path) return true;
+  if (a.source_id && b.source_id && a.source_id === b.source_id) return true;
+  return false;
+}
+
 export function dedupeDocuments(docs) {
   const kept = [];
   for (const doc of docs || []) {
-    const duplicateIndex = kept.findIndex(
-      (row) => row.doc_type === doc.doc_type
-        && documentsShareIdentity(row.original_filename, doc.original_filename),
-    );
+    const duplicateIndex = kept.findIndex((row) => documentsAreExactDuplicates(row, doc));
     if (duplicateIndex === -1) {
       kept.push(doc);
       continue;
@@ -89,14 +94,31 @@ export async function findDossierDocumentByIdentity(dossierId, filename) {
   ) || null;
 }
 
-export async function uploadDossierDocument({ dossierId, file, docType, sourceId = null }) {
+function nextDocumentSourceId() {
+  return `src-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export async function uploadDossierDocument({
+  dossierId,
+  file,
+  docType,
+  sourceId = null,
+  skipIfSameNameAndSize = false,
+}) {
   const supabase = getSupabase();
   if (!supabase || !dossierId || !file) return null;
 
   const originalFilename = file.name || "document";
-  const existing = await findDossierDocumentByIdentity(dossierId, originalFilename);
-  if (existing) return existing;
+  const fileSize = file.size || 0;
 
+  if (skipIfSameNameAndSize) {
+    const existing = await findDossierDocumentByIdentity(dossierId, originalFilename);
+    if (existing && Number(existing.size_bytes || 0) === Number(fileSize)) {
+      return { ...existing, reused: true };
+    }
+  }
+
+  const resolvedSourceId = sourceId || nextDocumentSourceId();
   const storagePath = buildStoragePath(dossierId, originalFilename);
   const mimeType = file.type || "application/octet-stream";
 
@@ -117,8 +139,8 @@ export async function uploadDossierDocument({ dossierId, file, docType, sourceId
       original_filename: originalFilename,
       storage_path: storagePath,
       mime_type: mimeType,
-      size_bytes: file.size || 0,
-      source_id: sourceId,
+      size_bytes: fileSize,
+      source_id: resolvedSourceId,
       uploaded_by: uploadedBy,
     })
     .select("id, dossier_id, doc_type, original_filename, storage_path, mime_type, size_bytes, source_id, created_at")
@@ -144,9 +166,14 @@ export async function uploadDossierDocumentFromBlob({
   return uploadDossierDocument({ dossierId, file, docType, sourceId });
 }
 
-export function documentDisplayName(filename) {
-  const parts = String(filename || "").replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts[parts.length - 1] || filename || "document";
+export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
+  const doc = typeof docOrFilename === "object" ? docOrFilename : null;
+  const filename = doc?.original_filename || docOrFilename || "";
+  const parts = String(filename).replace(/\\/g, "/").split("/").filter(Boolean);
+  const base = parts[parts.length - 1] || filename || "document";
+  if (!withSize || !doc?.size_bytes) return base;
+  const sizeKb = Math.max(1, Math.round(Number(doc.size_bytes) / 1024));
+  return `${base} (${sizeKb} Ko)`;
 }
 
 export function documentSupplierGroup(doc) {
@@ -155,7 +182,7 @@ export function documentSupplierGroup(doc) {
       key: "__bank__",
       label: "Relevés bancaires",
       kind: "bank",
-      filename: documentDisplayName(doc.original_filename),
+      filename: documentDisplayName(doc, { withSize: true }),
     };
   }
 
@@ -173,9 +200,19 @@ export function documentSupplierGroup(doc) {
 
   const base = parts[0] || "document";
   if (/\.zip$/i.test(base)) {
-    return { key: "__archive__", label: "Archives ZIP", kind: "archive", filename: base };
+    return {
+      key: "__archive__",
+      label: "Archives ZIP",
+      kind: "archive",
+      filename: documentDisplayName(doc, { withSize: true }),
+    };
   }
-  return { key: "__other__", label: "Autres documents", kind: "other", filename: base };
+  return {
+    key: "__other__",
+    label: "Autres documents",
+    kind: "other",
+    filename: documentDisplayName(doc, { withSize: true }),
+  };
 }
 
 const GROUP_KIND_ORDER = { supplier: 0, bank: 1, archive: 2, other: 3 };
