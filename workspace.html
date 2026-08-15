@@ -48,6 +48,9 @@
             <select id="periodOpenSelect" class="ws-period-select ws-period-open-select" hidden aria-label="Passer à une période en cours"></select>
           </div>
           <div class="ws-period-bar-actions">
+            <button type="button" class="ws-period-nav-link ws-period-nav-link--reopen" id="periodReopenBtn" hidden>
+              Rouvrir cette période
+            </button>
             <button type="button" class="ws-period-nav-link ws-period-nav-link--back" id="periodBackToOpenBtn" hidden>
               ← Retour aux périodes en cours
             </button>
@@ -99,6 +102,7 @@
                 <p id="heroConsultBanner" class="ws-hero-consult" hidden>
                   <i data-lucide="archive"></i>
                   <span>Consultation seule — période déclarée.</span>
+                  <button type="button" class="ws-hero-consult-btn ws-hero-consult-btn--primary" id="heroReopenBtn">Rouvrir pour modification</button>
                   <button type="button" class="ws-hero-consult-btn" id="heroBackToOpenBtn">Retour aux périodes en cours</button>
                 </p>
                 <button type="button" class="dash-btn dash-btn-primary ws-hero-declare-btn" id="heroDeclareBtn" hidden>
@@ -511,10 +515,22 @@
       <h3>Valider la déclaration TVA</h3>
       <p id="reviewDeclareIntro" class="hint"></p>
       <ul id="reviewDeclareWarnings" class="ws-export-review-list" hidden></ul>
-      <p class="hint" style="margin-top:0.75rem;">La période sera clôturée. Vous pourrez toujours réexporter l'Excel sans modifier ce statut.</p>
+      <p class="hint" style="margin-top:0.75rem;">La période sera clôturée. Vous pourrez la rouvrir depuis la consultation si besoin.</p>
       <div class="dash-form-actions">
         <button type="submit" class="dash-btn" value="cancel">Annuler</button>
         <button type="button" class="dash-btn dash-btn-primary" id="reviewDeclareConfirm">Oui, c'est déclaré</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="periodReopenDialog" class="dash-modal">
+    <form method="dialog" class="dash-modal-inner">
+      <h3>Rouvrir la période</h3>
+      <p id="periodReopenIntro" class="hint"></p>
+      <p class="hint" style="margin-top:0.75rem;">La période repassera en cours de production. Vous pourrez à nouveau modifier les lignes, importer des documents et relancer les extractions.</p>
+      <div class="dash-form-actions">
+        <button type="submit" class="dash-btn" value="cancel">Annuler</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="periodReopenConfirm">Oui, rouvrir la période</button>
       </div>
     </form>
   </dialog>
@@ -544,7 +560,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
-    import { listClientActivity, loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
+    import { listClientActivity, loadDossierWorkspace, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist2";
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
@@ -987,6 +1003,52 @@
       const review = ensureReviewController();
       await review?.load();
       review?.openDeclareDialog?.();
+    }
+
+    function openReopenPeriodDialog() {
+      const dialog = document.getElementById("periodReopenDialog");
+      const intro = document.getElementById("periodReopenIntro");
+      if (!dialog || !cockpit?.dossier) return;
+      if (intro) {
+        intro.textContent = cockpit.periodLabel
+          ? `Confirmez la réouverture de ${cockpit.periodLabel} pour continuer la production comptable.`
+          : "Confirmez la réouverture de cette période pour continuer la production comptable.";
+      }
+      dialog.showModal();
+    }
+
+    async function confirmReopenPeriod() {
+      const dossierId = selectedDossierId || cockpit?.dossier?.id;
+      if (!dossierId) return;
+      const periodLabel = cockpit?.periodLabel || "Période";
+      try {
+        const status = await reopenDossierPeriod(dossierId);
+        await logDossierActivity(
+          dossierId,
+          "reopen",
+          `${periodLabel} rouverte pour modification`,
+          { status },
+        );
+        document.getElementById("periodReopenDialog")?.close();
+        if (clientId && cabinetId) {
+          const refreshed = await getClientWithDossiers(clientId, cabinetId);
+          if (refreshed) client = refreshed;
+        }
+        selectedDossierId = dossierId;
+        await reloadCockpit(dossierId);
+        setTab("cockpit");
+        showWorkspaceToast({
+          title: "Période rouverte",
+          message: `${periodLabel} est de nouveau en cours — vous pouvez reprendre la production.`,
+          variant: "success",
+        });
+      } catch (error) {
+        showWorkspaceToast({
+          title: "Réouverture impossible",
+          message: error.message || "Une erreur est survenue.",
+          variant: "error",
+        });
+      }
     }
 
     function ensureSuppliersController() {
@@ -1823,6 +1885,7 @@
       const viewingLabel = document.getElementById("periodViewingLabel");
       const periodLabel = document.getElementById("periodBarLabel");
       const backToOpenBtn = document.getElementById("periodBackToOpenBtn");
+      const reopenBtn = document.getElementById("periodReopenBtn");
       const openSelect = document.getElementById("periodOpenSelect");
 
       if (!periods.length) {
@@ -1835,6 +1898,10 @@
 
       if (viewingClosed) {
         if (periodLabel) periodLabel.textContent = "Période consultée";
+        if (reopenBtn) {
+          reopenBtn.hidden = false;
+          reopenBtn.onclick = () => openReopenPeriodDialog();
+        }
         if (viewingLabel) {
           viewingLabel.hidden = false;
           viewingLabel.textContent = `${formatMonthLabel(current.period_month)} ${current.period_year} — Déclaré`;
@@ -1886,6 +1953,7 @@
       periodBar.classList.remove("is-consulting");
       if (viewingLabel) viewingLabel.hidden = true;
       if (backToOpenBtn) backToOpenBtn.hidden = true;
+      if (reopenBtn) reopenBtn.hidden = true;
       if (openSelect) openSelect.hidden = true;
       if (periodLabel) periodLabel.textContent = "Période active";
 
@@ -1977,6 +2045,7 @@
       const heroDeclareBtn = document.getElementById("heroDeclareBtn");
       const heroConsultBanner = document.getElementById("heroConsultBanner");
       const heroBackToOpenBtn = document.getElementById("heroBackToOpenBtn");
+      const heroReopenBtn = document.getElementById("heroReopenBtn");
       const isDeclared = cockpit.statusKey === "exported";
       const openPeriods = getOpenPeriods();
       const canDeclare = !isDeclared && cockpit.lineCount > 0;
@@ -1987,6 +2056,10 @@
       }
       if (heroConsultBanner) {
         heroConsultBanner.hidden = !isDeclared;
+      }
+      if (heroReopenBtn) {
+        heroReopenBtn.hidden = !isDeclared;
+        heroReopenBtn.onclick = () => openReopenPeriodDialog();
       }
       if (heroBackToOpenBtn) {
         heroBackToOpenBtn.hidden = !isDeclared || openPeriods.length === 0;
@@ -2421,6 +2494,7 @@
     document.getElementById("historyNewPeriodBtn").addEventListener("click", () => openNewPeriodModal());
     document.getElementById("emptyNewPeriodBtn")?.addEventListener("click", () => openNewPeriodModal());
     document.getElementById("cancelPeriodBtn").addEventListener("click", () => newPeriodDialog.close());
+    document.getElementById("periodReopenConfirm")?.addEventListener("click", () => confirmReopenPeriod());
 
     newPeriodForm.addEventListener("submit", async (event) => {
       event.preventDefault();

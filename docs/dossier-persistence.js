@@ -117,6 +117,23 @@ export async function markDossierExported(dossierId) {
   if (error) throw error;
 }
 
+export async function reopenDossierPeriod(dossierId) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierId) return null;
+
+  const workspace = await loadDossierWorkspace(dossierId);
+  const lineCount = workspace?.lines?.length || 0;
+  const status = lineCount > 0 ? "in_review" : "draft";
+
+  const { error } = await supabase
+    .from("client_dossiers")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", dossierId);
+  if (error) throw error;
+
+  return status;
+}
+
 export async function logDossierActivity(dossierId, eventType, summary, meta = {}) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return;

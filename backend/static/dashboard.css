@@ -732,6 +732,14 @@
   color: #047857;
 }
 
+.ws-period-nav-link--reopen {
+  color: #b45309;
+}
+
+.ws-period-nav-link--reopen:hover {
+  color: #92400e;
+}
+
 .ws-period-open-select {
   border-color: #86efac;
   background: #fff;
@@ -842,6 +850,15 @@
 
 .ws-hero-consult-btn:hover {
   color: #047857;
+}
+
+.ws-hero-consult-btn--primary {
+  font-weight: 800;
+  color: #b45309;
+}
+
+.ws-hero-consult-btn--primary:hover {
+  color: #92400e;
 }
 
 .ws-hero.is-done .ws-hero-declare-btn {
