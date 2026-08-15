@@ -4,6 +4,7 @@ import {
   BULK_EDIT_FIELDS,
   countLinesWithFieldValue,
   countSupplierFieldTargets,
+  fieldValuesMatch,
   findDuplicateLineIndexes,
 } from "./extract-client.js?v=dedupe2";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
@@ -31,6 +32,8 @@ const DESIGNATIONS = [
   "TELEPHONIE",
   "FRAIS BANCAIRE",
 ];
+
+const SUPPLIER_SCOPED_BULK_FIELDS = new Set(["ice_frs", "if"]);
 
 export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   let lines = [];
@@ -127,29 +130,50 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     }
   }
 
-  function maybeOfferFieldBulk(fieldKey, oldValue, newValue, lineIndex) {
-    const line = lines[lineIndex];
-    if (!line || oldValue === newValue) return;
-    const targets = fieldKey === "lib_frss"
-      ? countSupplierFieldTargets(lines, fieldKey, line.lib_frss, oldValue, lineIndex)
-      : countLinesWithFieldValue(lines, fieldKey, oldValue, lineIndex);
-    if (targets <= 0) return;
-
-    pendingFieldBulk = { fieldKey, oldValue, newValue, supplierName: line.lib_frss, scope: fieldKey === "lib_frss" ? "supplier" : "field" };
+  function openFieldBulkDialog(fieldKey, oldValue, newValue, otherCount, { supplierName = "", scope = "value" } = {}) {
     const label = BULK_EDIT_FIELDS[fieldKey] || fieldKey;
-    els.fieldBulkTitle.textContent = `${label} modifié`;
-    els.fieldBulkIntro.textContent = `Appliquer « ${newValue || "—"} » aux ${targets} autre(s) ligne(s) ?`;
+    pendingFieldBulk = { fieldKey, oldValue, newValue, supplierName, scope };
+    if (els.fieldBulkTitle) els.fieldBulkTitle.textContent = `${label} modifié`;
+    if (els.fieldBulkIntro) {
+      els.fieldBulkIntro.textContent = scope === "supplier" && supplierName
+        ? `Appliquer l'${label} « ${newValue} » aux ${otherCount} autre(s) facture(s) de « ${supplierName} » sans ${label} ?`
+        : `Remplacer « ${oldValue || "—"} » par « ${newValue || "—"} » pour le champ ${label} sur ${otherCount} autre(s) ligne(s) ?`;
+    }
     els.fieldBulkDialog?.showModal();
+  }
+
+  function maybeOfferFieldBulk(fieldKey, oldValue, newValue, lineIndex) {
+    if (!newValue || fieldValuesMatch(fieldKey, oldValue, newValue)) return;
+
+    const line = lines[lineIndex];
+    const supplierName = String(line?.lib_frss || "").trim();
+    const emptyOldValue = !String(oldValue || "").trim();
+
+    if (emptyOldValue && SUPPLIER_SCOPED_BULK_FIELDS.has(fieldKey) && supplierName) {
+      const others = countSupplierFieldTargets(lines, fieldKey, supplierName, oldValue, lineIndex);
+      if (others > 0) {
+        openFieldBulkDialog(fieldKey, oldValue, newValue, others, {
+          supplierName,
+          scope: "supplier",
+        });
+      }
+      return;
+    }
+
+    if (emptyOldValue) return;
+
+    const others = countLinesWithFieldValue(lines, fieldKey, oldValue, lineIndex);
+    if (others > 0) openFieldBulkDialog(fieldKey, oldValue, newValue, others);
   }
 
   function applyPendingFieldBulk() {
     if (!pendingFieldBulk) return 0;
     const { fieldKey, oldValue, newValue, supplierName, scope } = pendingFieldBulk;
-    const count = scope === "supplier"
+    const updated = scope === "supplier"
       ? applySupplierFieldValueBulk(lines, fieldKey, supplierName, oldValue, newValue)
       : applyFieldValueBulk(lines, fieldKey, oldValue, newValue);
     pendingFieldBulk = null;
-    return count;
+    return updated.length;
   }
 
   function deleteLineAt(index) {
@@ -256,6 +280,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
         { key: "fact_num", type: "text" },
         { key: "lib_frss", type: "text" },
         { key: "ice_frs", type: "text" },
+        { key: "if", type: "text" },
         { key: "m_ht", type: "number", step: "0.01" },
         { key: "tva", type: "number", step: "0.01", readonly: true },
         { key: "m_ttc", type: "number", step: "0.01", readonly: true },
@@ -311,10 +336,18 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
               line.ice_frs = digits.length === 15 ? digits : "";
               input.value = line.ice_frs;
               newValue = line.ice_frs;
+              line.ice_inferred = false;
+            } else if (field.key === "if") {
+              oldValue = String(input.dataset.prevValue ?? line.if ?? "");
+              line.if = input.value.trim();
+              input.value = line.if;
+              newValue = line.if;
+              line.if_inferred = false;
             } else if (field.key === "lib_frss") {
-              oldValue = String(input.dataset.prevValue ?? "").trim();
+              oldValue = String(input.dataset.prevValue ?? line.lib_frss ?? "").trim();
               newValue = String(input.value ?? "").trim();
               line.lib_frss = newValue;
+              line.supplier_from_folder = false;
             } else {
               line[field.key] = input.value;
             }
@@ -438,9 +471,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   });
   els.anomaliesToggle?.addEventListener("click", () => setAnomaliesOnly(!anomaliesOnly));
   els.fieldBulkApplyAll?.addEventListener("click", () => {
-    applyPendingFieldBulk();
+    const count = applyPendingFieldBulk();
     render();
-    scheduleSave("bulk_edit", "Correction appliquée en masse");
+    scheduleSave("bulk_edit", count > 1 ? `Correction appliquée sur ${count} lignes` : "Correction appliquée");
     els.fieldBulkDialog?.close();
   });
   els.fieldBulkDialog?.addEventListener("close", () => {
