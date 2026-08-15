@@ -427,7 +427,7 @@
       dismissHistoricImportJobs,
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs24";
+    } from "./import-jobs-client.js?v=jobs25";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace9";
     import {
@@ -912,93 +912,127 @@
         }
       }
 
-      await refreshPendingAnalysis({ forceDocuments: true });
-      const pendingAtLaunch = docType === "bank" ? bankPendingCount : invoicePendingCount;
-      const pendingForType = pendingAtLaunch;
-      if (!pendingForType) {
-        await reloadCockpit(selectedDossierId);
-        showWorkspaceToast({
-          title: "Rien à extraire",
-          message: emptyMessage,
-          variant: "info",
-          durationMs: 6000,
-        });
-        return 0;
-      }
+      const onExtractionProgress = ({ processed, total, job }) => {
+        analysisProgress = { processed, total };
+        activeImportJob = job;
+        renderProductionCard();
+        renderImportBanner().catch(() => {});
+      };
 
-      const result = await launchDossierAnalysis(apiUrl, selectedDossierId, {
-        docType,
-        clientIce: client?.ice || "",
-      });
-      const queuedJobs = result.queued_jobs || 0;
-      const skippedInflight = result.skipped_inflight || 0;
-      if (!queuedJobs) {
-        showWorkspaceToast({
-          title: skippedInflight ? "Extraction déjà en cours" : "Extraction non démarrée",
-          message: result.message
-            || "Le serveur n'a trouvé aucun document à analyser. Vérifiez l'URL Codespace et SUPABASE_SERVICE_ROLE_KEY.",
-          variant: skippedInflight ? "info" : "warn",
-          durationMs: 14000,
-        });
-        if (skippedInflight) {
-          await waitForActiveImportJob({ attempts: 8, delayMs: 500 });
-          const waitResult = await waitForDossierAnalysisComplete(selectedDossierId, {
-            apiUrl,
-            kickImportWorker: kickImportJobWorker,
-            onProgress: ({ processed, total, job }) => {
-              analysisProgress = { processed, total };
-              activeImportJob = job;
-              renderProductionCard();
-              renderImportBanner().catch(() => {});
-            },
-          });
-          return waitResult.completed ? -skippedInflight : 0;
+      let totalQueued = 0;
+      let toastShown = false;
+      let batchTotal = 0;
+      const maxRounds = 12;
+
+      for (let round = 0; round < maxRounds; round += 1) {
+        await refreshPendingAnalysis({ forceDocuments: true });
+        const pendingAtLaunch = docType === "bank" ? bankPendingCount : invoicePendingCount;
+        if (!pendingAtLaunch) {
+          if (round === 0) {
+            await reloadCockpit(selectedDossierId);
+            showWorkspaceToast({
+              title: "Rien à extraire",
+              message: emptyMessage,
+              variant: "info",
+              durationMs: 6000,
+            });
+            return 0;
+          }
+          break;
         }
-        return 0;
-      }
 
-      analysisLaunchQueued = queuedJobs;
-      analysisProgress = { processed: 0, total: pendingAtLaunch || queuedJobs };
-      renderProductionCard();
-      showExtractionStartedToast({
-        fileCount: pendingAtLaunch || queuedJobs,
-        dossierName: client?.name || "",
-        label: docType === "bank" ? "Extraction du relevé lancée" : "Extraction lancée",
-      });
+        if (round === 0) {
+          batchTotal = pendingAtLaunch;
+          analysisProgress = { processed: 0, total: batchTotal };
+        }
 
-      const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: Math.max(queuedJobs, 3) });
-      if (!workerResult.ok) {
-        showWorkspaceToast({
-          title: workerResult.transient ? "Serveur injoignable" : "Extraction en file d'attente",
-          message: workerResult.message,
-          variant: "warn",
-          durationMs: 14000,
+        const result = await launchDossierAnalysis(apiUrl, selectedDossierId, {
+          docType,
+          clientIce: client?.ice || "",
         });
-      }
+        const queuedJobs = result.queued_jobs || 0;
+        const skippedInflight = result.skipped_inflight || 0;
+        totalQueued += queuedJobs;
 
-      await waitForActiveImportJob({ attempts: 8, delayMs: 500 });
-      startImportPolling();
-      const waitResult = await waitForDossierAnalysisComplete(selectedDossierId, {
-        apiUrl,
-        expectedJobs: queuedJobs,
-        kickImportWorker: kickImportJobWorker,
-        onProgress: ({ processed, total, job }) => {
-          analysisProgress = { processed, total };
-          activeImportJob = job;
-          renderProductionCard();
-          renderImportBanner().catch(() => {});
-        },
-      });
+        if (!queuedJobs) {
+          if (skippedInflight) {
+            await waitForActiveImportJob({ attempts: 8, delayMs: 500 });
+            const waitResult = await waitForDossierAnalysisComplete(selectedDossierId, {
+              apiUrl,
+              expectedJobs: skippedInflight,
+              kickImportWorker: kickImportJobWorker,
+              onProgress: onExtractionProgress,
+            });
+            if (!waitResult.completed) break;
+            continue;
+          }
+          if (round === 0) {
+            showWorkspaceToast({
+              title: "Extraction non démarrée",
+              message: result.message
+                || "Le serveur n'a trouvé aucun document à analyser. Vérifiez l'URL Codespace et SUPABASE_SERVICE_ROLE_KEY.",
+              variant: "warn",
+              durationMs: 14000,
+            });
+          }
+          break;
+        }
 
-      if (waitResult.timedOut) {
-        showWorkspaceToast({
-          title: "Extraction toujours en cours",
-          message: "Le serveur traite encore des factures. Revenez dans quelques minutes ou laissez cette page ouverte.",
-          variant: "warn",
+        analysisLaunchQueued = queuedJobs;
+        renderProductionCard();
+
+        if (!toastShown) {
+          showExtractionStartedToast({
+            fileCount: batchTotal || pendingAtLaunch,
+            dossierName: client?.name || "",
+            label: docType === "bank" ? "Extraction du relevé lancée" : "Extraction lancée",
+          });
+          toastShown = true;
+        }
+
+        const workerResult = await ensureImportWorkerRunning(apiUrl, {
+          limit: Math.max(queuedJobs, pendingAtLaunch, batchTotal, 3),
         });
+        if (!workerResult.ok && round === 0) {
+          showWorkspaceToast({
+            title: workerResult.transient ? "Serveur injoignable" : "Extraction en file d'attente",
+            message: workerResult.message,
+            variant: "warn",
+            durationMs: 14000,
+          });
+        }
+
+        await waitForActiveImportJob({ attempts: 8, delayMs: 500 });
+        startImportPolling();
+
+        const waitResult = await waitForDossierAnalysisComplete(selectedDossierId, {
+          apiUrl,
+          expectedJobs: Math.max(queuedJobs, pendingAtLaunch),
+          kickImportWorker: kickImportJobWorker,
+          onProgress: ({ processed, total, job }) => {
+            refreshPendingAnalysis({ forceDocuments: true }).then(() => {
+              const remaining = docType === "bank" ? bankPendingCount : invoicePendingCount;
+              const done = Math.max(0, batchTotal - remaining);
+              onExtractionProgress({
+                processed: done,
+                total: batchTotal,
+                job,
+              });
+            }).catch(() => onExtractionProgress({ processed, total, job }));
+          },
+        });
+
+        if (waitResult.timedOut) {
+          showWorkspaceToast({
+            title: "Extraction toujours en cours",
+            message: "Le serveur traite encore des factures. Revenez dans quelques minutes ou laissez cette page ouverte.",
+            variant: "warn",
+          });
+          break;
+        }
       }
 
-      return waitResult.completed ? queuedJobs : 0;
+      return totalQueued;
     }
 
     async function notifyRecentImportOutcomes({ sinceIso = null } = {}) {
@@ -1049,13 +1083,21 @@
         await notifyRecentImportOutcomes({ sinceIso: extractionStartedAt });
         await reloadCockpit(selectedDossierId);
         await refreshPendingAnalysis({ forceDocuments: true });
+        await refreshPendingAnalysis({ forceDocuments: true });
         await renderProductionCard();
-        if (queuedJobs > 0 && cockpit?.lineCount > 0) {
+        if (queuedJobs > 0 && invoicePendingCount === 0 && cockpit?.lineCount > 0) {
           showWorkspaceToast({
             title: "Extraction terminée",
             message: `${cockpit.lineCount} ligne(s) disponibles en revue.`,
             variant: "success",
             durationMs: 10000,
+          });
+        } else if (queuedJobs > 0 && invoicePendingCount > 0) {
+          showWorkspaceToast({
+            title: "Extraction incomplète",
+            message: `${invoicePendingCount} document(s) n'ont pas pu être extraits. Vérifiez les scans ou relancez l'extraction.`,
+            variant: "warn",
+            durationMs: 14000,
           });
         }
       }

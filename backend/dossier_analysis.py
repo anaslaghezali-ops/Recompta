@@ -168,6 +168,19 @@ def _should_skip_zip_for_analysis(
     return True
 
 
+def _is_extracted_archive_zip(doc: dict[str, Any], documents: list[dict[str, Any]]) -> bool:
+    if not _is_zip_filename(doc.get("original_filename") or ""):
+        return False
+    if (doc.get("doc_type") or "") == "archive":
+        return True
+    return bool(_zip_child_documents(doc, documents))
+
+
+def _working_documents(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped = _dedupe_documents(documents)
+    return [doc for doc in deduped if not _is_extracted_archive_zip(doc, deduped)]
+
+
 async def _inflight_analysis_doc_keys(
     db: SupabaseService,
     dossier_id: int,
@@ -287,7 +300,7 @@ async def queue_dossier_analysis(
             processed_keys = _processed_invoice_keys(lines)
             source_ids_with_lines = _source_ids_with_lines(lines)
             pending = [
-                doc for doc in documents
+                doc for doc in _working_documents(documents)
                 if (doc.get("doc_type") or "") != "archive"
                 and not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
                 and not _should_skip_zip_for_analysis(

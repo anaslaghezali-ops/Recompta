@@ -1076,6 +1076,19 @@ export async function waitForDossierAnalysisComplete(
     lastActive = active;
 
     if (!active.length) {
+      if (apiUrl && kickImportWorker) {
+        try {
+          await kickImportWorker(apiUrl, { limit: Math.max(expectedJobs, active.length, 3) });
+        } catch {
+          /* best-effort */
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        const recheck = await listActiveAnalysisJobs(dossierId);
+        if (recheck.length) {
+          lastActive = recheck;
+          continue;
+        }
+      }
       return { completed: true, active: [], timedOut: false };
     }
 
