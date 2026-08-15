@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio5";
+} from "./portfolio-client.js?v=portfolio6";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -119,12 +119,14 @@ export function buildPipelineSteps({
     },
     {
       key: "analysis",
-      label: "Analyse IA",
+      label: "Extraction",
       desc: analysisDone
-        ? "Extraction terminée"
-        : bankPending > 0 && invoicePending === 0
-          ? "Lancer l'extraction du relevé"
-          : "Lancer l'extraction",
+        ? "Lignes générées"
+        : invoicePending > 0
+          ? "Lancer l'extraction des factures"
+          : bankPending > 0
+            ? "Extraire le relevé"
+            : "Lancer l'extraction",
       icon: "sparkles",
       status: stepStatus(analysisDone, analysisCurrent),
       action: "analysis",

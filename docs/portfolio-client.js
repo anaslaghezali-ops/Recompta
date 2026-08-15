@@ -90,20 +90,28 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
   }
   if (bank.length === 0 && bankPending > 0 && lines.length === 0) {
     return {
-      label: "Lancer l'analyse IA (relevé importé)",
+      label: "Extraire le relevé bancaire",
       href: wsBase ? `${wsBase}&tab=cockpit` : null,
-      action: "analysis",
+      action: "extract_bank",
       tab: "cockpit",
     };
   }
   if (lines.length === 0 && pendingAnalysis > 0) {
     return {
-      label: "Lancer l'analyse IA",
+      label: "Lancer l'extraction",
       href: wsBase ? `${wsBase}&tab=cockpit` : null,
       action: "analysis",
     };
   }
   if (lines.length === 0 && pendingAnalysis === 0 && (bank.length > 0 || invoiceDocumentCount > 0)) {
+    if (bank.length > 0 && invoiceDocumentCount > 0) {
+      return {
+        label: "Lancer le rapprochement bancaire",
+        href: wsBase ? `${wsBase}&tab=cockpit` : null,
+        action: "bank_match",
+        tab: "cockpit",
+      };
+    }
     return {
       label: invoiceDocumentCount > 0 ? "Vérifier la revue" : "Vérifier le relevé bancaire",
       href: wsBase ? `${wsBase}&tab=review` : null,

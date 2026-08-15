@@ -2271,6 +2271,85 @@
   .imp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* Workspace — production (extraction + rapprochement) */
+.ws-production-card {
+  border: 1px solid var(--dash-border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  padding: 1rem;
+}
+
+.ws-production-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.ws-production-step {
+  border: 1px solid var(--dash-border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.9rem 1rem;
+}
+
+.ws-production-step-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.45rem;
+}
+
+.ws-production-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ws-production-step h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ws-production-step h2 .lucide {
+  width: 16px;
+  height: 16px;
+  color: var(--dash-accent);
+}
+
+.ws-production-step p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+
+.ws-production-meta {
+  margin-top: 0.35rem !important;
+  font-size: 0.76rem !important;
+}
+
+.ws-production-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+@media (max-width: 860px) {
+  .ws-production-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Workspace — analyse IA */
 .ws-analysis-card {
   background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 55%, #fff 100%);
@@ -2436,7 +2515,7 @@
   background: #d1fae5;
 }
 
-.ws-analysis-card.is-running {
+.ws-production-card.is-running {
   border-color: #93c5fd;
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
