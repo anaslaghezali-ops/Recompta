@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=review-preview1" />
+  <link rel="stylesheet" href="dashboard.css?v=suppliers1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -64,6 +64,7 @@
           <button type="button" class="active" data-tab="cockpit" role="tab">Période active</button>
           <button type="button" data-tab="documents" role="tab">Documents</button>
           <button type="button" data-tab="review" role="tab">Revue & export</button>
+          <button type="button" data-tab="suppliers" role="tab">Carnet fournisseurs</button>
           <button type="button" data-tab="history" role="tab">Historique des périodes</button>
         </div>
 
@@ -341,6 +342,50 @@
           </section>
         </div>
 
+        <div id="suppliersView" hidden>
+          <section class="ws-section ws-suppliers" id="suppliersPanel">
+            <div class="ws-suppliers-header">
+              <div>
+                <h2>Carnet fournisseurs</h2>
+                <p>Toutes les factures du client, regroupées par fournisseur, année et mois.</p>
+              </div>
+              <input type="search" id="suppliersSearch" class="ws-suppliers-search"
+                placeholder="Rechercher un fournisseur, ICE, IF…" />
+            </div>
+            <p id="suppliersStatus" class="ws-suppliers-status" data-tone="muted"></p>
+            <div id="suppliersEmpty" class="ws-empty" hidden>
+              <i data-lucide="book-open" style="width:36px;height:36px;color:#94a3b8;"></i>
+              <h3>Aucune facture</h3>
+              <p>Les factures extraites apparaîtront ici, regroupées par fournisseur.</p>
+            </div>
+            <div id="suppliersLayout" class="ws-suppliers-layout" hidden>
+              <aside class="ws-suppliers-list-pane">
+                <div id="suppliersList" class="ws-suppliers-list"></div>
+              </aside>
+              <div class="ws-suppliers-detail-pane">
+                <div id="suppliersDetailEmpty" class="ws-empty ws-suppliers-detail-empty">
+                  <p>Sélectionnez un fournisseur pour afficher ses factures par période.</p>
+                </div>
+                <div id="suppliersDetail" hidden>
+                  <header class="ws-suppliers-detail-header">
+                    <h3 id="supplierDetailName">—</h3>
+                    <div class="ws-suppliers-detail-meta">
+                      <span id="supplierDetailIce">ICE : —</span>
+                      <span id="supplierDetailIf">IF : —</span>
+                    </div>
+                    <div class="ws-suppliers-detail-stats">
+                      <span id="supplierDetailCount">0 facture(s)</span>
+                      <span id="supplierDetailTotal">0,00 MAD TTC</span>
+                    </div>
+                  </header>
+                  <div class="dash-year-tabs" id="supplierYearTabs"></div>
+                  <div id="supplierMonthsMount" class="ws-suppliers-months"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
         <div id="historyView" hidden>
           <section class="ws-section">
             <div class="ws-history-header">
@@ -490,7 +535,8 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review6";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review8";
+    import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
     import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload1";
     import {
       bindSidebarMobile,
@@ -546,6 +592,7 @@
     let bankMatchInFlight = false;
     let bankExtractInFlight = false;
     let invoiceUploadController = null;
+    let suppliersController = null;
     let workspaceSessionStartedAt = new Date().toISOString();
 
     function ensureInvoiceUploadController() {
@@ -765,6 +812,28 @@
         onStateChange: () => reloadCockpit(selectedDossierId).catch(() => {}),
       });
       return reviewController;
+    }
+
+    function ensureSuppliersController() {
+      if (suppliersController) return suppliersController;
+      const panel = document.getElementById("suppliersPanel");
+      if (!panel) return null;
+      suppliersController = createWorkspaceSuppliers({
+        mountEl: panel,
+        getContext: () => ({
+          clientId: client?.id,
+          cabinetId,
+        }),
+        onOpenInvoice: async ({ dossierId, lineIndex }) => {
+          if (!dossierId) return;
+          await reloadCockpit(dossierId);
+          await setTab("review");
+          const review = ensureReviewController();
+          await review?.load();
+          if (lineIndex != null) review?.openLineAt?.(lineIndex);
+        },
+      });
+      return suppliersController;
     }
 
     function showPeriodError(message) {
@@ -1505,6 +1574,7 @@
       document.getElementById("cockpitView").hidden = tab !== "cockpit";
       document.getElementById("documentsView").hidden = tab !== "documents";
       document.getElementById("reviewView").hidden = tab !== "review";
+      document.getElementById("suppliersView").hidden = tab !== "suppliers";
       document.getElementById("historyView").hidden = tab !== "history";
       if (tab === "history") {
         renderYearTabs();
@@ -1517,6 +1587,9 @@
         const review = ensureReviewController();
         await review?.load();
         if (view === "anomalies") review?.setAnomaliesOnly(true);
+      }
+      if (tab === "suppliers") {
+        await ensureSuppliersController()?.load();
       }
       initLucide();
     }

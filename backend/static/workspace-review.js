@@ -719,5 +719,6 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     render,
     setAnomaliesOnly,
     getLineCount: () => lines.length,
+    openLineAt: (index) => openLinePreview(index),
   };
 }
