@@ -2149,6 +2149,17 @@
   margin-bottom: 1rem;
 }
 
+.ws-docs-upload.is-highlighted {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.ws-docs-upload.is-readonly {
+  pointer-events: none;
+  opacity: 0.72;
+  cursor: default;
+}
+
 .ws-docs-upload.is-uploading {
   pointer-events: none;
   opacity: 0.85;

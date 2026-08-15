@@ -670,18 +670,32 @@
       });
     }
 
-    function openInvoiceUpload({ focusDocuments = false } = {}) {
+    function goToInvoiceDocuments({ scrollToUpload = true } = {}) {
+      const isReadOnly = cockpit?.statusKey === "exported";
+      setTab("documents").then(() => {
+        if (!scrollToUpload || isReadOnly) return;
+        const zone = document.getElementById("documentsUploadZone");
+        zone?.scrollIntoView({ behavior: "smooth", block: "center" });
+        zone?.classList.add("is-highlighted");
+        window.setTimeout(() => zone?.classList.remove("is-highlighted"), 1800);
+      });
+    }
+
+    function openInvoiceUpload() {
       if (cockpit?.statusKey === "exported") {
-        runCockpitAction("add_invoices");
+        showWorkspaceToast({
+          title: "Période clôturée",
+          message: "Vous pouvez consulter les documents, mais pas en ajouter sur une période déclarée.",
+          variant: "warn",
+          actionLabel: getOpenPeriods().length ? "Périodes en cours" : null,
+          onAction: getOpenPeriods().length ? () => goToOpenPeriod() : null,
+        });
+        goToInvoiceDocuments({ scrollToUpload: false });
         return;
       }
       const controller = ensureInvoiceUploadController();
-      if (focusDocuments) {
-        setTab("documents").then(() => {
-          document.getElementById("documentsUploadZone")
-            ?.scrollIntoView({ behavior: "smooth", block: "center" });
-          controller.openFilePicker(document.getElementById("documentsInvoiceInput"));
-        });
+      if (activeTab === "documents") {
+        controller.openFilePicker(document.getElementById("documentsInvoiceInput"));
         return;
       }
       controller.openFilePicker(document.getElementById("cockpitInvoiceInput"));
@@ -1085,7 +1099,7 @@
       if (action === "analysis") handleLaunchExtraction();
       else if (action === "extract_bank") handleExtractBank();
       else if (action === "bank_match") handleLaunchBankMatch();
-      else if (action === "add_invoices") openInvoiceUpload();
+      else if (action === "add_invoices" || action === "documents") goToInvoiceDocuments();
     }
 
     async function renderProductionCard() {
@@ -1716,8 +1730,17 @@
         return;
       }
 
+      const uploadZone = document.getElementById("documentsUploadZone");
+      const isReadOnly = cockpit?.statusKey === "exported";
+      if (uploadZone) {
+        uploadZone.classList.toggle("is-readonly", isReadOnly);
+        uploadZone.setAttribute("aria-disabled", isReadOnly ? "true" : "false");
+      }
+
       if (cockpit?.dossier) {
-        hintEl.textContent = `Documents de ${cockpit.periodLabel} — supprimez un fichier erroné avant l'analyse avec l'icône corbeille`;
+        hintEl.textContent = isReadOnly
+          ? `Documents de ${cockpit.periodLabel} — consultation seule (période déclarée)`
+          : `Documents de ${cockpit.periodLabel} — supprimez un fichier erroné avant l'analyse avec l'icône corbeille`;
       }
 
       listEl.innerHTML = `<div class="ws-docs-loading">Chargement des documents…</div>`;
@@ -2008,10 +2031,6 @@
             runCockpitAction("bank_match");
             return;
           }
-          if (action === "add_invoices") {
-            openInvoiceUpload({ focusDocuments: true });
-            return;
-          }
           if (tab) {
             setTab(tab, { view: view || null });
             return;
@@ -2049,7 +2068,7 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
-          else if (cockpit.nextAction.action === "add_invoices") openInvoiceUpload({ focusDocuments: true });
+          else if (cockpit.nextAction.action === "add_invoices" || cockpit.nextAction.action === "documents") goToInvoiceDocuments();
           else if (cockpit.nextAction.action === "declare") openDeclarePeriod();
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         };
@@ -2081,7 +2100,7 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
-          else           if (cockpit.nextAction.action === "add_invoices") openInvoiceUpload({ focusDocuments: true });
+          else if (cockpit.nextAction.action === "add_invoices" || cockpit.nextAction.action === "documents") goToInvoiceDocuments();
           else if (cockpit.nextAction.action === "declare") openDeclarePeriod();
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         } else if (cockpit.nextAction?.href) {
@@ -2093,7 +2112,7 @@
 
       const quickActions = [
         { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-input", label: "Factures", action: "add_invoices" },
+        { icon: "file-input", label: "Factures", action: "documents" },
         { icon: "sparkles", label: "Extraction", action: "analysis" },
         { icon: "git-compare", label: "Rapprochement", action: "bank_match" },
         { icon: "table-2", label: "Revue", action: "review" },
@@ -2121,8 +2140,8 @@
           btn.addEventListener("click", () => runCockpitAction("analysis"));
         } else if (action === "bank_match") {
           btn.addEventListener("click", () => runCockpitAction("bank_match"));
-        } else if (action === "add_invoices") {
-          btn.addEventListener("click", () => openInvoiceUpload({ focusDocuments: true }));
+        } else if (action === "add_invoices" || action === "documents") {
+          btn.addEventListener("click", () => goToInvoiceDocuments());
         }
       });
 
