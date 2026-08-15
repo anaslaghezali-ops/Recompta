@@ -81,7 +81,6 @@ export function createWorkspaceReview({
     reviewLayout: mountEl.querySelector("#reviewLayout"),
     tableWrap: mountEl.querySelector("#reviewTableWrap"),
     exportBtn: mountEl.querySelector("#reviewExportBtn"),
-    declareBtn: mountEl.querySelector("#reviewDeclareBtn"),
     declaredBadge: mountEl.querySelector("#reviewDeclaredBadge"),
     exportDialog: document.getElementById("reviewExportDialog"),
     exportIntro: document.getElementById("reviewExportIntro"),
@@ -690,10 +689,6 @@ export function createWorkspaceReview({
   function updateDeclareUi() {
     const { periodStatus, periodLabel } = ctx();
     const isDeclared = periodStatus === "exported";
-    if (els.declareBtn) {
-      els.declareBtn.hidden = isDeclared || lines.length === 0;
-      els.declareBtn.disabled = lines.length === 0;
-    }
     if (els.declaredBadge) {
       els.declaredBadge.hidden = !isDeclared;
       if (isDeclared && periodLabel) {
@@ -1008,7 +1003,6 @@ export function createWorkspaceReview({
 
   els.removeDuplicatesBtn?.addEventListener("click", removeDuplicates);
   els.exportBtn?.addEventListener("click", exportExcel);
-  els.declareBtn?.addEventListener("click", openDeclareDialog);
   els.declareConfirm?.addEventListener("click", (event) => {
     event.preventDefault();
     confirmDeclarePeriod();

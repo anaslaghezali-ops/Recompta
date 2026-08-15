@@ -264,7 +264,7 @@
             <div class="ws-review-header">
               <div>
                 <h2>Revue des lignes & export TVA</h2>
-                <p class="hint">Corrigez les anomalies, exportez l'Excel DED TVA, puis validez la déclaration TVA une fois le dépôt effectué.</p>
+                <p class="hint">Corrigez les anomalies puis exportez l'Excel DED TVA. La validation de déclaration se fait depuis l'onglet Période active.</p>
               </div>
               <div class="ws-review-badges">
                 <span id="reviewLineCount" class="ws-review-badge muted">0 ligne(s)</span>
@@ -281,9 +281,6 @@
               </button>
               <button type="button" class="dash-btn dash-btn-primary" id="reviewExportBtn" disabled>
                 <i data-lucide="download"></i> Exporter Excel
-              </button>
-              <button type="button" class="dash-btn dash-btn-primary ws-review-declare-btn" id="reviewDeclareBtn" hidden>
-                <i data-lucide="badge-check"></i> Valider la déclaration TVA
               </button>
               <span id="reviewDeclaredBadge" class="ws-review-badge success" hidden>Période déclarée</span>
             </div>
@@ -887,7 +884,6 @@
     }
 
     async function openDeclarePeriod() {
-      await setTab("review");
       const review = ensureReviewController();
       await review?.load();
       review?.openDeclareDialog?.();
@@ -1826,10 +1822,6 @@
             openInvoiceUpload({ focusDocuments: true });
             return;
           }
-          if (action === "declare") {
-            openDeclarePeriod();
-            return;
-          }
           if (tab) {
             setTab(tab, { view: view || null });
             return;
@@ -1888,9 +1880,6 @@
         { icon: "git-compare", label: "Rapprochement", action: "bank_match" },
         { icon: "table-2", label: "Revue", action: "review" },
         { icon: "file-spreadsheet", label: "Export", action: "review" },
-        ...(cockpit.statusKey !== "exported" && cockpit.lineCount > 0
-          ? [{ icon: "badge-check", label: "Déclarer", action: "declare" }]
-          : []),
         { icon: "folder-open", label: "Documents", action: "documents" },
       ];
 
@@ -1906,8 +1895,6 @@
         const action = btn.dataset.action;
         if (href) {
           btn.addEventListener("click", () => { window.location.href = href; });
-        } else if (action === "declare") {
-          btn.addEventListener("click", () => openDeclarePeriod());
         } else if (action === "documents") {
           btn.addEventListener("click", () => setTab("documents"));
         } else if (action === "review") {
