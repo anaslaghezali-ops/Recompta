@@ -18,7 +18,7 @@ export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
   if (preferredId) {
     const match = dossiers.find((d) => d.id === preferredId);
-    if (match && match.status !== "exported") return match;
+    if (match) return match;
   }
   const open = dossiers.filter((d) => d.status !== "exported");
   const pool = open.length ? open : dossiers;

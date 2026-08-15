@@ -105,6 +105,10 @@ export async function getClientWithDossiers(clientId, cabinetId) {
   return { ...client, dossiers: dossiers || [] };
 }
 
+const MONTH_SHORT = [
+  "JAN", "FÉV", "MAR", "AVR", "MAI", "JUN", "JUL", "AOÛ", "SEP", "OCT", "NOV", "DÉC",
+];
+
 export function buildYearGrid(year, dossiers) {
   const byMonth = Object.fromEntries(
     (dossiers || [])
@@ -117,7 +121,7 @@ export function buildYearGrid(year, dossiers) {
     return {
       month,
       label,
-      short: label.slice(0, 3),
+      short: MONTH_SHORT[index],
       dossier,
       status: dossier?.status || null,
     };

@@ -695,6 +695,12 @@
   color: #1d4ed8;
 }
 
+.ws-period-viewing {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--dash-success, #059669);
+}
+
 .ws-client-meta-link {
   border: none;
   background: none;
