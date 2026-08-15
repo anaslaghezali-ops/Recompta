@@ -395,11 +395,12 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     # Document multi-factures : la ventilation globale n'appartient pas à une
     # seule facture, on ne réécrit donc pas les lignes à partir d'un modèle.
     if ventilation and result.lines and len(distinct_invoices) <= 1:
-        from vat_multi_rate import expand_lines_from_ventilation
+        from vat_multi_rate import expand_lines_from_ventilation, should_replace_with_ventilation
 
-        template = result.lines[0]
-        result.lines = expand_lines_from_ventilation(template, ventilation, is_avoir=is_avoir)
-        return result
+        if should_replace_with_ventilation(result, ventilation):
+            template = result.lines[0]
+            result.lines = expand_lines_from_ventilation(template, ventilation, is_avoir=is_avoir)
+            return result
 
     # Corrections appuyées sur le document : pas de message, le tableau affiche
     # déjà les valeurs retenues.

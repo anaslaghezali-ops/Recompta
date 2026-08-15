@@ -30,9 +30,23 @@ def _processed_invoice_keys(lines: list[dict[str, Any]]) -> set[str]:
     return keys
 
 
-def _is_invoice_processed(doc: dict[str, Any], processed_keys: set[str]) -> bool:
+def _source_ids_with_lines(lines: list[dict[str, Any]]) -> set[str]:
+    return {
+        str(line.get("source_id") or "").strip()
+        for line in lines
+        if str(line.get("source_id") or "").strip()
+    }
+
+
+def _is_invoice_processed(
+    doc: dict[str, Any],
+    processed_keys: set[str],
+    source_ids_with_lines: set[str] | None = None,
+) -> bool:
     source_id = str(doc.get("source_id") or "").strip()
     if source_id:
+        if source_ids_with_lines is not None:
+            return source_id in source_ids_with_lines
         return f"sid:{source_id}" in processed_keys
     doc_keys = _document_identity_keys(doc.get("original_filename") or "")
     return bool(doc_keys & processed_keys)
@@ -85,13 +99,17 @@ def _should_skip_zip_for_analysis(
     doc: dict[str, Any],
     documents: list[dict[str, Any]],
     processed_keys: set[str],
+    source_ids_with_lines: set[str] | None = None,
 ) -> bool:
     if not _is_zip_filename(doc.get("original_filename") or ""):
         return False
     children = _zip_child_documents(doc, documents)
     if not children:
         return False
-    return any(_is_invoice_processed(child, processed_keys) for child in children)
+    return any(
+        _is_invoice_processed(child, processed_keys, source_ids_with_lines)
+        for child in children
+    )
 
 
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:
@@ -125,11 +143,15 @@ async def queue_dossier_analysis(
         documents = await list_dossier_documents(db, dossier_id, doc_type=doc_type)
 
         if doc_type == "invoice":
-            processed_keys = _processed_invoice_keys(list(workspace.get("lines") or []))
+            lines = list(workspace.get("lines") or [])
+            processed_keys = _processed_invoice_keys(lines)
+            source_ids_with_lines = _source_ids_with_lines(lines)
             pending = [
                 doc for doc in documents
-                if not _is_invoice_processed(doc, processed_keys)
-                and not _should_skip_zip_for_analysis(doc, documents, processed_keys)
+                if not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
+                and not _should_skip_zip_for_analysis(
+                    doc, documents, processed_keys, source_ids_with_lines,
+                )
             ]
         elif doc_type == "bank":
             pending = [doc for doc in documents if not _is_bank_processed(doc, workspace)]

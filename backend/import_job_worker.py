@@ -446,7 +446,12 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 result = await extract_invoice(filename, item["content"], item["mime_type"])
                 result.filename = filename
                 result.source_id = source_id
-                processed += 1
+                if result.lines:
+                    processed += 1
+                else:
+                    failed += 1
+                    if not result.warnings:
+                        result.warnings = ["Aucune ligne extraite — vérifiez le scan ou relancez l'extraction."]
                 await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
                 return result
             except Exception as exc:  # noqa: BLE001
@@ -466,7 +471,14 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         extraction_results = [item for item in raw_results if item is not None]
 
         normalized = normalize_extraction_results(extraction_results, client_ice=client_ice)
+        file_summaries = []
         for result in normalized:
+            file_summaries.append({
+                "filename": result.filename,
+                "source_id": result.source_id,
+                "line_count": len(result.lines or []),
+                "warnings": list(result.warnings or [])[:3],
+            })
             for line in result.lines:
                 new_lines.append(
                     invoice_line_to_workspace_dict(
@@ -488,7 +500,12 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 dossier_id,
                 "import_job",
                 f"Import terminé — {len(new_lines)} ligne(s) extraite(s)",
-                {"job_id": job_id, "new_lines": len(new_lines), "failed_files": failed},
+                {
+                    "job_id": job_id,
+                    "new_lines": len(new_lines),
+                    "failed_files": failed,
+                    "files": file_summaries,
+                },
             )
     finally:
         deactivate_client_ice_exclusions(token)

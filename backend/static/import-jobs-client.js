@@ -3,7 +3,8 @@ import { isInvoiceFile, isZipFile } from "./extract-client.js";
 import {
   documentIdentityKeys,
   shouldSkipZipForAnalysis,
-} from "./dossier-documents.js?v=doc6";
+  sourceIdsWithLines,
+} from "./dossier-documents.js?v=doc8";
 import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
@@ -1036,14 +1037,16 @@ export function countPendingAnalysis(documents, workspace) {
 
   let invoicePending = 0;
   let bankPending = 0;
+  const withLines = sourceIdsWithLines(lines);
 
   for (const doc of documents || []) {
     if (doc.doc_type === "invoice") {
-      if (shouldSkipZipForAnalysis(doc, documents, processedKeys)) continue;
+      if (shouldSkipZipForAnalysis(doc, documents, processedKeys, withLines)) continue;
       const sid = doc.source_id ? `sid:${doc.source_id}` : null;
       const keys = documentIdentityKeys(doc.original_filename || "");
-      const processed = (sid && processedKeys.has(sid))
-        || (!doc.source_id && [...keys].some((key) => processedKeys.has(key)));
+      const processed = sid
+        ? withLines.has(doc.source_id)
+        : [...keys].some((key) => processedKeys.has(key));
       if (!processed) invoicePending += 1;
     } else if (doc.doc_type === "bank" && bank.length === 0) {
       bankPending += 1;
