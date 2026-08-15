@@ -133,11 +133,11 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
       view: "anomalies",
     };
   }
-  if (statusKey === "in_review") {
+  if (statusKey !== "exported") {
     return {
-      label: "Exporter la déclaration TVA",
+      label: "Valider la déclaration TVA",
       href: wsBase ? `${wsBase}&tab=review` : null,
-      action: "export",
+      action: "declare",
       tab: "review",
     };
   }
