@@ -74,10 +74,16 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     reviewLayout: mountEl.querySelector("#reviewLayout"),
     tableWrap: mountEl.querySelector("#reviewTableWrap"),
     exportBtn: mountEl.querySelector("#reviewExportBtn"),
+    declareBtn: mountEl.querySelector("#reviewDeclareBtn"),
+    declaredBadge: mountEl.querySelector("#reviewDeclaredBadge"),
     exportDialog: document.getElementById("reviewExportDialog"),
     exportIntro: document.getElementById("reviewExportIntro"),
     exportList: document.getElementById("reviewExportList"),
     exportConfirm: document.getElementById("reviewExportConfirm"),
+    declareDialog: document.getElementById("reviewDeclareDialog"),
+    declareIntro: document.getElementById("reviewDeclareIntro"),
+    declareWarnings: document.getElementById("reviewDeclareWarnings"),
+    declareConfirm: document.getElementById("reviewDeclareConfirm"),
     fieldBulkDialog: document.getElementById("reviewFieldBulkDialog"),
     fieldBulkTitle: document.getElementById("reviewFieldBulkTitle"),
     fieldBulkIntro: document.getElementById("reviewFieldBulkIntro"),
@@ -671,6 +677,69 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
         ? `Valider les ${pending} ligne(s) en attente`
         : "Toutes les lignes sont déjà validées";
     }
+    updateDeclareUi();
+  }
+
+  function updateDeclareUi() {
+    const { periodStatus, periodLabel } = ctx();
+    const isDeclared = periodStatus === "exported";
+    if (els.declareBtn) {
+      els.declareBtn.hidden = isDeclared || lines.length === 0;
+      els.declareBtn.disabled = lines.length === 0;
+    }
+    if (els.declaredBadge) {
+      els.declaredBadge.hidden = !isDeclared;
+      if (isDeclared && periodLabel) {
+        els.declaredBadge.textContent = `${periodLabel} — déclarée`;
+      }
+    }
+  }
+
+  function openDeclareDialog() {
+    if (!lines.length) return;
+    const { periodLabel } = ctx();
+    refreshConfidence();
+    const issues = collectExportReview(lines, {
+      clientIce: ctx().clientIce || "",
+      duplicateIndexes: findDuplicateLineIndexes(lines),
+    });
+    if (els.declareIntro) {
+      els.declareIntro.textContent = periodLabel
+        ? `Confirmez que la déclaration TVA de ${periodLabel} a bien été effectuée (télédéclaration ou dépôt validé).`
+        : "Confirmez que la déclaration TVA de cette période a bien été effectuée.";
+    }
+    if (els.declareWarnings) {
+      if (issues.length) {
+        els.declareWarnings.hidden = false;
+        els.declareWarnings.innerHTML = issues
+          .map((issue) => `<li class="review-${issue.level}">${escapeHtml(issue.text)}</li>`)
+          .join("");
+      } else {
+        els.declareWarnings.hidden = true;
+        els.declareWarnings.innerHTML = "";
+      }
+    }
+    els.declareDialog?.showModal();
+  }
+
+  async function confirmDeclarePeriod() {
+    const { dossierId, periodLabel } = ctx();
+    if (!dossierId) return;
+    try {
+      await markDossierExported(dossierId);
+      await logDossierActivity(
+        dossierId,
+        "declare",
+        periodLabel ? `Période ${periodLabel} marquée comme déclarée` : "Période marquée comme déclarée",
+        { line_count: lines.length },
+      );
+      els.declareDialog?.close();
+      setStatus(periodLabel ? `${periodLabel} — période déclarée` : "Période déclarée", "success");
+      onStateChange?.();
+      updateDeclareUi();
+    } catch (error) {
+      setStatus(`Erreur : ${error.message}`, "error");
+    }
   }
 
   function renderIssueCell(line, isDuplicate) {
@@ -890,13 +959,11 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       lines,
     });
     if (dossierId) {
-      markDossierExported(dossierId).catch(() => {});
       logDossierActivity(dossierId, "export", `Export Excel ${filename}`, {
         line_count: lines.length,
       }).catch(() => {});
     }
-    setStatus(`Export ${filename} téléchargé`, "success");
-    onStateChange?.();
+    setStatus(`Export ${filename} téléchargé — la période n'est pas clôturée tant que vous n'avez pas confirmé la déclaration`, "success");
   }
 
   function exportExcel() {
@@ -929,6 +996,11 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
 
   els.removeDuplicatesBtn?.addEventListener("click", removeDuplicates);
   els.exportBtn?.addEventListener("click", exportExcel);
+  els.declareBtn?.addEventListener("click", openDeclareDialog);
+  els.declareConfirm?.addEventListener("click", (event) => {
+    event.preventDefault();
+    confirmDeclarePeriod();
+  });
   els.exportConfirm?.addEventListener("click", (event) => {
     event.preventDefault();
     els.exportDialog?.close();

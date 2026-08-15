@@ -258,7 +258,7 @@
             <div class="ws-review-header">
               <div>
                 <h2>Revue des lignes & export TVA</h2>
-                <p class="hint">Corrigez les anomalies puis exportez le fichier Excel DED TVA.</p>
+                <p class="hint">Corrigez les anomalies, exportez l'Excel DED TVA, puis marquez la période comme déclarée une fois la TVA déposée.</p>
               </div>
               <div class="ws-review-badges">
                 <span id="reviewLineCount" class="ws-review-badge muted">0 ligne(s)</span>
@@ -276,6 +276,10 @@
               <button type="button" class="dash-btn dash-btn-primary" id="reviewExportBtn" disabled>
                 <i data-lucide="download"></i> Exporter Excel
               </button>
+              <button type="button" class="dash-btn dash-btn-sm ws-review-declare-btn" id="reviewDeclareBtn" hidden>
+                <i data-lucide="badge-check"></i> Marquer comme déclaré
+              </button>
+              <span id="reviewDeclaredBadge" class="ws-review-badge success" hidden>Période déclarée</span>
             </div>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
             <p class="hint ws-review-preview-hint">Cliquez <strong>Ouvrir</strong> ou une ligne pour afficher la facture en grand avec tous les champs à vérifier.</p>
@@ -485,6 +489,19 @@
     </form>
   </dialog>
 
+  <dialog id="reviewDeclareDialog" class="dash-modal">
+    <form method="dialog" class="dash-modal-inner">
+      <h3>Confirmer la déclaration TVA</h3>
+      <p id="reviewDeclareIntro" class="hint"></p>
+      <ul id="reviewDeclareWarnings" class="ws-export-review-list" hidden></ul>
+      <p class="hint" style="margin-top:0.75rem;">La période sera clôturée. Vous pourrez toujours réexporter l'Excel sans modifier ce statut.</p>
+      <div class="dash-form-actions">
+        <button type="submit" class="dash-btn" value="cancel">Annuler</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="reviewDeclareConfirm">Oui, c'est déclaré</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="reviewFieldBulkDialog" class="dash-modal">
     <form method="dialog" class="dash-modal-inner">
       <h3 id="reviewFieldBulkTitle">Valeur modifiée</h3>
@@ -546,7 +563,7 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review10";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review11";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
     import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload1";
     import {
@@ -810,6 +827,8 @@
         clientIce: client.ice,
         periodYear: cockpit.dossier.period_year,
         periodMonth: cockpit.dossier.period_month,
+        periodStatus: cockpit.dossier.status,
+        periodLabel: cockpit.periodLabel,
       };
     }
 

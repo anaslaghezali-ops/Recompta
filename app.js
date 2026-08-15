@@ -1095,14 +1095,13 @@ function downloadExcel() {
     els.extractionStatus.classList.remove("error", "warn");
     els.extractionStatus.classList.add("success");
     if (isDossierMode()) {
-      await markDossierExported(dossierState.context.dossierId);
       await logDossierActivity(
         dossierState.context.dossierId,
         "export",
         `Export Excel ${filename}`,
         { line_count: state.lines.length },
       );
-      setSaveStatus("Export enregistré dans l'historique", "success");
+      setSaveStatus("Export téléchargé — clôturez la période manuellement après déclaration", "success");
     }
   } catch (error) {
     alert(`Export impossible : ${error.message}`);
