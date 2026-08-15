@@ -23,8 +23,10 @@ const PORT_ACCESS_HINT =
   "Accès refusé au Codespace — ouvrez l'onglet Ports, port 8000 → visibilité Public, puis réessayez.";
 
 const FETCH_TIMEOUT_MS = 15000;
-const HEALTH_TIMEOUT_MS = 12000;
+const HEALTH_TIMEOUT_MS = 20000;
 const ANALYSIS_QUEUE_TIMEOUT_MS = 120000;
+/** Kick worker : réponse immédiate, mais le tunnel Codespace peut être lent au réveil. */
+const WORKER_KICK_TIMEOUT_MS = 45000;
 /** Scans + Vision : un lot peut dépasser 60 s (rendu PDF + appel OpenAI). */
 const EXTRACT_TIMEOUT_MS = 300000;
 const HEALTH_RETRY_ATTEMPTS = 3;
@@ -236,6 +238,7 @@ export async function kickImportJobWorker(apiUrl, { limit = 1 } = {}) {
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/import-jobs/process?limit=${limit}`,
     { method: "POST" },
+    { attempts: 2, timeoutMs: WORKER_KICK_TIMEOUT_MS },
   );
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();

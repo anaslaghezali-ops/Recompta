@@ -353,12 +353,29 @@ async def analyze_dossier_documents(
 
 @app.post("/api/import-jobs/process")
 async def process_import_jobs(limit: int = 1) -> dict:
-    """Déclenche le traitement des jobs en file d'attente (worker asynchrone)."""
-    try:
-        results = await process_pending_import_jobs(max_jobs=max(1, min(limit, 25)))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"processed_jobs": len(results), "results": results}
+    """Déclenche le traitement des jobs en file d'attente (réponse immédiate, travail en arrière-plan)."""
+    if not import_worker_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
+        )
+
+    batch_size = max(1, min(limit, 25))
+
+    async def run_worker() -> None:
+        try:
+            await process_pending_import_jobs(max_jobs=batch_size)
+        except Exception:  # noqa: BLE001
+            import traceback
+
+            traceback.print_exc()
+
+    asyncio.create_task(run_worker())
+    return {
+        "accepted": True,
+        "max_jobs": batch_size,
+        "message": "Traitement démarré en arrière-plan.",
+    }
 
 
 @app.post("/api/export")
