@@ -838,6 +838,41 @@
       };
     }
 
+    let reloadCockpitPromise = null;
+
+    async function refreshCockpitMetadata() {
+      if (clientId && cabinetId) {
+        const refreshed = await getClientWithDossiers(clientId, cabinetId);
+        if (refreshed) {
+          client = refreshed;
+          renderClientHeader();
+        }
+      }
+
+      const dossierId = selectedDossierId;
+      if (dossierId) {
+        try {
+          workspaceSnapshot = await loadDossierWorkspace(dossierId);
+        } catch {
+          workspaceSnapshot = null;
+        }
+      }
+
+      cockpit = await loadWorkspaceCockpit(client, dossierId, {
+        pendingAnalysis: pendingAnalysisCount,
+        bankPending: bankPendingCount,
+        invoicePending: invoicePendingCount,
+        invoiceDocumentCount,
+      });
+      if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
+      renderCockpit();
+      ensureReviewController()?.render?.();
+    }
+
+    async function handlePeriodDeclared() {
+      await reloadCockpit(selectedDossierId);
+    }
+
     function ensureReviewController() {
       if (reviewController) return reviewController;
       const panel = document.getElementById("reviewPanel");
@@ -845,15 +880,17 @@
       reviewController = createWorkspaceReview({
         mountEl: panel,
         getContext: getReviewContext,
-        onStateChange: () => reloadCockpit(selectedDossierId).catch(() => {}),
+        onWorkspaceSaved: () => refreshCockpitMetadata().catch(() => {}),
+        onPeriodDeclared: () => handlePeriodDeclared(),
       });
       return reviewController;
     }
 
     async function openDeclarePeriod() {
-      await setTab("review");
+      if (activeTab !== "review") {
+        await setTab("review");
+      }
       const review = ensureReviewController();
-      await review?.load();
       review?.openDeclareDialog?.();
     }
 
@@ -1998,6 +2035,14 @@
     }
 
     async function reloadCockpit(preferredDossierId = null) {
+      if (reloadCockpitPromise) return reloadCockpitPromise;
+      reloadCockpitPromise = reloadCockpitInner(preferredDossierId).finally(() => {
+        reloadCockpitPromise = null;
+      });
+      return reloadCockpitPromise;
+    }
+
+    async function reloadCockpitInner(preferredDossierId = null) {
       if (clientId && cabinetId) {
         const refreshed = await getClientWithDossiers(clientId, cabinetId);
         if (refreshed) {
