@@ -41,8 +41,9 @@
         <div class="ws-client-meta" id="clientMeta"></div>
 
         <div class="ws-period-bar" id="periodBar" hidden>
-          <label for="periodSelect">Période active</label>
+          <label for="periodSelect" id="periodBarLabel">Période active</label>
           <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période"></select>
+          <span id="periodViewingLabel" class="ws-period-viewing" hidden></span>
           <button type="button" class="ws-period-history-link" id="periodHistoryLink" hidden>
             Voir les périodes clôturées →
           </button>
@@ -867,6 +868,19 @@
     }
 
     async function handlePeriodDeclared() {
+      if (clientId && cabinetId) {
+        const refreshed = await getClientWithDossiers(clientId, cabinetId);
+        if (refreshed) client = refreshed;
+      }
+      const openPeriods = (client?.dossiers || []).filter((d) => d.status !== "exported");
+      if (openPeriods.length) {
+        selectedDossierId = openPeriods.reduce((best, d) => {
+          if (!best) return d;
+          const bestTs = new Date(best.updated_at || best.created_at || 0).getTime();
+          const curTs = new Date(d.updated_at || d.created_at || 0).getTime();
+          return curTs > bestTs ? d : best;
+        }, null).id;
+      }
       await reloadCockpit(selectedDossierId);
     }
 
@@ -1691,13 +1705,29 @@
       const periods = cockpit?.allPeriods || [];
       const openPeriods = periods.filter((d) => d.status !== "exported");
       const closedCount = periods.length - openPeriods.length;
+      const current = periods.find((d) => d.id === selectedDossierId);
+      const viewingClosed = current?.status === "exported";
       const historyLink = document.getElementById("periodHistoryLink");
+      const viewingLabel = document.getElementById("periodViewingLabel");
+      const periodLabel = document.getElementById("periodBarLabel");
       if (historyLink) {
         historyLink.hidden = closedCount === 0;
         historyLink.textContent = closedCount === 1
           ? "Voir la période clôturée →"
           : `Voir les ${closedCount} périodes clôturées →`;
       }
+
+      if (viewingClosed && viewingLabel) {
+        periodBar.hidden = false;
+        periodSelect.hidden = true;
+        viewingLabel.hidden = false;
+        viewingLabel.textContent = `${formatMonthLabel(current.period_month)} ${current.period_year} — Déclaré`;
+        if (periodLabel) periodLabel.textContent = "Période consultée";
+        return;
+      }
+
+      if (viewingLabel) viewingLabel.hidden = true;
+      if (periodLabel) periodLabel.textContent = "Période active";
 
       if (openPeriods.length <= 1 && closedCount === 0) {
         periodBar.hidden = true;
