@@ -20,12 +20,25 @@ const UNREACHABLE_HINT =
   "toujours dans le Codespace, (2) port 8000 en Public, (3) l'URL correspond au " +
   "Codespace actuel.";
 
-async function fetchOrExplain(url, options) {
+const FETCH_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, options);
-  } catch {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`${UNREACHABLE_HINT} (délai dépassé — le Codespace ne répond pas en ${Math.round(timeoutMs / 1000)} s.)`);
+    }
     throw new Error(UNREACHABLE_HINT);
+  } finally {
+    window.clearTimeout(timer);
   }
+}
+
+async function fetchOrExplain(url, options) {
+  return fetchWithTimeout(url, options);
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,9 +47,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function fetchWithRetry(url, options, attempts = 2) {
   for (let i = 0; ; i += 1) {
     try {
-      return await fetch(url, options);
+      return await fetchWithTimeout(url, options);
     } catch (error) {
-      if (i >= attempts - 1) throw new Error(UNREACHABLE_HINT);
+      if (i >= attempts - 1) throw error;
       await sleep(1000 * (i + 1));
     }
   }
