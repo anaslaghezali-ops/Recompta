@@ -105,17 +105,17 @@ export function buildPipelineSteps({
       key: "purchases",
       label: "Factures achats",
       desc: hasLines
-        ? `${lines.length} ligne${lines.length > 1 ? "s" : ""}`
+        ? `${lines.length} ligne${lines.length > 1 ? "s" : ""} · ajoutez-en si besoin`
         : invoicePending > 0
           ? `${invoicePending} doc(s) en attente`
           : invoiceDocumentCount > 0
             ? `${invoiceDocumentCount} doc(s) importé${invoiceDocumentCount > 1 ? "s" : ""}`
             : hasBankDocument
-              ? "Optionnel"
-              : "Importer les factures",
+              ? "Ajoutez vos factures"
+              : "Ajoutez vos factures",
       icon: "file-input",
       status: stepStatus(purchasesDone, purchasesCurrent),
-      href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
+      action: "add_invoices",
     },
     {
       key: "analysis",
