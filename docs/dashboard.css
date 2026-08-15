@@ -1601,6 +1601,7 @@
 }
 .imp-engine-badge.is-ok { background: var(--dash-success-soft); color: var(--dash-success); }
 .imp-engine-badge.is-warn { background: var(--dash-warn-soft); color: var(--dash-warn); }
+.imp-engine-badge.is-pending { background: #f1f5f9; color: #64748b; }
 
 .imp-progress {
   margin-top: 0.75rem;

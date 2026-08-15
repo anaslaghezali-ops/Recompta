@@ -344,7 +344,7 @@
       groupDocumentsBySupplier,
       listDossierDocuments,
       partitionDocumentsForDisplay,
-    } from "./dossier-documents.js?v=doc5";
+    } from "./dossier-documents.js?v=doc6";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -358,9 +358,9 @@
       showAnalysisStartedToast,
       showImportCompletionToast,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs16";
-    import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js?v=api3";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace4";
+    } from "./import-jobs-client.js?v=jobs17";
+    import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js?v=api4";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace5";
     import { createWorkspaceReview } from "./workspace-review.js?v=review2";
     import {
       bindSidebarMobile,
@@ -403,6 +403,8 @@
     let documentFilter = "all";
     let archivesExpanded = false;
     let pendingAnalysisCount = 0;
+    let bankPendingCount = 0;
+    let invoicePendingCount = 0;
     let reviewController = null;
     let analysisInFlight = false;
     let analysisLaunchQueued = 0;
@@ -654,6 +656,8 @@
     async function refreshPendingAnalysis() {
       if (!selectedDossierId) {
         pendingAnalysisCount = 0;
+        bankPendingCount = 0;
+        invoicePendingCount = 0;
         return;
       }
       try {
@@ -661,9 +665,14 @@
           documentsCache = await listDossierDocuments(selectedDossierId);
         }
         const workspace = await loadDossierWorkspace(selectedDossierId);
-        pendingAnalysisCount = countPendingAnalysis(documentsCache, workspace).total;
+        const pending = countPendingAnalysis(documentsCache, workspace);
+        pendingAnalysisCount = pending.total;
+        bankPendingCount = pending.bankPending;
+        invoicePendingCount = pending.invoicePending;
       } catch {
         pendingAnalysisCount = 0;
+        bankPendingCount = 0;
+        invoicePendingCount = 0;
       }
     }
 
@@ -1007,7 +1016,9 @@
       document.getElementById("kpiOps").textContent = String(cockpit.operationCount);
       document.getElementById("kpiAnomalies").textContent = String(cockpit.anomalyCount);
       document.getElementById("kpiLines").textContent = String(cockpit.lineCount);
-      document.getElementById("kpiBank").textContent = String(cockpit.bankCount);
+      document.getElementById("kpiBank").textContent = cockpit.bankCount > 0
+        ? String(cockpit.bankCount)
+        : (cockpit.bankPending > 0 ? "Importé" : "—");
 
       const deadlineDays = cockpit.daysLeft;
       const deadlineDaysEl = document.getElementById("kpiDeadlineDays");
@@ -1236,17 +1247,28 @@
         try {
           documentsCache = await listDossierDocuments(dossierId);
           const workspace = await loadDossierWorkspace(dossierId);
-          pendingAnalysisCount = countPendingAnalysis(documentsCache, workspace).total;
+          const pending = countPendingAnalysis(documentsCache, workspace);
+          pendingAnalysisCount = pending.total;
+          bankPendingCount = pending.bankPending;
+          invoicePendingCount = pending.invoicePending;
         } catch {
           documentsCache = [];
           pendingAnalysisCount = 0;
+          bankPendingCount = 0;
+          invoicePendingCount = 0;
         }
       } else {
         documentsCache = [];
         pendingAnalysisCount = 0;
+        bankPendingCount = 0;
+        invoicePendingCount = 0;
       }
 
-      cockpit = await loadWorkspaceCockpit(client, dossierId, { pendingAnalysis: pendingAnalysisCount });
+      cockpit = await loadWorkspaceCockpit(client, dossierId, {
+        pendingAnalysis: pendingAnalysisCount,
+        bankPending: bankPendingCount,
+        invoicePending: invoicePendingCount,
+      });
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
       await renderTimeline();

@@ -18,7 +18,7 @@ import {
   fetchServerHealth,
   getApiUrl,
   saveApiUrl,
-} from "./api-client.js?v=api2";
+} from "./api-client.js?v=api4";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
 import {
   countConfidenceIssues,
@@ -130,6 +130,8 @@ async function refreshEngineBadge() {
   if (!els.engineBadge) return;
 
   if (wantAi && apiUrl) {
+    els.engineBadge.textContent = "Vérification serveur…";
+    els.engineBadge.className = "imp-engine-badge is-pending";
     try {
       const health = await fetchServerHealth(apiUrl);
       if (health.ai_verified) {
@@ -140,8 +142,10 @@ async function refreshEngineBadge() {
       els.engineBadge.textContent = health.ai_message || "Clé OpenAI invalide";
       els.engineBadge.className = "imp-engine-badge is-warn";
       return;
-    } catch {
-      els.engineBadge.textContent = "Serveur IA injoignable";
+    } catch (error) {
+      els.engineBadge.textContent = error.message?.includes("délai")
+        ? "Serveur injoignable (timeout)"
+        : "Serveur IA injoignable";
       els.engineBadge.className = "imp-engine-badge is-warn";
       return;
     }
@@ -532,7 +536,6 @@ export async function bootImportAchats() {
 
   saver = createWorkspaceSaver(session, setStatus);
   loadApiSettings();
-  await refreshEngineBadge();
   renderLinesTable();
 
   if (session.updatedAt) {
@@ -542,26 +545,33 @@ export async function bootImportAchats() {
   bindDropZone(els.dropZone, els.fileInput);
   els.queueBtn.addEventListener("click", runQueue);
   els.extractBtn.addEventListener("click", runExtract);
-  await renderJobsPanel();
-  const activeJobs = await listImportJobs(session.dossierId, { limit: 1, activeOnly: true });
-  if (activeJobs.some((job) => job.status === "queued")) {
-    await triggerWorkerProcessing();
-  }
-  startJobsPolling();
   els.apiUrl?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.useAi?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.testApiBtn?.addEventListener("click", async () => {
     els.testApiBtn.disabled = true;
+    const previousLabel = els.testApiBtn.textContent;
+    els.testApiBtn.textContent = "Test en cours…";
     try {
       await fetchServerHealth(resolvedApiUrl(), { refresh: true });
       persistApiSettings();
       await refreshEngineBadge();
+      setStatus("Connexion serveur OK", "success");
     } catch (error) {
       alert(`Connexion impossible : ${error.message}`);
+      await refreshEngineBadge();
     } finally {
       els.testApiBtn.disabled = false;
+      els.testApiBtn.textContent = previousLabel;
     }
   });
+
+  await renderJobsPanel();
+  const activeJobs = await listImportJobs(session.dossierId, { limit: 1, activeOnly: true });
+  if (activeJobs.some((job) => job.status === "queued")) {
+    triggerWorkerProcessing().catch(() => {});
+  }
+  startJobsPolling();
+  refreshEngineBadge().catch(() => {});
 
   initLucide();
 }

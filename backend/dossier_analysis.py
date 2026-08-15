@@ -55,31 +55,43 @@ def _is_zip_filename(filename: str) -> bool:
     return str(filename or "").lower().endswith(".zip")
 
 
-def _zip_has_extracted_children(zip_doc: dict[str, Any], documents: list[dict[str, Any]]) -> bool:
+def _zip_archive_stem(filename: str) -> str:
     from pathlib import PurePosixPath
 
-    zip_name = PurePosixPath(str(zip_doc.get("original_filename") or "")).name
-    if not zip_name.lower().endswith(".zip"):
-        return False
-    stem_lower = zip_name[:-4].lower()
+    base = PurePosixPath(str(filename or "").replace("\\", "/")).name
+    return base[:-4] if base.lower().endswith(".zip") else base
+
+
+def _zip_child_documents(zip_doc: dict[str, Any], documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    stem_lower = _zip_archive_stem(zip_doc.get("original_filename") or "").lower()
     stem_prefix = stem_lower.split("-")[0].strip()
     zip_id = zip_doc.get("id")
+    children: list[dict[str, Any]] = []
 
     for doc in documents:
         if doc.get("id") == zip_id:
             continue
         name = str(doc.get("original_filename") or "").replace("\\", "/")
         parts = [part for part in name.split("/") if part]
-        if len(parts) < 2:
-            continue
-        if _is_zip_filename(parts[-1]):
+        if len(parts) < 2 or _is_zip_filename(parts[-1]):
             continue
         folder_lower = parts[0].lower()
         if stem_lower.startswith(folder_lower) or folder_lower == stem_prefix:
-            return True
-        if stem_prefix and stem_lower.startswith(stem_prefix):
-            return True
-    return False
+            children.append(doc)
+    return children
+
+
+def _should_skip_zip_for_analysis(
+    doc: dict[str, Any],
+    documents: list[dict[str, Any]],
+    processed_keys: set[str],
+) -> bool:
+    if not _is_zip_filename(doc.get("original_filename") or ""):
+        return False
+    children = _zip_child_documents(doc, documents)
+    if not children:
+        return False
+    return any(_is_invoice_processed(child, processed_keys) for child in children)
 
 
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:
@@ -117,7 +129,7 @@ async def queue_dossier_analysis(
             pending = [
                 doc for doc in documents
                 if not _is_invoice_processed(doc, processed_keys)
-                and not (_is_zip_filename(doc.get("original_filename") or "") and _zip_has_extracted_children(doc, documents))
+                and not _should_skip_zip_for_analysis(doc, documents, processed_keys)
             ]
         elif doc_type == "bank":
             pending = [doc for doc in documents if not _is_bank_processed(doc, workspace)]

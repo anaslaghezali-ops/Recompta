@@ -16,7 +16,7 @@ from normalize_results import (
     deactivate_client_ice_exclusions,
     normalize_extraction_results,
 )
-from supabase_service import SupabaseService
+from supabase_service import SupabaseService, _document_identity_keys
 from zip_utils import iter_invoice_files
 
 IMPORT_QUEUE_BUCKET = "import-queue"
@@ -72,6 +72,26 @@ def _next_source_id() -> str:
 
 def _display_name(relative_name: str) -> str:
     return relative_name.replace("\\", "/").split("/")[-1] or relative_name
+
+
+def _processed_invoice_keys(lines: list[dict[str, Any]]) -> set[str]:
+    keys: set[str] = set()
+    for line in lines:
+        source_file = str(line.get("source_file") or "")
+        keys.update(_document_identity_keys(source_file))
+        source_id = str(line.get("source_id") or "").strip()
+        if source_id:
+            keys.add(f"sid:{source_id}")
+    return keys
+
+
+def _work_item_already_processed(item: dict[str, Any], processed_keys: set[str]) -> bool:
+    source_id = str(item.get("source_id") or "").strip()
+    if source_id and f"sid:{source_id}" in processed_keys:
+        return True
+    filename = str(item.get("filename") or "")
+    doc_keys = _document_identity_keys(filename)
+    return bool(doc_keys & processed_keys)
 
 
 def extraction_concurrency() -> int:
@@ -278,12 +298,12 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 )
 
             for relative_name, file_content, file_mime in expanded:
-                display_name = _display_name(relative_name)
+                normalized_name = relative_name.replace("\\", "/")
                 source_id = parent_source if len(expanded) == 1 else _next_source_id()
                 if len(expanded) > 1:
                     await db.save_dossier_document(
                         dossier_id,
-                        filename=relative_name,
+                        filename=normalized_name,
                         content=file_content,
                         mime_type=file_mime,
                         doc_type="invoice",
@@ -292,7 +312,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 work_items.append(
                     {
                         "parent_file_id": file_id,
-                        "filename": display_name,
+                        "filename": normalized_name,
                         "content": file_content,
                         "mime_type": file_mime,
                         "source_id": source_id,
@@ -331,6 +351,49 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             "failed_files": 0,
         },
     )
+
+    processed_keys = _processed_invoice_keys(lines)
+    pending_items = [item for item in work_items if not _work_item_already_processed(item, processed_keys)]
+    skipped_items = len(work_items) - len(pending_items)
+    work_items = pending_items
+
+    if not work_items:
+        final_status = "completed" if skipped_items else "failed"
+        error_summary = (
+            f"{skipped_items} fichier(s) déjà extrait(s), rien à refaire."
+            if skipped_items
+            else "Aucun fichier n'a pu être extrait."
+        )
+        await db.update_job(
+            job_id,
+            {
+                "status": final_status,
+                "processed_files": 0,
+                "failed_files": 0 if skipped_items else archive_failures,
+                "error_summary": error_summary,
+                "finished_at": _iso_now(),
+            },
+        )
+        done_parents = {item["parent_file_id"] for item in work_items} if work_items else {
+            int(file_row["id"]) for file_row in files
+        }
+        for file_id in done_parents:
+            await db.update_job_file(
+                file_id,
+                {
+                    "status": "done",
+                    "processed_at": _iso_now(),
+                    "error_message": None,
+                },
+            )
+        return {
+            "job_id": job_id,
+            "processed": 0,
+            "failed": 0,
+            "new_lines": 0,
+            "status": final_status,
+            "skipped": skipped_items,
+        }
 
     processed = 0
     failed = 0

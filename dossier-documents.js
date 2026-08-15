@@ -166,16 +166,6 @@ export async function uploadDossierDocumentFromBlob({
   return uploadDossierDocument({ dossierId, file, docType, sourceId });
 }
 
-export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
-  const doc = typeof docOrFilename === "object" ? docOrFilename : null;
-  const filename = doc?.original_filename || docOrFilename || "";
-  const parts = String(filename).replace(/\\/g, "/").split("/").filter(Boolean);
-  const base = parts[parts.length - 1] || filename || "document";
-  if (!withSize || !doc?.size_bytes) return base;
-  const sizeKb = Math.max(1, Math.round(Number(doc.size_bytes) / 1024));
-  return `${base} (${sizeKb} Ko)`;
-}
-
 export function isZipDocument(docOrFilename) {
   const name = typeof docOrFilename === "object"
     ? docOrFilename?.original_filename
@@ -189,7 +179,7 @@ function zipArchiveStem(filename) {
   return base.replace(/\.zip$/i, "");
 }
 
-export function getZipExtractedChildren(zipDoc, docs) {
+export function getZipChildDocuments(zipDoc, docs) {
   if (!zipDoc || !isZipDocument(zipDoc)) return [];
   const stemLower = zipArchiveStem(zipDoc.original_filename).toLowerCase();
   const stemPrefix = stemLower.split("-")[0].trim();
@@ -201,10 +191,36 @@ export function getZipExtractedChildren(zipDoc, docs) {
     const parts = path.split("/").filter(Boolean);
     if (parts.length < 2) return false;
     const folderLower = parts[0].toLowerCase();
-    return stemLower.startsWith(folderLower)
-      || folderLower === stemPrefix
-      || (stemPrefix && stemLower.startsWith(stemPrefix));
+    return stemLower.startsWith(folderLower) || folderLower === stemPrefix;
   });
+}
+
+export function isInvoiceDocumentProcessed(doc, processedKeys) {
+  const sid = doc?.source_id ? `sid:${doc.source_id}` : null;
+  const keys = documentIdentityKeys(doc?.original_filename || "");
+  return (sid && processedKeys.has(sid))
+    || [...keys].some((key) => processedKeys.has(key));
+}
+
+export function shouldSkipZipForAnalysis(doc, documents, processedKeys) {
+  if (!isZipDocument(doc)) return false;
+  const children = getZipChildDocuments(doc, documents);
+  if (!children.length) return false;
+  return children.some((child) => isInvoiceDocumentProcessed(child, processedKeys));
+}
+
+export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
+  const doc = typeof docOrFilename === "object" ? docOrFilename : null;
+  const filename = doc?.original_filename || docOrFilename || "";
+  const parts = String(filename).replace(/\\/g, "/").split("/").filter(Boolean);
+  const base = parts[parts.length - 1] || filename || "document";
+  if (!withSize || !doc?.size_bytes) return base;
+  const sizeKb = Math.max(1, Math.round(Number(doc.size_bytes) / 1024));
+  return `${base} (${sizeKb} Ko)`;
+}
+
+export function getZipExtractedChildren(zipDoc, docs) {
+  return getZipChildDocuments(zipDoc, docs);
 }
 
 export function isExtractedArchiveZip(zipDoc, docs) {

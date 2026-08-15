@@ -40,10 +40,19 @@ export function formatDeadlineLabel(daysLeft, year, month) {
   return `Échéance dans ${daysLeft} j — ${dateStr}`;
 }
 
-export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey, clientId = null, pendingAnalysis = 0 }) {
+export function buildPipelineSteps({
+  dossier,
+  workspace,
+  anomalyCount,
+  statusKey,
+  clientId = null,
+  pendingAnalysis = 0,
+  bankPending = 0,
+}) {
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
   const hasBank = bank.length > 0;
+  const hasBankDocument = hasBank || bankPending > 0;
   const hasLines = lines.length > 0;
   const hasDocuments = hasLines || pendingAnalysis > 0;
   const isExported = statusKey === "exported";
@@ -55,14 +64,14 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
     return "pending";
   }
 
-  const bankDone = hasBank;
+  const bankDone = hasBankDocument;
   const purchasesDone = hasDocuments;
   const analysisDone = hasLines;
   const reviewDone = hasLines && anomalyCount === 0;
   const exportDone = isExported;
 
-  const bankCurrent = !hasBank && !isExported;
-  const purchasesCurrent = hasBank && !hasDocuments && !isExported;
+  const bankCurrent = !hasBankDocument && !isExported;
+  const purchasesCurrent = hasBankDocument && !hasDocuments && !isExported;
   const analysisCurrent = hasDocuments && !hasLines && !isExported;
   const reviewCurrent = hasLines && anomalyCount > 0 && !isExported;
   const exportCurrent = hasLines && anomalyCount === 0 && !isExported && !isReview;
@@ -78,7 +87,11 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
     {
       key: "bank",
       label: "Relevé bancaire",
-      desc: hasBank ? `${bank.length} opération${bank.length > 1 ? "s" : ""}` : "Importer le relevé",
+      desc: hasBank
+        ? `${bank.length} opération${bank.length > 1 ? "s" : ""}`
+        : bankPending > 0
+          ? "Importé — analyse en attente"
+          : "Importer le relevé",
       icon: "landmark",
       status: stepStatus(bankDone, bankCurrent),
       href: dossier ? `import-banque.html?dossier=${dossier.id}` : null,
@@ -121,7 +134,7 @@ export function buildPipelineSteps({ dossier, workspace, anomalyCount, statusKey
   ];
 }
 
-export function buildCockpitState(client, dossier, workspace, { pendingAnalysis = 0 } = {}) {
+export function buildCockpitState(client, dossier, workspace, { pendingAnalysis = 0, bankPending = 0, invoicePending = 0 } = {}) {
   if (!dossier) {
     return {
       hasPeriod: false,
@@ -146,7 +159,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
   });
   const nextAction = resolveNextAction({
     dossier,
-    workspace: { ...(workspace || {}), pendingAnalysis },
+    workspace: { ...(workspace || {}), pendingAnalysis, bankPending, invoicePending },
     anomalyCount,
     statusKey,
     clientId: client.id,
@@ -158,6 +171,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
     statusKey,
     clientId: client.id,
     pendingAnalysis,
+    bankPending,
   });
   const lastActivity = workspace?.updated_at || dossier.updated_at || dossier.created_at;
 
@@ -170,6 +184,8 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
     progress: statusKey === "exported" ? 100 : progress,
     lineCount: lines.length,
     bankCount: bank.length,
+    bankPending,
+    invoicePending,
     operationCount: lines.length + bank.length,
     anomalyCount,
     daysLeft,
@@ -187,8 +203,12 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
   };
 }
 
-export async function loadWorkspaceCockpit(client, preferredDossierId = null, { pendingAnalysis = 0 } = {}) {
+export async function loadWorkspaceCockpit(
+  client,
+  preferredDossierId = null,
+  { pendingAnalysis = 0, bankPending = 0, invoicePending = 0 } = {},
+) {
   const dossier = pickActiveDossier(client.dossiers, preferredDossierId);
   const workspace = dossier ? await loadDossierWorkspace(dossier.id) : null;
-  return buildCockpitState(client, dossier, workspace, { pendingAnalysis });
+  return buildCockpitState(client, dossier, workspace, { pendingAnalysis, bankPending, invoicePending });
 }
