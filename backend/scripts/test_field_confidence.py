@@ -68,6 +68,22 @@ def main() -> int:
     assert verified["ice_frs"].level == "ok"
     assert verified["ice_frs"].reason == "Validé manuellement"
 
+    zero_vat = compute_field_confidence(
+        line(m_ht=1058.0, tva=0.0, m_ttc=1058.0, taux=0.0, tva_calculated=True),
+        engine="ai",
+    )
+    assert zero_vat["tva"].level == "ok"
+    assert zero_vat["taux"].level == "ok"
+    assert zero_vat["designation"].level == "ok"
+
+    uncertain_zero_vat = compute_field_confidence(
+        line(m_ht=1058.0, tva=0.0, m_ttc=1058.0, taux=0.0, tva_calculated=True),
+        engine="ai",
+        document_warnings=["Scan difficile : relu avec gpt-5.6-terra."],
+    )
+    assert uncertain_zero_vat["tva"].level == "warn"
+    assert "scan difficile" in uncertain_zero_vat["tva"].reason.lower()
+
     print("OK test_field_confidence")
     return 0
 

@@ -67,6 +67,38 @@ def _implied_taux(ht: float, tva: float) -> float | None:
     return None
 
 
+def _is_coherent_zero_vat(ht: float, tva: float, ttc: float, taux: float) -> bool:
+    if taux != 0.0:
+        return False
+    if abs(ht) < 0.01:
+        return False
+    return abs(tva) <= 0.05 and abs(abs(ht) - abs(ttc)) <= 0.05
+
+
+def _is_confident_zero_vat(
+    ht: float,
+    tva: float,
+    ttc: float,
+    taux: float,
+    *,
+    scan_like: bool,
+    difficult: bool,
+) -> bool:
+    return _is_coherent_zero_vat(ht, tva, ttc, taux) and not (scan_like and difficult)
+
+
+def _needs_zero_vat_confirmation(
+    ht: float,
+    tva: float,
+    ttc: float,
+    taux: float,
+    *,
+    scan_like: bool,
+    difficult: bool,
+) -> bool:
+    return _is_coherent_zero_vat(ht, tva, ttc, taux) and scan_like and difficult
+
+
 def _amount_issues(ht: float, tva: float, ttc: float) -> list[tuple[ConfidenceLevel, str]]:
     issues: list[tuple[ConfidenceLevel, str]] = []
     if abs(ht) < 0.01 and abs(ttc) < 0.01:
@@ -103,6 +135,12 @@ def compute_field_confidence(
     worst_amount = amount_issues[0] if amount_issues else None
     blended = _is_blended_multi_rate(ht, tva)
     implied = _implied_taux(ht, tva)
+    confident_zero_vat = _is_confident_zero_vat(
+        ht, tva, ttc, taux, scan_like=scan_like, difficult=difficult
+    )
+    uncertain_zero_vat = _needs_zero_vat_confirmation(
+        ht, tva, ttc, taux, scan_like=scan_like, difficult=difficult
+    )
 
     out: dict[str, FieldConfidenceEntry] = {}
 
@@ -164,7 +202,12 @@ def compute_field_confidence(
     if _verified("designation", user_verified):
         out["designation"] = _entry("ok", "Validé manuellement")
     elif code is None and taux == 0.0:
-        out["designation"] = _entry("warn", "TVA 0 % — CODE TVA à renseigner si votre DED l'exige")
+        if confident_zero_vat:
+            out["designation"] = _entry("ok", "TVA 0 % — cohérente")
+        elif uncertain_zero_vat:
+            out["designation"] = _entry("warn", "TVA 0 % sur scan difficile — confirmez le taux")
+        else:
+            out["designation"] = _entry("warn", "TVA 0 % — CODE TVA à renseigner si votre DED l'exige")
     elif code is None:
         out["designation"] = _entry(
             "warn",
@@ -185,12 +228,27 @@ def compute_field_confidence(
             out[key] = _entry("warn", "Montants corrigés automatiquement — vérifiez")
             continue
         if key == "m_ttc" and line.ttc_reconstructed:
+            if confident_zero_vat:
+                out[key] = _entry("ok", "TTC = HT (TVA 0 %)")
+                continue
             out[key] = _entry("warn", "TTC reconstitué à partir de HT + TVA")
             continue
         if key == "tva" and line.tva_calculated:
+            if confident_zero_vat:
+                out[key] = _entry("ok", "TVA à 0 % — cohérente avec le taux")
+                continue
+            if uncertain_zero_vat:
+                out[key] = _entry("warn", "TVA à 0 % sur scan difficile — confirmez")
+                continue
             out[key] = _entry("warn", "TVA recalculée à partir de HT × taux")
             continue
         if scan_like and difficult:
+            if uncertain_zero_vat and key in {"m_ht", "m_ttc"}:
+                out[key] = _entry("ok", f"{label} cohérent (TVA 0 %)")
+                continue
+            if uncertain_zero_vat and key == "tva":
+                out[key] = _entry("warn", "TVA à 0 % sur scan difficile — confirmez")
+                continue
             out[key] = _entry("warn", f"{label} extrait d'un scan difficile — confirmez")
             continue
         if duplicate and key == "m_ttc":
@@ -218,7 +276,12 @@ def compute_field_confidence(
             f"Taux déclaré {int(taux * 100)} % incohérent avec HT/TVA (~{int(implied * 100)} %)",
         )
     elif scan_like and difficult:
-        out["taux"] = _entry("warn", "Taux extrait d'un scan difficile — confirmez 0 / 10 / 20 %")
+        if uncertain_zero_vat:
+            out["taux"] = _entry("warn", "Taux 0 % sur scan difficile — confirmez")
+        else:
+            out["taux"] = _entry("warn", "Taux extrait d'un scan difficile — confirmez 0 / 10 / 20 %")
+    elif taux == 0.0 and _is_coherent_zero_vat(ht, tva, ttc, taux):
+        out["taux"] = _entry("ok", "Taux 0 % cohérent")
     else:
         out["taux"] = _entry("ok", f"Taux {int(taux * 100)} % cohérent")
 
