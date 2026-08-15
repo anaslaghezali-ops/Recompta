@@ -112,6 +112,24 @@ function impliedTaux(ht, tva) {
   return null;
 }
 
+function isCoherentZeroVat(ht, tva, ttc, taux) {
+  const rate = Number(taux);
+  if (rate !== 0) return false;
+  const absHt = Math.abs(ht);
+  const absTva = Math.abs(tva);
+  const absTtc = Math.abs(ttc);
+  if (absHt < 0.01) return false;
+  return absTva <= 0.05 && Math.abs(absHt - absTtc) <= 0.05;
+}
+
+function isConfidentZeroVat(ht, tva, ttc, taux, scanLike, difficult) {
+  return isCoherentZeroVat(ht, tva, ttc, taux) && !(scanLike && difficult);
+}
+
+function needsZeroVatConfirmation(ht, tva, ttc, taux, scanLike, difficult) {
+  return isCoherentZeroVat(ht, tva, ttc, taux) && scanLike && difficult;
+}
+
 function amountIssues(ht, tva, ttc) {
   const issues = [];
   if (Math.abs(ht) < 0.01 && Math.abs(ttc) < 0.01) {
@@ -174,6 +192,8 @@ export function computeFieldConfidence(line, options = {}) {
   const worst = issues[0] || null;
   const blended = isBlendedMultiRate(ht, tva);
   const implied = impliedTaux(ht, tva);
+  const confidentZeroVat = isConfidentZeroVat(ht, tva, ttc, taux, scanLike, difficult);
+  const uncertainZeroVat = needsZeroVatConfirmation(ht, tva, ttc, taux, scanLike, difficult);
   const out = {};
 
   if (isVerified("fact_num", userVerified)) out.fact_num = entry("ok", "Validé manuellement");
@@ -207,7 +227,9 @@ export function computeFieldConfidence(line, options = {}) {
   const code = line.code_tva ?? inferCodeTva(line.designation, taux);
   if (isVerified("designation", userVerified)) out.designation = entry("ok", "Validé manuellement");
   else if (code == null && taux === 0) {
-    out.designation = entry("warn", "TVA 0 % — CODE TVA à renseigner si votre DED l'exige");
+    if (confidentZeroVat) out.designation = entry("ok", "TVA 0 % — cohérente");
+    else if (uncertainZeroVat) out.designation = entry("warn", "TVA 0 % sur scan difficile — confirmez le taux");
+    else out.designation = entry("warn", "TVA 0 % — CODE TVA à renseigner si votre DED l'exige");
   } else if (code == null) {
     out.designation = entry("warn", `CODE TVA non déduit pour ${line.designation || "?"} à ${taux * 100}%`);
   } else out.designation = entry("ok", `CODE TVA ${code} déduit`);
@@ -230,14 +252,34 @@ export function computeFieldConfidence(line, options = {}) {
       continue;
     }
     if (key === "m_ttc" && line.ttc_reconstructed) {
+      if (confidentZeroVat) {
+        out[key] = entry("ok", "TTC = HT (TVA 0 %)");
+        continue;
+      }
       out[key] = entry("warn", "TTC reconstitué à partir de HT + TVA");
       continue;
     }
     if (key === "tva" && line.tva_calculated) {
+      if (confidentZeroVat) {
+        out[key] = entry("ok", "TVA à 0 % — cohérente avec le taux");
+        continue;
+      }
+      if (uncertainZeroVat) {
+        out[key] = entry("warn", "TVA à 0 % sur scan difficile — confirmez");
+        continue;
+      }
       out[key] = entry("warn", "TVA recalculée à partir de HT × taux");
       continue;
     }
     if (scanLike && difficult) {
+      if (uncertainZeroVat && (key === "m_ht" || key === "m_ttc")) {
+        out[key] = entry("ok", `${label} cohérent (TVA 0 %)`);
+        continue;
+      }
+      if (uncertainZeroVat && key === "tva") {
+        out[key] = entry("warn", "TVA à 0 % sur scan difficile — confirmez");
+        continue;
+      }
       out[key] = entry("warn", `${label} extrait d'un scan difficile — confirmez`);
       continue;
     }
@@ -259,7 +301,10 @@ export function computeFieldConfidence(line, options = {}) {
   } else if (implied != null && taux !== implied && Math.abs(ht) >= 0.01 && Math.abs(tva) >= 0.05) {
     out.taux = entry("warn", `Taux déclaré ${taux * 100} % incohérent avec HT/TVA (~${implied * 100} %)`);
   } else if (scanLike && difficult) {
-    out.taux = entry("warn", "Taux extrait d'un scan difficile — confirmez 0 / 10 / 20 %");
+    if (uncertainZeroVat) out.taux = entry("warn", "Taux 0 % sur scan difficile — confirmez");
+    else out.taux = entry("warn", "Taux extrait d'un scan difficile — confirmez 0 / 10 / 20 %");
+  } else if (taux === 0 && isCoherentZeroVat(ht, tva, ttc, taux)) {
+    out.taux = entry("ok", "Taux 0 % cohérent");
   } else out.taux = entry("ok", `Taux ${taux * 100} % cohérent`);
 
   if (isVerified("date_fac", userVerified)) out.date_fac = entry("ok", "Validé manuellement");
