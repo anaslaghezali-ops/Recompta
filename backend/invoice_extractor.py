@@ -1142,6 +1142,19 @@ async def _supplement_ttc_ventilation(
     text = result.raw_text or ""
     if not text.strip() and mime_type == "application/pdf":
         text = await extract_text_from_pdf_async(content)
+    if mime_type == "application/pdf" and tesseract_available():
+        try:
+            pages = await pdf_to_png_pages_async(content, max_pages=2)
+            if pages:
+                ocr_text = await ocr_pages_async(pages)
+                if ocr_text.strip():
+                    combined = f"{text}\n{ocr_text}".strip() if text.strip() else ocr_text
+                    from vat_intelligence import ventilation_marker_count
+
+                    if ventilation_marker_count(combined) > ventilation_marker_count(text):
+                        text = combined
+        except Exception:  # noqa: BLE001
+            pass
     if not text.strip() and tesseract_available() and mime_type == "application/pdf":
         try:
             pages = await pdf_to_png_pages_async(content, max_pages=2)
@@ -1156,7 +1169,7 @@ async def _supplement_ttc_ventilation(
             pass
 
     if text.strip():
-        result.raw_text = text[:4000]
+        result.raw_text = text[:8000]
 
     result = reconcile_supplier_if(result, text)
 

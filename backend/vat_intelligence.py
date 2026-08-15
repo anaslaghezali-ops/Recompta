@@ -6,9 +6,32 @@ import re
 from models import ALLOWED_TAUX, ExtractionResult, InvoiceLine
 
 TTC_VENTILATION_PATTERN = re.compile(
-    r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)",
+    r"(?:\d+\)\s*)?"
+    r"(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)"
+    r"(?:\s*DH)?",
     re.I,
 )
+
+VENTILATION_MARKER_PATTERN = re.compile(
+    r"\d+[,.]\d+\s*TTC\s+\d+[,.]\d+\s*%",
+    re.I,
+)
+
+
+def ventilation_marker_count(text: str) -> int:
+    """Nombre de lignes « XXX TTC Y% » visibles dans le document."""
+    return len(VENTILATION_MARKER_PATTERN.findall(text or ""))
+
+
+def _result_underestimates_footer_ttc(result: ExtractionResult, text: str) -> bool:
+    """Une seule ligne IA mais le pied de page annonce un TTC plus élevé (multi-taux probable)."""
+    if len(result.lines) != 1:
+        return False
+    _footer_ht, _footer_tva, footer_ttc = extract_footer_totals(text)
+    if footer_ttc is None:
+        return False
+    line_ttc = abs(result.lines[0].m_ttc)
+    return abs(footer_ttc) > line_ttc + 0.5
 
 
 def _parse_amount(value: str | None) -> float | None:
@@ -99,7 +122,13 @@ def extract_vat_lines_from_text(text: str) -> list[dict[str, float]]:
     candidates = [c for c in candidates if c]
     if not candidates:
         return []
-    return max(candidates, key=len)
+    best = max(candidates, key=len)
+    # Si le texte montre plusieurs lignes TTC/% mais qu'un parseur n'en voit qu'une, forcer TTC.
+    if len(best) < 2 and ventilation_marker_count(text) >= 2:
+        forced = parse_ttc_ventilation(text)
+        if len(forced) > len(best):
+            return forced
+    return best
 
 
 def _is_ht_formula_on_ttc_amount(m_ht: float, tva: float, taux: float) -> bool:
@@ -227,6 +256,11 @@ def result_needs_escalation(result: ExtractionResult) -> bool:
     if not result.lines:
         return True
     if any(not line_is_coherent(line) for line in result.lines):
+        return True
+    text = result.raw_text or ""
+    if ventilation_marker_count(text) >= 2 and len(result.lines) < 2:
+        return True
+    if _result_underestimates_footer_ttc(result, text):
         return True
     from vat_multi_rate import result_needs_multi_rate_escalation
 
@@ -397,7 +431,7 @@ def apply_vat_reconciliation(result: ExtractionResult) -> ExtractionResult:
     if ventilation and result.lines and len(distinct_invoices) <= 1:
         from vat_multi_rate import expand_lines_from_ventilation, should_replace_with_ventilation
 
-        if should_replace_with_ventilation(result, ventilation):
+        if should_replace_with_ventilation(result, ventilation, text):
             template = result.lines[0]
             result.lines = expand_lines_from_ventilation(template, ventilation, is_avoir=is_avoir)
             return result

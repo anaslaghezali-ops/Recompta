@@ -24,8 +24,25 @@ export function canApplyDocumentVentilation(result) {
   return (result.lines || []).length > 0 && distinctInvoiceCount(result) <= 1;
 }
 
-export function shouldReplaceWithVentilation(result, ventilation) {
+function footerTtcFromText(text) {
+  const match = String(text || "").match(/total\s+ttc[^\d\n]{0,30}([\d .,\u00a0]+)/i);
+  if (!match) return null;
+  const raw = match[1].replace(/[\s\u00a0]/g, "").replace(",", ".");
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function shouldReplaceWithVentilation(result, ventilation, text = "") {
   if (ventilation.length >= 2) return true;
+  if (text) {
+    const markers = (text.match(/\d+[,.]\d+\s*TTC\s+\d+[,.]\d+\s*%/gi) || []).length;
+    if (markers >= 2 && (result.lines || []).length < 2 && ventilation.length >= 1) return true;
+    const footerTtc = footerTtcFromText(text);
+    if (footerTtc != null && (result.lines || []).length === 1 && ventilation.length >= 1) {
+      const lineTtc = Math.abs(Number(result.lines[0].m_ttc) || 0);
+      if (Math.abs(footerTtc) > lineTtc + 0.5) return true;
+    }
+  }
   if (ventilation.length === 1 && resultHasBlendedSummary(result)) return true;
   if (ventilation.length === 1 && (result.lines || []).length === 1) {
     const only = result.lines[0];
@@ -58,7 +75,7 @@ export function tryApplyVentilationFromText(result, text, helpers) {
   }
 
   const ventilation = helpers.extractVatLinesFromText(text);
-  if (!ventilation.length || !shouldReplaceWithVentilation(result, ventilation)) {
+  if (!ventilation.length || !shouldReplaceWithVentilation(result, ventilation, text)) {
     return { result, applied: false };
   }
 

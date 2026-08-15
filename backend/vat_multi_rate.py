@@ -91,9 +91,17 @@ def _is_avoir_result(result: ExtractionResult) -> bool:
 def should_replace_with_ventilation(
     result: ExtractionResult,
     ventilation: list[dict[str, float]],
+    text: str = "",
 ) -> bool:
     if len(ventilation) >= 2:
         return True
+    if text:
+        from vat_intelligence import ventilation_marker_count, _result_underestimates_footer_ttc
+
+        if ventilation_marker_count(text) >= 2 and len(result.lines) < 2:
+            return len(ventilation) >= 1
+        if _result_underestimates_footer_ttc(result, text) and ventilation:
+            return True
     if len(ventilation) == 1 and result_has_blended_summary(result):
         return True
     if len(ventilation) == 1 and len(result.lines) == 1:
@@ -113,7 +121,7 @@ def try_apply_ventilation_from_text(
         return result, False
 
     ventilation = extract_vat_lines_from_text(text)
-    if not ventilation or not should_replace_with_ventilation(result, ventilation):
+    if not ventilation or not should_replace_with_ventilation(result, ventilation, text):
         return result, False
 
     template = result.lines[0]

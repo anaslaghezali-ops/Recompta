@@ -771,24 +771,16 @@ function applyDossierContext(context) {
 async function initCabinetAccess() {
   if (!isSupabaseConfigured()) return;
 
+  const params = new URLSearchParams(window.location.search);
+  const dossierId = params.get("dossier");
+  // Sans ?dossier= : mode solo — production.html reste utilisable même si connecté.
+  if (!dossierId) return;
+
   const session = await getSession();
   if (!session?.user) return;
 
-  const admin = await isSuperAdmin(session.user.id);
-  if (admin) return;
-
-  const params = new URLSearchParams(window.location.search);
-  const dossierId = params.get("dossier");
-  if (!dossierId) {
-    window.location.href = "dossiers.html";
-    return;
-  }
-
   const context = await loadDossierContext(dossierId);
-  if (!context) {
-    window.location.href = "dossiers.html";
-    return;
-  }
+  if (!context) return;
 
   const view = params.get("view");
   const reviewParams = new URLSearchParams({
@@ -798,7 +790,6 @@ async function initCabinetAccess() {
   });
   if (view) reviewParams.set("view", view);
   window.location.replace(`workspace.html?${reviewParams.toString()}`);
-  return;
 }
 
 function persistClientIce() {
