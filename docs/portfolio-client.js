@@ -118,9 +118,10 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
   }
   if (lines.length === 0) {
     return {
-      label: "Importer les factures achats",
-      href: `import-achats.html?dossier=${dossier.id}`,
-      action: "purchases",
+      label: "Ajouter des factures achats",
+      href: wsBase ? `${wsBase}&tab=documents` : null,
+      action: "add_invoices",
+      tab: "documents",
     };
   }
   if (anomalyCount > 0) {

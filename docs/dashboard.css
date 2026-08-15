@@ -2023,6 +2023,48 @@
 }
 
 /* Documents dossier */
+.ws-docs-upload {
+  margin-bottom: 1rem;
+}
+
+.ws-docs-upload.is-uploading {
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.ws-docs-upload-progress {
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.ws-docs-upload-progress-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  color: var(--dash-muted);
+}
+
+.ws-docs-upload-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  overflow: hidden;
+}
+
+.ws-docs-upload-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--dash-accent);
+  transition: width 0.2s ease;
+}
+
+.import-toast-action {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
 .ws-docs-header {
   display: flex;
   align-items: flex-start;

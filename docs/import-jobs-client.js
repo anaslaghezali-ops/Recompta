@@ -295,6 +295,8 @@ export function showWorkspaceToast({
   variant = "info",
   linkUrl = null,
   linkLabel = "Voir",
+  actionLabel = null,
+  onAction = null,
   durationMs = 12000,
 } = {}) {
   const container = ensureImportToastContainer();
@@ -318,8 +320,16 @@ export function showWorkspaceToast({
       ${message ? `<p>${message}</p>` : ""}
     </div>
     ${linkUrl ? `<a class="import-toast-link" href="${linkUrl}">${linkLabel}</a>` : ""}
+    ${onAction && actionLabel ? `<button type="button" class="import-toast-link import-toast-action">${actionLabel}</button>` : ""}
   `;
   container.appendChild(toast);
+
+  if (onAction && actionLabel) {
+    toast.querySelector(".import-toast-action")?.addEventListener("click", () => {
+      onAction();
+      toast.remove();
+    });
+  }
 
   window.setTimeout(() => {
     toast.classList.add("is-leaving");

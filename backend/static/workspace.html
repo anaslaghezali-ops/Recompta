@@ -132,6 +132,11 @@
                     <button type="button" class="dash-btn dash-btn-primary" id="launchExtractionBtn">
                       <i data-lucide="play"></i> Lancer l'extraction
                     </button>
+                    <button type="button" class="dash-btn" id="addInvoicesBtn">
+                      <i data-lucide="plus"></i> Ajouter des factures
+                    </button>
+                    <input type="file" id="cockpitInvoiceInput" hidden multiple
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                     <button type="button" class="dash-btn" id="openReviewBtn" hidden>
                       <i data-lucide="table-2"></i> Voir la revue
                     </button>
@@ -222,6 +227,13 @@
                 <button type="button" data-filter="invoice">Factures</button>
                 <button type="button" data-filter="bank">Relevés</button>
               </div>
+            </div>
+            <div class="imp-dropzone ws-docs-upload" id="documentsUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
+              <input type="file" id="documentsInvoiceInput" hidden multiple
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
+              <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
+              <h3>Ajouter des factures</h3>
+              <p>Glissez-déposez vos PDF, images ou ZIP — les archives sont décompressées automatiquement.</p>
             </div>
             <div id="documentsList" class="ws-docs-list"></div>
             <section class="ws-doc-archives" id="documentArchivesSection" hidden>
@@ -427,14 +439,15 @@
       dismissHistoricImportJobs,
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs25";
+    } from "./import-jobs-client.js?v=jobs26";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace9";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace10";
     import {
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review5";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload1";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -488,7 +501,51 @@
     let bankMatchController = null;
     let bankMatchInFlight = false;
     let bankExtractInFlight = false;
+    let invoiceUploadController = null;
     let workspaceSessionStartedAt = new Date().toISOString();
+
+    function ensureInvoiceUploadController() {
+      if (invoiceUploadController) return invoiceUploadController;
+      invoiceUploadController = createWorkspaceInvoiceUpload({
+        getDossierId: () => selectedDossierId,
+        showToast: showWorkspaceToast,
+        onRequestExtraction: () => handleLaunchExtraction(),
+        onUploaded: async () => {
+          await refreshPendingAnalysis({ forceDocuments: true });
+          await reloadCockpit(selectedDossierId);
+          if (activeTab === "documents") renderDocumentsList();
+        },
+      });
+      return invoiceUploadController;
+    }
+
+    function initInvoiceUploadBindings() {
+      const controller = ensureInvoiceUploadController();
+      controller.bindDropzone({
+        dropzoneEl: document.getElementById("documentsUploadZone"),
+        inputEl: document.getElementById("documentsInvoiceInput"),
+      });
+      const cockpitInput = document.getElementById("cockpitInvoiceInput");
+      cockpitInput?.addEventListener("change", () => {
+        const files = cockpitInput.files;
+        cockpitInput.value = "";
+        if (!files?.length) return;
+        controller.uploadFiles(files);
+      });
+    }
+
+    function openInvoiceUpload({ focusDocuments = false } = {}) {
+      const controller = ensureInvoiceUploadController();
+      if (focusDocuments) {
+        setTab("documents").then(() => {
+          document.getElementById("documentsUploadZone")
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          controller.openFilePicker(document.getElementById("documentsInvoiceInput"));
+        });
+        return;
+      }
+      controller.openFilePicker(document.getElementById("cockpitInvoiceInput"));
+    }
 
     function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
@@ -744,6 +801,7 @@
       if (action === "analysis") handleLaunchExtraction();
       else if (action === "extract_bank") handleExtractBank();
       else if (action === "bank_match") handleLaunchBankMatch();
+      else if (action === "add_invoices") openInvoiceUpload();
     }
 
     async function renderProductionCard() {
@@ -751,6 +809,7 @@
       const extractionHint = document.getElementById("extractionHint");
       const extractionMeta = document.getElementById("extractionMeta");
       const launchBtn = document.getElementById("launchExtractionBtn");
+      const addInvoicesBtn = document.getElementById("addInvoicesBtn");
       const openReviewBtn = document.getElementById("openReviewBtn");
       const bankMatchHint = document.getElementById("bankMatchHint");
       const bankMatchMeta = document.getElementById("bankMatchMeta");
@@ -771,6 +830,9 @@
         : 0;
 
       openReviewBtn.hidden = !hasLines;
+      if (addInvoicesBtn) {
+        addInvoicesBtn.disabled = isJobRunning || invoiceUploadController?.isUploading?.();
+      }
 
       if (activeImportJob || analysisInFlight || bankExtractInFlight) {
         const percent = activeImportJob ? jobProgressPercent(activeImportJob) : 0;
@@ -803,7 +865,7 @@
           launchBtn.disabled = false;
           launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
         } else if (hasLines) {
-          extractionHint.textContent = "Extraction terminée.";
+          extractionHint.textContent = "Extraction à jour — vous pouvez ajouter d'autres factures.";
           extractionMeta.textContent = cockpit.anomalyCount > 0
             ? `${cockpit.lineCount} ligne(s) · ${cockpit.anomalyCount} anomalie(s) à corriger en revue.`
             : `${cockpit.lineCount} ligne(s) extraites — prêtes pour la revue.`;
@@ -811,12 +873,12 @@
           launchBtn.innerHTML = '<i data-lucide="check"></i> Extraction à jour';
         } else if (cockpit.invoiceDocumentCount > 0) {
           extractionHint.textContent = "Factures importées — lancez l'extraction.";
-          extractionMeta.textContent = "Aucune ligne générée pour l'instant.";
+          extractionMeta.textContent = `${cockpit.invoiceDocumentCount} document(s) en attente d'analyse.`;
           launchBtn.disabled = false;
           launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
         } else {
-          extractionHint.textContent = "Importez des factures achats pour commencer.";
-          extractionMeta.textContent = "L'import et l'extraction sont séparés : vous contrôlez quand démarrer.";
+          extractionHint.textContent = "Ajoutez vos factures achats pour commencer.";
+          extractionMeta.textContent = "Importez des PDF, images ou ZIP — puis lancez l'extraction quand vous êtes prêt.";
           launchBtn.disabled = true;
           launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
         }
@@ -1388,7 +1450,7 @@
         window.location.href = href;
         return;
       }
-      if (dossierId) window.location.href = `import-achats.html?dossier=${dossierId}`;
+      if (dossierId) openInvoiceUpload();
     }
 
     async function setTab(tab, { view = null } = {}) {
@@ -1541,6 +1603,10 @@
             runCockpitAction("bank_match");
             return;
           }
+          if (action === "add_invoices") {
+            openInvoiceUpload({ focusDocuments: true });
+            return;
+          }
           if (tab) {
             setTab(tab, { view: view || null });
             return;
@@ -1560,6 +1626,7 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
+          else if (cockpit.nextAction.action === "add_invoices") openInvoiceUpload({ focusDocuments: true });
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         };
       } else if (cockpit.nextAction.href) {
@@ -1580,6 +1647,7 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
+          else if (cockpit.nextAction.action === "add_invoices") openInvoiceUpload({ focusDocuments: true });
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         } else if (cockpit.nextAction?.href) {
           window.location.href = cockpit.nextAction.href;
@@ -1590,7 +1658,7 @@
 
       const quickActions = [
         { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-input", label: "Achats", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
+        { icon: "file-input", label: "Factures", action: "add_invoices" },
         { icon: "sparkles", label: "Extraction", action: "analysis" },
         { icon: "git-compare", label: "Rapprochement", action: "bank_match" },
         { icon: "table-2", label: "Revue", action: "review" },
@@ -1618,6 +1686,8 @@
           btn.addEventListener("click", () => runCockpitAction("analysis"));
         } else if (action === "bank_match") {
           btn.addEventListener("click", () => runCockpitAction("bank_match"));
+        } else if (action === "add_invoices") {
+          btn.addEventListener("click", () => openInvoiceUpload({ focusDocuments: true }));
         }
       });
 
@@ -1813,6 +1883,7 @@
 
           renderClientHeader();
           loadAnalysisApiSettings();
+          initInvoiceUploadBindings();
           refreshAnalysisServerStatus().catch(() => {});
           document.getElementById("analysisApiUrl")?.addEventListener("change", () => {
             persistAnalysisApiSettings();
@@ -1837,6 +1908,7 @@
 
     document.getElementById("importBannerBtn")?.addEventListener("click", openActiveImportPage);
     document.getElementById("launchExtractionBtn")?.addEventListener("click", handleLaunchExtraction);
+    document.getElementById("addInvoicesBtn")?.addEventListener("click", () => openInvoiceUpload());
     document.getElementById("extractBankBtn")?.addEventListener("click", handleExtractBank);
     document.getElementById("launchBankMatchBtn")?.addEventListener("click", handleLaunchBankMatch);
     document.getElementById("openReviewBtn")?.addEventListener("click", () => setTab("review"));
