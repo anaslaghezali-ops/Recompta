@@ -55,7 +55,7 @@ export async function listImportJobs(dossierId, { limit = 10, activeOnly = false
   let query = supabase
     .from("import_jobs")
     .select(
-      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, error_summary, created_at, started_at, finished_at, updated_at",
+      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, options, error_summary, created_at, started_at, finished_at, updated_at",
     )
     .eq("dossier_id", dossierId)
     .order("created_at", { ascending: false })
@@ -219,7 +219,6 @@ export async function abandonStaleImportJob(job) {
     .eq("id", job.id)
     .in("status", ["uploading", "queued", "processing"]);
 
-  if (!error) markImportJobSeen(job.id);
   return !error;
 }
 
@@ -254,19 +253,6 @@ export async function reconcileStaleImportJobs(dossierIds) {
   for (const job of data || []) {
     if (isImportJobStale(job)) {
       await abandonStaleImportJob(job);
-    }
-  }
-
-  const { data: failedRecent, error: failedError } = await supabase
-    .from("import_jobs")
-    .select("id")
-    .in("dossier_id", dossierIds)
-    .eq("status", "failed")
-    .gte("finished_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-  if (!failedError) {
-    for (const job of failedRecent || []) {
-      markImportJobSeen(job.id);
     }
   }
 }
@@ -431,7 +417,7 @@ export function markImportJobSeen(jobId) {
 }
 
 export function shouldNotifyImportCompletion(job) {
-  if (!job || job.status !== "completed") return false;
+  if (!job || !["completed", "failed"].includes(job.status)) return false;
   if (readSeenJobIds().includes(String(job.id))) return false;
   if (job.options?.analysis_from_documents) return true;
   if ((job.total_files || 0) >= COMPLETION_NOTIFY_MIN_FILES) return true;
@@ -494,10 +480,10 @@ export async function pollImportCompletions(dossierIds, onComplete, { sinceMinut
   const { data, error } = await supabase
     .from("import_jobs")
     .select(
-      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, error_summary, finished_at, updated_at",
+      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, options, error_summary, finished_at, updated_at",
     )
     .in("dossier_id", dossierIds)
-    .eq("status", "completed")
+    .in("status", ["completed", "failed"])
     .gte("finished_at", since)
     .order("finished_at", { ascending: false })
     .limit(20);

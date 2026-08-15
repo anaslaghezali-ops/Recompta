@@ -418,8 +418,9 @@
       showExtractionStartedToast,
       showWorkspaceToast,
       showImportCompletionToast,
+      pollImportCompletions,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs18";
+    } from "./import-jobs-client.js?v=jobs19";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace8";
     import {
@@ -850,7 +851,7 @@
 
     const renderAnalysisCard = renderProductionCard;
 
-    async function refreshPendingAnalysis() {
+    async function refreshPendingAnalysis({ forceDocuments = false } = {}) {
       if (!selectedDossierId) {
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
@@ -859,7 +860,7 @@
         return;
       }
       try {
-        if (!documentsCache.length) {
+        if (forceDocuments || !documentsCache.length) {
           documentsCache = await listDossierDocuments(selectedDossierId);
         }
         const workspace = await loadDossierWorkspace(selectedDossierId);
@@ -889,7 +890,7 @@
         return 0;
       }
 
-      await refreshPendingAnalysis();
+      await refreshPendingAnalysis({ forceDocuments: true });
       const pendingForType = docType === "bank" ? bankPendingCount : invoicePendingCount;
       if (!pendingForType) {
         await reloadCockpit(selectedDossierId);
@@ -907,7 +908,16 @@
         clientIce: client?.ice || "",
       });
       const queuedJobs = result.queued_jobs || 0;
-      if (!queuedJobs) return 0;
+      if (!queuedJobs) {
+        showWorkspaceToast({
+          title: "Extraction non démarrée",
+          message: result.message
+            || "Le serveur n'a trouvé aucun document à analyser. Vérifiez l'URL Codespace et SUPABASE_SERVICE_ROLE_KEY.",
+          variant: "warn",
+          durationMs: 14000,
+        });
+        return 0;
+      }
 
       analysisLaunchQueued = queuedJobs;
       renderProductionCard();
@@ -918,17 +928,29 @@
       });
 
       const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: 3 });
-      if (!workerResult.ok && !workerResult.transient) {
+      if (!workerResult.ok) {
         showWorkspaceToast({
-          title: "Extraction en file d'attente",
+          title: workerResult.transient ? "Serveur injoignable" : "Extraction en file d'attente",
           message: workerResult.message,
           variant: "warn",
+          durationMs: 14000,
         });
       }
 
-      await waitForActiveImportJob();
+      await waitForActiveImportJob({ attempts: 16, delayMs: 1000 });
       if (!activeImportJob) startImportPolling();
       return queuedJobs;
+    }
+
+    async function notifyRecentImportOutcomes() {
+      if (!selectedDossierId) return;
+      try {
+        await pollImportCompletions([selectedDossierId], (job) => {
+          showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
+        }, { sinceMinutes: 10 });
+      } catch {
+        /* ignore transient polling errors */
+      }
     }
 
     async function handleLaunchExtraction() {
@@ -961,6 +983,8 @@
       } finally {
         analysisInFlight = false;
         analysisLaunchQueued = 0;
+        await notifyRecentImportOutcomes();
+        await reloadCockpit(selectedDossierId);
         await renderProductionCard();
       }
     }
