@@ -2171,6 +2171,14 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
+.ws-review-upload {
+  margin-top: 0.75rem;
+}
+
+.ws-review-import-meta {
+  margin: 0.25rem 0 0.75rem;
+}
+
 .ws-docs-upload.is-readonly {
   pointer-events: none;
   opacity: 0.72;

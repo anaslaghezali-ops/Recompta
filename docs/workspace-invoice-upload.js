@@ -90,7 +90,15 @@ export function createWorkspaceInvoiceUpload({
   async function uploadFiles(fileList, { dropzoneEl = null } = {}) {
     const dossierId = getDossierId();
     const files = [...(fileList || [])].filter(Boolean);
-    if (!dossierId || !files.length || uploading) {
+    if (!files.length || uploading) {
+      return { uploaded: 0, reused: 0, expanded: 0, failures: [] };
+    }
+    if (!dossierId) {
+      showToast?.({
+        title: "Période requise",
+        message: "Créez ou sélectionnez une période TVA avant d'importer des factures.",
+        variant: "warn",
+      });
       return { uploaded: 0, reused: 0, expanded: 0, failures: [] };
     }
 

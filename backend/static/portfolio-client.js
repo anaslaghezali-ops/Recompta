@@ -118,10 +118,10 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
   }
   if (lines.length === 0) {
     return {
-      label: "Voir les documents factures",
-      href: wsBase ? `${wsBase}&tab=documents` : null,
-      action: "documents",
-      tab: "documents",
+      label: "Ajouter des factures",
+      href: wsBase ? `${wsBase}&tab=review` : null,
+      action: "add_invoices",
+      tab: "review",
     };
   }
   if (anomalyCount > 0) {
