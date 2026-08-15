@@ -343,7 +343,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 )
                 source_id = parent_source if len(expanded) == 1 else _next_source_id()
                 if zip_expanded:
-                    await db.save_dossier_document(
+                    saved = await db.save_dossier_document(
                         dossier_id,
                         filename=normalized_name,
                         content=file_content,
@@ -351,6 +351,8 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                         doc_type="invoice",
                         source_id=source_id,
                     )
+                    if saved and saved.get("source_id"):
+                        source_id = str(saved["source_id"])
                 work_items.append(
                     {
                         "parent_file_id": file_id,

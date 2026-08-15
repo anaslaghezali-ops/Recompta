@@ -76,14 +76,50 @@ def _zip_archive_stem(filename: str) -> str:
     return base[:-4] if base.lower().endswith(".zip") else base
 
 
+def _zip_basename(filename: str) -> str:
+    from pathlib import PurePosixPath
+
+    return PurePosixPath(str(filename or "").replace("\\", "/")).name.lower()
+
+
+def _zip_upload_bounds(zip_doc: dict[str, Any], documents: list[dict[str, Any]]) -> tuple[str, str | None]:
+    """Fenêtre temporelle d'une version d'archive (ré-upload du même nom)."""
+    zip_created = str(zip_doc.get("created_at") or "")
+    base = _zip_basename(zip_doc.get("original_filename") or "")
+    next_created: str | None = None
+    for doc in documents:
+        if doc.get("id") == zip_doc.get("id"):
+            continue
+        if not _is_zip_filename(doc.get("original_filename") or ""):
+            continue
+        if _zip_basename(doc.get("original_filename") or "") != base:
+            continue
+        other_created = str(doc.get("created_at") or "")
+        if other_created > zip_created and (next_created is None or other_created < next_created):
+            next_created = other_created
+    return zip_created, next_created
+
+
+def _doc_in_zip_window(doc: dict[str, Any], zip_created: str, next_zip_created: str | None) -> bool:
+    created = str(doc.get("created_at") or "")
+    if created < zip_created:
+        return False
+    if next_zip_created and created >= next_zip_created:
+        return False
+    return True
+
+
 def _zip_child_documents(zip_doc: dict[str, Any], documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     stem_lower = _zip_archive_stem(zip_doc.get("original_filename") or "").lower()
     stem_prefix = stem_lower.split("-")[0].strip()
     zip_id = zip_doc.get("id")
+    zip_created, next_zip_created = _zip_upload_bounds(zip_doc, documents)
     children: list[dict[str, Any]] = []
 
     for doc in documents:
         if doc.get("id") == zip_id:
+            continue
+        if not _doc_in_zip_window(doc, zip_created, next_zip_created):
             continue
         name = str(doc.get("original_filename") or "").replace("\\", "/")
         parts = [part for part in name.split("/") if part]
@@ -108,6 +144,7 @@ def _zip_child_documents(zip_doc: dict[str, Any], documents: list[dict[str, Any]
         doc
         for doc in documents
         if doc.get("id") != zip_id
+        and _doc_in_zip_window(doc, zip_created, next_zip_created)
         and not _is_zip_filename(doc.get("original_filename") or "")
         and (doc.get("doc_type") or "invoice") == "invoice"
         and len([part for part in str(doc.get("original_filename") or "").replace("\\", "/").split("/") if part]) >= 2
