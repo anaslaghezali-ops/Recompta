@@ -243,20 +243,20 @@ def normalize_ai_transactions(raw_list: list[dict[str, Any]]) -> list[dict[str, 
         if SKIP_KEYWORDS.search(normalized_label):
             continue
 
-        const declaredType = str(item.get("type") or "").strip().lower()
-        if declaredType in {"payment", "fee"}:
+        declared_type = str(item.get("type") or "").strip().lower()
+        if declared_type in {"payment", "fee"}:
             amount = -abs(amount)
-        elif declaredType == "credit":
+        elif declared_type == "credit":
             amount = abs(amount)
 
         is_debit = amount < 0
-        is_fee = declaredType == "fee" or (FEE_KEYWORDS.search(normalized_label) and is_debit)
+        is_fee = declared_type == "fee" or (FEE_KEYWORDS.search(normalized_label) and is_debit)
         if is_fee:
             txn_type = "fee"
         elif is_debit:
             txn_type = "payment"
         else:
-            txn_type = declaredType or "credit"
+            txn_type = declared_type or "credit"
 
         abs_amount = abs(amount)
         transactions.append(
