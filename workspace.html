@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=docs-delete1" />
+  <link rel="stylesheet" href="dashboard.css?v=review-anomaly1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -274,7 +274,7 @@
               <table class="ws-review-table">
                 <thead>
                   <tr>
-                    <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th>
+                    <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
                     <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
                     <th>Date fact.</th><th>Date paie</th><th></th>
                   </tr>
@@ -429,7 +429,7 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws1";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review4";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review5";
     import {
       bindSidebarMobile,
       escapeHtml,
