@@ -195,18 +195,31 @@ export function getZipChildDocuments(zipDoc, docs) {
   });
 }
 
-export function isInvoiceDocumentProcessed(doc, processedKeys) {
+export function isInvoiceDocumentProcessed(doc, processedKeys, sourceIdsWithLines = null) {
   const sid = doc?.source_id ? `sid:${doc.source_id}` : null;
-  if (sid) return processedKeys.has(sid);
+  if (sid) {
+    if (sourceIdsWithLines instanceof Set) {
+      return sourceIdsWithLines.has(doc.source_id);
+    }
+    return processedKeys.has(sid);
+  }
   const keys = documentIdentityKeys(doc?.original_filename || "");
   return [...keys].some((key) => processedKeys.has(key));
 }
 
-export function shouldSkipZipForAnalysis(doc, documents, processedKeys) {
+export function sourceIdsWithLines(lines = []) {
+  const ids = new Set();
+  for (const line of lines || []) {
+    if (line?.source_id) ids.add(line.source_id);
+  }
+  return ids;
+}
+
+export function shouldSkipZipForAnalysis(doc, documents, processedKeys, sourceIdsWithLines = null) {
   if (!isZipDocument(doc)) return false;
   const children = getZipChildDocuments(doc, documents);
   if (!children.length) return false;
-  return children.some((child) => isInvoiceDocumentProcessed(child, processedKeys));
+  return children.some((child) => isInvoiceDocumentProcessed(child, processedKeys, sourceIdsWithLines));
 }
 
 export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
@@ -374,7 +387,7 @@ export function isDocumentAnalyzed(doc, workspace) {
   if (doc.doc_type === "bank") {
     return bank.length > 0;
   }
-  return isInvoiceDocumentProcessed(doc, processedKeys);
+  return isInvoiceDocumentProcessed(doc, processedKeys, sourceIdsWithLines(lines));
 }
 
 export async function deleteDossierDocument(doc) {

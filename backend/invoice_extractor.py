@@ -1121,11 +1121,10 @@ async def _extract_with_openai_images(
         warnings=warnings,
     )
 
-    from vat_intelligence import apply_vat_reconciliation, result_needs_escalation
-    from vat_multi_rate import apply_multi_rate_postprocess
+    from vat_intelligence import result_needs_escalation
 
-    result = apply_vat_reconciliation(result)
-    result = apply_multi_rate_postprocess(result)
+    # Ventilation multi-taux : reportée à _supplement_ttc_ventilation (raw_text requis).
+    # Ici on ne fait que conserver les lignes renvoyées par l'IA Vision.
 
     # Le détail du contrôle de l'IA n'a d'intérêt que s'il reste une incohérence.
     verification = content_json.get("verification")
