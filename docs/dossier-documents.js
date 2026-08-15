@@ -352,3 +352,44 @@ export async function downloadDossierDocument(doc) {
   anchor.click();
   anchor.remove();
 }
+
+export function isDocumentAnalyzed(doc, workspace) {
+  if (!doc) return false;
+  const lines = workspace?.lines || [];
+  const bank = workspace?.bank_transactions || [];
+  const processedKeys = new Set();
+
+  for (const line of lines) {
+    for (const key of documentIdentityKeys(line.source_file || "")) {
+      processedKeys.add(key);
+    }
+    if (line.source_id) processedKeys.add(`sid:${line.source_id}`);
+  }
+
+  if (doc.doc_type === "bank") {
+    return bank.length > 0;
+  }
+  return isInvoiceDocumentProcessed(doc, processedKeys);
+}
+
+export async function deleteDossierDocument(doc) {
+  const supabase = getSupabase();
+  if (!supabase || !doc?.id) throw new Error("Document introuvable.");
+
+  if (doc.storage_path) {
+    const { error: storageError } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .remove([doc.storage_path]);
+    if (storageError && !/not found|object not found/i.test(storageError.message || "")) {
+      throw storageError;
+    }
+  }
+
+  const { error } = await supabase
+    .from("dossier_documents")
+    .delete()
+    .eq("id", doc.id);
+
+  if (error) throw error;
+  return true;
+}
