@@ -81,31 +81,36 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     fieldBulkTitle: document.getElementById("reviewFieldBulkTitle"),
     fieldBulkIntro: document.getElementById("reviewFieldBulkIntro"),
     fieldBulkApplyAll: document.getElementById("reviewFieldBulkApplyAll"),
-    previewPanel: mountEl.querySelector("#documentPreviewPanel"),
-    previewTitle: mountEl.querySelector("#previewTitle"),
-    previewSubtitle: mountEl.querySelector("#previewSubtitle"),
-    previewNav: mountEl.querySelector("#previewNav"),
-    previewPrevPage: mountEl.querySelector("#previewPrevPage"),
-    previewNextPage: mountEl.querySelector("#previewNextPage"),
-    previewPageInfo: mountEl.querySelector("#previewPageInfo"),
-    previewZoom: mountEl.querySelector("#previewZoom"),
-    previewZoomIn: mountEl.querySelector("#previewZoomIn"),
-    previewZoomOut: mountEl.querySelector("#previewZoomOut"),
-    previewZoomReset: mountEl.querySelector("#previewZoomReset"),
-    previewZoomLabel: mountEl.querySelector("#previewZoomLabel"),
-    previewIssues: mountEl.querySelector("#previewIssues"),
-    previewEmpty: mountEl.querySelector("#previewEmpty"),
-    previewMissing: mountEl.querySelector("#previewMissing"),
-    previewCanvasWrap: mountEl.querySelector("#previewCanvasWrap"),
-    previewCanvas: mountEl.querySelector("#previewCanvas"),
-    previewImage: mountEl.querySelector("#previewImage"),
-    previewCloseBtn: mountEl.querySelector("#previewCloseBtn"),
+    detailOverlay: document.getElementById("reviewDetailOverlay"),
+    detailBack: document.getElementById("reviewDetailBack"),
+    detailHeading: document.getElementById("reviewDetailHeading"),
+    detailSubheading: document.getElementById("reviewDetailSubheading"),
+    detailCounter: document.getElementById("reviewDetailCounter"),
+    detailPrev: document.getElementById("reviewDetailPrev"),
+    detailNext: document.getElementById("reviewDetailNext"),
+    detailFormMount: document.getElementById("reviewDetailFormMount"),
+    detailIssues: document.getElementById("reviewDetailIssues"),
+    detailValidate: document.getElementById("reviewDetailValidate"),
+    detailDelete: document.getElementById("reviewDetailDelete"),
+    previewNav: document.getElementById("previewNav"),
+    previewPrevPage: document.getElementById("previewPrevPage"),
+    previewNextPage: document.getElementById("previewNextPage"),
+    previewPageInfo: document.getElementById("previewPageInfo"),
+    previewZoom: document.getElementById("previewZoom"),
+    previewZoomIn: document.getElementById("previewZoomIn"),
+    previewZoomOut: document.getElementById("previewZoomOut"),
+    previewZoomReset: document.getElementById("previewZoomReset"),
+    previewZoomLabel: document.getElementById("previewZoomLabel"),
+    previewMissing: document.getElementById("previewMissing"),
+    previewCanvasWrap: document.getElementById("previewCanvasWrap"),
+    previewCanvas: document.getElementById("previewCanvas"),
+    previewImage: document.getElementById("previewImage"),
   };
 
   const previewUi = {
-    panel: els.previewPanel,
-    title: els.previewTitle,
-    subtitle: els.previewSubtitle,
+    panel: els.detailOverlay,
+    title: els.detailHeading,
+    subtitle: els.detailSubheading,
     nav: els.previewNav,
     prevBtn: els.previewPrevPage,
     nextBtn: els.previewNextPage,
@@ -115,8 +120,6 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     zoomOutBtn: els.previewZoomOut,
     zoomResetBtn: els.previewZoomReset,
     zoomLabel: els.previewZoomLabel,
-    issues: els.previewIssues,
-    empty: els.previewEmpty,
     missing: els.previewMissing,
     canvasWrap: els.previewCanvasWrap,
     canvas: els.previewCanvas,
@@ -167,19 +170,225 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     return parts.length > 1 ? parts.slice(-2).join("/") : name;
   }
 
-  function syncPreviewLayout() {
+  function getVisibleLineIndices() {
+    refreshConfidence();
+    const duplicates = new Set(findDuplicateLineIndexes(lines));
+    return lines.reduce((indices, line, index) => {
+      if (!anomaliesOnly || lineHasActionableAnomaly(line, { isDuplicate: duplicates.has(index) })) {
+        indices.push(index);
+      }
+      return indices;
+    }, []);
+  }
+
+  function syncDetailVisibility() {
     const open = lines.length > 0 && previewOpen;
-    els.reviewLayout?.classList.toggle("review-layout--preview-open", open);
-    if (els.previewPanel) els.previewPanel.hidden = !open;
-    els.mount?.classList.toggle("ws-review-panel--preview-open", open);
+    if (els.detailOverlay) els.detailOverlay.hidden = !open;
+    document.body.classList.toggle("ws-review-detail-open", open);
   }
 
   function closeLinePreview({ clearSelection = false } = {}) {
     previewOpen = false;
     if (clearSelection) selectedLineIndex = null;
     showLinePreview(previewUi, null);
-    syncPreviewLayout();
+    syncDetailVisibility();
     renderTable();
+  }
+
+  function navigateDetail(delta) {
+    const visible = getVisibleLineIndices();
+    const pos = visible.indexOf(selectedLineIndex);
+    if (pos < 0) return;
+    const nextPos = pos + delta;
+    if (nextPos < 0 || nextPos >= visible.length) return;
+    openLinePreview(visible[nextPos]);
+  }
+
+  function applyLineFieldChange(line, index, field, input) {
+    let oldValue = "";
+    let newValue = "";
+    if (field.type === "number") {
+      line[field.key] = Number(input.value) || 0;
+    } else if (field.key === "taux") {
+      line[field.key] = Number(input.value);
+    } else if (field.key === "ice_frs") {
+      oldValue = String(input.dataset.prevValue ?? line.ice_frs ?? "");
+      const digits = input.value.replace(/\D/g, "").slice(0, 15);
+      line.ice_frs = digits.length === 15 ? digits : "";
+      input.value = line.ice_frs;
+      newValue = line.ice_frs;
+      line.ice_inferred = false;
+    } else if (field.key === "if") {
+      oldValue = String(input.dataset.prevValue ?? line.if ?? "");
+      line.if = input.value.trim();
+      input.value = line.if;
+      newValue = line.if;
+      line.if_inferred = false;
+    } else if (field.key === "lib_frss") {
+      oldValue = String(input.dataset.prevValue ?? line.lib_frss ?? "").trim();
+      newValue = String(input.value ?? "").trim();
+      line.lib_frss = newValue;
+      line.supplier_from_folder = false;
+    } else {
+      line[field.key] = input.value;
+    }
+    markFieldVerified(line, field.key);
+    if (["m_ht", "taux"].includes(field.key)) recalcTva(line);
+    return { oldValue, newValue };
+  }
+
+  function createDetailField(line, index, field) {
+    const wrap = document.createElement("label");
+    wrap.className = "ws-review-detail-field";
+
+    const label = document.createElement("span");
+    label.className = "ws-review-detail-label";
+    label.textContent = field.label;
+    wrap.appendChild(label);
+
+    let input;
+    if (field.type === "select") {
+      input = document.createElement("select");
+      const options = [...(field.options || [])];
+      const current = String(line[field.key] ?? "");
+      if (current && !options.includes(current)) options.unshift(current);
+      options.forEach((opt) => {
+        const option = document.createElement("option");
+        option.value = opt;
+        option.textContent = field.key === "taux" ? `${Number(opt) * 100}%` : opt;
+        input.appendChild(option);
+      });
+      input.value = current;
+    } else {
+      input = document.createElement("input");
+      input.type = field.type;
+      if (field.step) input.step = field.step;
+      if (field.readonly) input.readOnly = true;
+      const display = field.key === "source_file"
+        ? shortFilename(line[field.key])
+        : (line[field.key] ?? "");
+      input.value = display;
+      if (field.key === "source_file" && line[field.key]) input.title = line[field.key];
+    }
+
+    input.className = "ws-review-detail-input";
+    if (field.key !== "source_file") applyConfidenceToInput(input, field.key, line);
+
+    if (!field.readonly) {
+      if (field.key in BULK_EDIT_FIELDS) {
+        input.addEventListener("focus", () => {
+          input.dataset.prevValue = line[field.key] ?? "";
+        });
+      }
+      input.addEventListener("change", () => {
+        const { oldValue, newValue } = applyLineFieldChange(line, index, field, input);
+        renderDetailForm(index);
+        if (previewOpen && selectedLineIndex === index) {
+          showLinePreview(previewUi, line, index);
+        }
+        updateBadges();
+        scheduleSave();
+        if (field.key in BULK_EDIT_FIELDS) {
+          maybeOfferFieldBulk(field.key, oldValue, newValue, index);
+        }
+      });
+    }
+
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function renderDetailIssues(line, index) {
+    if (!els.detailIssues) return;
+    const duplicates = new Set(findDuplicateLineIndexes(lines));
+    const issues = lineIssueSummary(line, { isDuplicate: duplicates.has(index) });
+    if (!issues.length) {
+      els.detailIssues.hidden = true;
+      els.detailIssues.innerHTML = "";
+      return;
+    }
+    els.detailIssues.hidden = false;
+    els.detailIssues.innerHTML = issues
+      .map((issue) => `<span class="ws-review-issue ${issue.level}" title="${escapeHtml(issue.reason)}">${escapeHtml(issue.label)}</span>`)
+      .join("");
+  }
+
+  function updateDetailNav() {
+    const visible = getVisibleLineIndices();
+    const pos = visible.indexOf(selectedLineIndex);
+    if (els.detailCounter) {
+      els.detailCounter.textContent = visible.length && pos >= 0 ? `${pos + 1} / ${visible.length}` : "";
+    }
+    if (els.detailPrev) els.detailPrev.disabled = pos <= 0;
+    if (els.detailNext) els.detailNext.disabled = pos < 0 || pos >= visible.length - 1;
+  }
+
+  function renderDetailForm(index) {
+    if (!els.detailFormMount || index == null || index < 0 || index >= lines.length) return;
+    const line = lines[index];
+    if (!line) return;
+
+    renderDetailIssues(line, index);
+
+    const duplicates = new Set(findDuplicateLineIndexes(lines));
+    const isDuplicate = duplicates.has(index);
+    const verified = isLineReviewVerified(line);
+    const showValidate = lineNeedsReview(line, { isDuplicate }) || verified;
+
+    if (els.detailValidate) {
+      els.detailValidate.hidden = !showValidate;
+      els.detailValidate.textContent = verified ? "Ligne validée" : "Valider la ligne";
+      els.detailValidate.classList.toggle("is-verified", verified);
+    }
+    if (els.detailDelete) {
+      els.detailDelete.textContent = isDuplicate ? "Supprimer le doublon" : "Supprimer la ligne";
+    }
+
+    const sections = [
+      {
+        title: "Fournisseur",
+        fields: [
+          { key: "lib_frss", label: "Nom", type: "text" },
+          { key: "ice_frs", label: "Identifiant légal (ICE)", type: "text" },
+          { key: "if", label: "Identifiant fiscal (IF)", type: "text" },
+        ],
+      },
+      {
+        title: "Informations facture",
+        fields: [
+          { key: "fact_num", label: "N° facture", type: "text" },
+          { key: "date_fac", label: "Date facture", type: "date" },
+          { key: "date_paie", label: "Date échéance / paiement", type: "date" },
+          { key: "designation", label: "Désignation", type: "select", options: DESIGNATIONS },
+          { key: "taux", label: "Taux TVA", type: "select", options: ["0", "0.1", "0.2"] },
+          { key: "source_file", label: "Fichier source", type: "text", readonly: true },
+        ],
+      },
+      {
+        title: "Montants totaux",
+        fields: [
+          { key: "m_ht", label: "Total HT", type: "number", step: "0.01" },
+          { key: "tva", label: "Total TVA", type: "number", step: "0.01", readonly: true },
+          { key: "m_ttc", label: "Net à payer (TTC)", type: "number", step: "0.01", readonly: true },
+        ],
+      },
+    ];
+
+    els.detailFormMount.innerHTML = "";
+    sections.forEach((section) => {
+      const card = document.createElement("section");
+      card.className = "ws-review-detail-card";
+      const heading = document.createElement("h3");
+      heading.textContent = section.title;
+      card.appendChild(heading);
+      const grid = document.createElement("div");
+      grid.className = "ws-review-detail-grid";
+      section.fields.forEach((field) => grid.appendChild(createDetailField(line, index, field)));
+      card.appendChild(grid);
+      els.detailFormMount.appendChild(card);
+    });
+
+    updateDetailNav();
   }
 
   async function ensureLineDocumentCached(line) {
@@ -225,8 +434,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
 
     previewOpen = true;
     selectedLineIndex = index;
-    syncPreviewLayout();
+    syncDetailVisibility();
     renderTable();
+    renderDetailForm(index);
 
     const line = lines[index];
     if (els.previewMissing) {
@@ -254,6 +464,19 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       closeLinePreview({ clearSelection: true });
       return;
     }
+    if (anomaliesOnly) {
+      const visible = getVisibleLineIndices();
+      if (!visible.includes(selectedLineIndex)) {
+        if (visible.length) {
+          const nextIndex = visible[Math.min(selectedLineIndex, visible.length - 1)];
+          selectedLineIndex = nextIndex;
+        } else {
+          closeLinePreview({ clearSelection: true });
+          return;
+        }
+      }
+    }
+    renderDetailForm(selectedLineIndex);
     showLinePreview(previewUi, lines[selectedLineIndex], selectedLineIndex);
   }
 
@@ -458,6 +681,11 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
         tr.classList.add("selected-row");
       }
 
+      tr.addEventListener("click", (event) => {
+        if (event.target.closest("button, input, select, a, label")) return;
+        openLinePreview(index);
+      });
+
       tr.appendChild(renderIssueCell(line, isDuplicate));
 
       const fields = [
@@ -509,35 +737,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
             });
           }
           input.addEventListener("change", () => {
-            let oldValue = "";
-            let newValue = "";
-            if (field.type === "number") {
-              line[field.key] = Number(input.value) || 0;
-            } else if (field.key === "taux") {
-              line[field.key] = Number(input.value);
-            } else if (field.key === "ice_frs") {
-              oldValue = String(input.dataset.prevValue ?? line.ice_frs ?? "");
-              const digits = input.value.replace(/\D/g, "").slice(0, 15);
-              line.ice_frs = digits.length === 15 ? digits : "";
-              input.value = line.ice_frs;
-              newValue = line.ice_frs;
-              line.ice_inferred = false;
-            } else if (field.key === "if") {
-              oldValue = String(input.dataset.prevValue ?? line.if ?? "");
-              line.if = input.value.trim();
-              input.value = line.if;
-              newValue = line.if;
-              line.if_inferred = false;
-            } else if (field.key === "lib_frss") {
-              oldValue = String(input.dataset.prevValue ?? line.lib_frss ?? "").trim();
-              newValue = String(input.value ?? "").trim();
-              line.lib_frss = newValue;
-              line.supplier_from_folder = false;
-            } else {
-              line[field.key] = input.value;
-            }
-            markFieldVerified(line, field.key);
-            if (["m_ht", "taux"].includes(field.key)) recalcTva(line);
+            const { oldValue, newValue } = applyLineFieldChange(line, index, field, input);
             render();
             scheduleSave();
             if (field.key in BULK_EDIT_FIELDS) {
@@ -556,15 +756,11 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       const viewBtn = document.createElement("button");
       viewBtn.type = "button";
       viewBtn.className = "view-btn";
-      const previewingThisLine = previewOpen && selectedLineIndex === index;
-      viewBtn.textContent = previewingThisLine ? "Masquer" : "Voir";
-      viewBtn.title = previewingThisLine
-        ? "Fermer l'aperçu document"
-        : "Afficher la facture à côté pour revue";
+      viewBtn.textContent = "Ouvrir";
+      viewBtn.title = "Ouvrir la facture en grand pour vérifier les champs";
       viewBtn.addEventListener("click", (event) => {
         event.stopPropagation();
-        if (previewingThisLine) closeLinePreview();
-        else openLinePreview(index);
+        openLinePreview(index);
       });
       actionTd.appendChild(viewBtn);
 
@@ -708,7 +904,29 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   });
 
   bindPreviewControls(previewUi);
-  els.previewCloseBtn?.addEventListener("click", () => closeLinePreview());
+  els.detailBack?.addEventListener("click", () => closeLinePreview());
+  els.detailPrev?.addEventListener("click", () => navigateDetail(-1));
+  els.detailNext?.addEventListener("click", () => navigateDetail(1));
+  els.detailValidate?.addEventListener("click", () => {
+    if (selectedLineIndex != null) toggleLineValidation(selectedLineIndex);
+  });
+  els.detailDelete?.addEventListener("click", () => {
+    if (selectedLineIndex != null) deleteLineAt(selectedLineIndex);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!previewOpen || els.detailOverlay?.hidden) return;
+    if (event.target.closest("input, textarea, select")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeLinePreview();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      navigateDetail(-1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      navigateDetail(1);
+    }
+  });
 
   saver = createDebouncedSaver(async ({ eventType, summary }) => {
     await persistNow(eventType, summary, { line_count: lines.length });
