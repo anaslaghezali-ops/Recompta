@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocument } from "./dossier-documents.js?v=doc4";
+import { uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc11";
 
 const els = {};
 let session = null;
@@ -293,6 +293,7 @@ async function runQueue() {
 
   let uploaded = 0;
   let reused = 0;
+  let expandedFromArchives = 0;
   const failures = [];
 
   for (let index = 0; index < filesToSend.length; index += 1) {
@@ -301,13 +302,14 @@ async function runQueue() {
     els.progressText.textContent = `Envoi ${index + 1}/${filesToSend.length} — ${file.name}`;
     els.progressBar.style.width = `${percent}%`;
     try {
-      const saved = await uploadDossierDocument({
+      const saved = await uploadDossierFileForImport({
         dossierId: session.dossierId,
         file,
-        docType: "invoice",
+        skipIfSameNameAndSize: true,
       });
       if (saved?.reused) reused += 1;
       else uploaded += 1;
+      expandedFromArchives += saved?.children?.length || 0;
     } catch (error) {
       failures.push({ name: file.name, message: error.message });
     }
@@ -315,16 +317,21 @@ async function runQueue() {
 
   els.progressBar.style.width = "100%";
   const stored = uploaded + reused;
+  const docCount = expandedFromArchives || stored;
   if (failures.length) {
-    els.progressText.textContent = `${stored}/${filesToSend.length} reçu(s), ${failures.length} erreur(s).`;
+    els.progressText.textContent = `${docCount} document(s) reçu(s), ${failures.length} erreur(s).`;
     setStatus(`${uploaded} nouveau(x), ${reused} déjà présent(s), ${failures.length} échec(s)`, "warn");
   } else {
-    els.progressText.textContent = `${stored} fichier(s) reçu(s) sur ${filesToSend.length}. Lancez l'analyse IA depuis le workspace.`;
+    els.progressText.textContent = expandedFromArchives
+      ? `${expandedFromArchives} document(s) détecté(s) dans ${stored} archive(s). Lancez l'analyse IA depuis le workspace.`
+      : `${stored} fichier(s) reçu(s). Lancez l'analyse IA depuis le workspace.`;
     setStatus(
-      reused
-        ? `${uploaded} importé(s), ${reused} ignoré(s) (même nom et taille déjà présents)`
-        : `${uploaded} document(s) importé(s) — lancez l'analyse depuis le workspace`,
-      reused ? "warn" : "success",
+      expandedFromArchives
+        ? `${expandedFromArchives} pièce(s) importée(s) depuis ${stored} archive(s) — lancez l'extraction depuis le workspace`
+        : reused
+          ? `${uploaded} importé(s), ${reused} ignoré(s) (même nom et taille déjà présents)`
+          : `${uploaded} document(s) importé(s) — lancez l'analyse depuis le workspace`,
+      reused && !expandedFromArchives ? "warn" : "success",
     );
   }
 

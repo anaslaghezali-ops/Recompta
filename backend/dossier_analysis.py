@@ -159,6 +159,8 @@ def _should_skip_zip_for_analysis(
 ) -> bool:
     if not _is_zip_filename(doc.get("original_filename") or ""):
         return False
+    if (doc.get("doc_type") or "") == "archive":
+        return True
     children = _zip_child_documents(doc, documents)
     if not children:
         return False
@@ -259,7 +261,8 @@ async def queue_dossier_analysis(
             source_ids_with_lines = _source_ids_with_lines(lines)
             pending = [
                 doc for doc in documents
-                if not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
+                if (doc.get("doc_type") or "") != "archive"
+                and not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
                 and not _should_skip_zip_for_analysis(
                     doc, documents, processed_keys, source_ids_with_lines,
                 )

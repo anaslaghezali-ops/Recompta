@@ -1,4 +1,5 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
+import { expandUploadedFiles, isZipFile } from "./extract-client.js";
 
 export const DOCUMENTS_BUCKET = "dossier-documents";
 
@@ -161,9 +162,79 @@ export async function uploadDossierDocumentFromBlob({
   mime,
   docType,
   sourceId = null,
+  skipIfSameNameAndSize = false,
 }) {
   const file = new File([content], filename, { type: mime || "application/octet-stream" });
-  return uploadDossierDocument({ dossierId, file, docType, sourceId });
+  return uploadDossierDocument({
+    dossierId,
+    file,
+    docType,
+    sourceId,
+    skipIfSameNameAndSize,
+  });
+}
+
+/** Aligne le chemin d'un membre ZIP sur la convention backend (zipStem/fichier.pdf). */
+export function storagePathForZipMember(zipFilename, memberPath) {
+  const normalized = String(memberPath || "").replace(/\\/g, "/").replace(/^\.\//, "").trim();
+  const parts = normalized.split("/").filter((part) => part && part !== ".");
+  if (!parts.length) return normalized;
+  const zipStem = zipArchiveStem(zipFilename);
+  if (parts.length === 1) return `${zipStem}/${parts[0]}`;
+  if (parts[0].toLowerCase() !== zipStem.toLowerCase()) {
+    return `${zipStem}/${parts.join("/")}`;
+  }
+  return parts.join("/");
+}
+
+/**
+ * Importe un fichier dans le dossier. Les ZIP sont décompressés immédiatement :
+ * le conteneur est stocké en archive, chaque pièce exploitable en facture distincte.
+ */
+export async function uploadDossierFileForImport({
+  dossierId,
+  file,
+  skipIfSameNameAndSize = true,
+}) {
+  if (!file) return null;
+
+  if (isZipFile(file.name)) {
+    const archive = await uploadDossierDocument({
+      dossierId,
+      file,
+      docType: "archive",
+      skipIfSameNameAndSize,
+    });
+    const expanded = await expandUploadedFiles([file]);
+    if (!expanded.length) {
+      throw new Error("Archive vide ou sans facture exploitable (PDF, image).");
+    }
+
+    const children = [];
+    for (const item of expanded) {
+      const filename = storagePathForZipMember(file.name, item.filename);
+      const child = await uploadDossierDocumentFromBlob({
+        dossierId,
+        filename,
+        content: item.content,
+        mime: item.mime,
+        docType: "invoice",
+        skipIfSameNameAndSize,
+      });
+      if (child) children.push(child);
+    }
+
+    const allReused = Boolean(archive?.reused) && children.every((child) => child?.reused);
+    return { archive, children, reused: allReused };
+  }
+
+  const document = await uploadDossierDocument({
+    dossierId,
+    file,
+    docType: "invoice",
+    skipIfSameNameAndSize,
+  });
+  return { document, children: [], reused: Boolean(document?.reused) };
 }
 
 export function isZipDocument(docOrFilename) {
@@ -260,6 +331,8 @@ export function sourceIdsWithLines(lines = []) {
 
 export function shouldSkipZipForAnalysis(doc, documents, processedKeys, sourceIdsWithLines = null) {
   if (!isZipDocument(doc)) return false;
+  // ZIP importé comme conteneur : jamais une facture à extraire.
+  if (doc?.doc_type === "archive") return true;
   const children = getZipChildDocuments(doc, documents);
   if (!children.length) return false;
   // Archive déjà décompressée : ne pas re-mettre le ZIP en file (seulement les PDFs).
@@ -281,7 +354,9 @@ export function getZipExtractedChildren(zipDoc, docs) {
 }
 
 export function isExtractedArchiveZip(zipDoc, docs) {
-  return isZipDocument(zipDoc) && getZipExtractedChildren(zipDoc, docs).length > 0;
+  if (!isZipDocument(zipDoc)) return false;
+  if (zipDoc?.doc_type === "archive") return true;
+  return getZipExtractedChildren(zipDoc, docs).length > 0;
 }
 
 export function partitionDocumentsForDisplay(docs) {

@@ -40,6 +40,16 @@ def test_reuploaded_zip_not_blocked_by_old_children() -> None:
     assert not _should_skip_zip_for_analysis(new_zip, docs, set(), set())
 
 
+def test_archive_zip_always_skipped() -> None:
+    archive_zip = {
+        "id": 3,
+        "original_filename": "factures.zip",
+        "created_at": "2026-08-15T14:00:00Z",
+        "doc_type": "archive",
+    }
+    assert _should_skip_zip_for_analysis(archive_zip, [archive_zip], set(), set())
+
+
 def test_expanded_new_zip_skipped_but_child_pending() -> None:
     zip_doc = {
         "id": 2,
@@ -62,6 +72,7 @@ def test_expanded_new_zip_skipped_but_child_pending() -> None:
 
 def main() -> None:
     test_reuploaded_zip_not_blocked_by_old_children()
+    test_archive_zip_always_skipped()
     test_expanded_new_zip_skipped_but_child_pending()
     print("OK test_zip_reupload")
 

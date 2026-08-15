@@ -1102,6 +1102,7 @@ export function countPendingAnalysis(documents, workspace) {
   const withLines = sourceIdsWithLines(lines);
 
   for (const doc of documents || []) {
+    if (doc.doc_type === "archive") continue;
     if (doc.doc_type === "invoice") {
       if (shouldSkipZipForAnalysis(doc, documents, processedKeys, withLines)) continue;
       const sid = doc.source_id ? `sid:${doc.source_id}` : null;

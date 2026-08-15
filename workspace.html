@@ -404,7 +404,7 @@
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc10";
+    } from "./dossier-documents.js?v=doc11";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -419,9 +419,10 @@
       showWorkspaceToast,
       showImportCompletionToast,
       pollImportCompletions,
+      dismissHistoricImportJobs,
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs20";
+    } from "./import-jobs-client.js?v=jobs22";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace8";
     import {
@@ -482,6 +483,7 @@
     let bankMatchController = null;
     let bankMatchInFlight = false;
     let bankExtractInFlight = false;
+    let workspaceSessionStartedAt = new Date().toISOString();
 
     function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
@@ -1090,13 +1092,17 @@
       stopCompletionWatcher?.();
       const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
       if (!dossierIds.length) return;
-      stopCompletionWatcher = startImportCompletionWatcher(dossierIds, (job) => {
-        showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
-        if (job.dossier_id === selectedDossierId) {
-          reloadCockpit(selectedDossierId).catch(() => {});
-          if (activeTab === "review") ensureReviewController()?.load();
-        }
-      });
+      stopCompletionWatcher = startImportCompletionWatcher(
+        dossierIds,
+        (job) => {
+          showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
+          if (job.dossier_id === selectedDossierId) {
+            reloadCockpit(selectedDossierId).catch(() => {});
+            if (activeTab === "review") ensureReviewController()?.load();
+          }
+        },
+        { sinceIso: workspaceSessionStartedAt },
+      );
     }
 
     function startImportPolling() {
@@ -1757,6 +1763,15 @@
           });
           await reloadCockpit(dossierParam);
           if (tabParam) setTab(tabParam, { view: viewParam });
+          const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
+          if (dossierIds.length) {
+            try {
+              await dismissHistoricImportJobs(dossierIds);
+            } catch {
+              /* ignore */
+            }
+          }
+          workspaceSessionStartedAt = new Date().toISOString();
           startCompletionWatcher();
           initLucide();
         }
