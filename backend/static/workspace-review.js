@@ -10,6 +10,7 @@ import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
+  lineNeedsReview,
   refreshLinesFieldConfidence,
 } from "./field-confidence.js";
 import {
@@ -124,12 +125,6 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     }
   }
 
-  function lineNeedsReview(line, isDuplicate) {
-    if (isDuplicate) return true;
-    const conf = line.field_confidence || {};
-    return Object.values(conf).some((level) => level === "error" || level === "warn");
-  }
-
   function maybeOfferFieldBulk(fieldKey, oldValue, newValue, lineIndex) {
     const line = lines[lineIndex];
     if (!line || oldValue === newValue) return;
@@ -175,15 +170,18 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   function updateBadges() {
     refreshConfidence();
     const duplicates = findDuplicateLineIndexes(lines);
+    const duplicateSet = new Set(duplicates);
+    const linesNeedingReview = lines.filter((line, index) =>
+      lineNeedsReview(line, { isDuplicate: duplicateSet.has(index) }),
+    ).length;
     const { errors, warns } = countConfidenceIssues(lines);
-    const anomalyCount = errors + warns;
 
     if (els.lineCount) els.lineCount.textContent = `${lines.length} ligne(s)`;
     if (els.anomalyBadge) {
-      els.anomalyBadge.hidden = anomalyCount === 0;
-      els.anomalyBadge.textContent = errors > 0
-        ? `${errors} critique(s), ${warns} à relire`
-        : `${warns} à relire`;
+      els.anomalyBadge.hidden = linesNeedingReview === 0;
+      els.anomalyBadge.textContent = linesNeedingReview === 1
+        ? "1 ligne à relire"
+        : `${linesNeedingReview} lignes à relire`;
       els.anomalyBadge.className = errors > 0 ? "ws-review-badge danger" : "ws-review-badge warn";
     }
     if (els.duplicateBadge) {
@@ -203,7 +201,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     const duplicates = new Set(findDuplicateLineIndexes(lines));
 
     lines.forEach((line, index) => {
-      if (anomaliesOnly && !lineNeedsReview(line, duplicates.has(index))) return;
+      if (anomaliesOnly && !lineNeedsReview(line, { isDuplicate: duplicates.has(index) })) return;
 
       const tr = document.createElement("tr");
       if (duplicates.has(index)) tr.classList.add("ws-review-dup");

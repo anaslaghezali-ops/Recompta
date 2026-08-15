@@ -16,6 +16,7 @@ import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
+  lineNeedsReview,
   refreshLinesFieldConfidence,
 } from "./field-confidence.js";
 import {
@@ -514,10 +515,8 @@ function isAnomaliesReviewView() {
   return new URLSearchParams(window.location.search).get("view") === "anomalies";
 }
 
-function lineNeedsReview(line, isDuplicate) {
-  if (isDuplicate) return true;
-  const conf = line.field_confidence || {};
-  return Object.values(conf).some((level) => level === "error" || level === "warn");
+function lineNeedsReviewRow(line, isDuplicate) {
+  return lineNeedsReview(line, { isDuplicate });
 }
 
 function renderTable() {
@@ -527,7 +526,7 @@ function renderTable() {
   const anomaliesOnly = isAnomaliesReviewView();
 
   state.lines.forEach((line, index) => {
-    if (anomaliesOnly && !lineNeedsReview(line, duplicates.has(index))) return;
+    if (anomaliesOnly && !lineNeedsReviewRow(line, duplicates.has(index))) return;
     const tr = document.createElement("tr");
     if (index === state.selectedLineIndex) {
       tr.classList.add("selected-row");

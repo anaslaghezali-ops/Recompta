@@ -1,5 +1,7 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs13";
+import { countLinesNeedingReview } from "./field-confidence.js";
+import { findDuplicateLineIndexes } from "./extract-client.js";
 import {
   formatMonthLabel,
   formatRelativeTime,
@@ -20,16 +22,11 @@ export function daysUntilDeadline(year, month) {
   return Math.ceil((deadline.getTime() - Date.now()) / 86400000);
 }
 
-export function countLineAnomalies(lines) {
-  return (lines || []).filter((line) => {
-    const ice = String(line.ice_frs || "").replace(/\D/g, "");
-    if (ice.length !== 15) return true;
-    if (!String(line.fact_num || "").trim()) return true;
-    if (!String(line.lib_frss || "").trim()) return true;
-    const conf = line.field_confidence || {};
-    if (Object.values(conf).some((v) => v === "error" || v === "warn")) return true;
-    return false;
-  }).length;
+export function countLineAnomalies(lines, clientIce = "") {
+  return countLinesNeedingReview(lines, {
+    clientIce,
+    duplicateIndexes: findDuplicateLineIndexes(lines || []),
+  });
 }
 
 export function computeProgress(dossier, workspace) {
