@@ -25,6 +25,8 @@ const PORT_ACCESS_HINT =
 const FETCH_TIMEOUT_MS = 15000;
 const HEALTH_TIMEOUT_MS = 12000;
 const ANALYSIS_QUEUE_TIMEOUT_MS = 120000;
+/** Scans + Vision : un lot peut dépasser 60 s (rendu PDF + appel OpenAI). */
+const EXTRACT_TIMEOUT_MS = 300000;
 const HEALTH_RETRY_ATTEMPTS = 3;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -36,7 +38,9 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS)
     if (error?.name === "AbortError") {
       throw new Error(
         `Le serveur met trop de temps à répondre (${Math.round(timeoutMs / 1000)} s). ` +
-        "Réessayez dans quelques secondes — le Codespace peut être en train de se réveiller.",
+        (timeoutMs >= EXTRACT_TIMEOUT_MS
+          ? "Les scans IA sont lourds — réessayez ou réduisez le nombre de fichiers par lot."
+          : "Réessayez dans quelques secondes — le Codespace peut être en train de se réveiller."),
       );
     }
     throw new Error(UNREACHABLE_HINT);
@@ -94,8 +98,8 @@ export async function fetchServerHealth(apiUrl, { refresh = false } = {}) {
 // Envoi par petits lots : une requête unique de 100 fichiers dépasserait
 // largement les délais du navigateur et du proxy Codespace.
 const DEFAULT_BATCH_SIZE = 4;
-// Deux lots en vol : l'envoi du suivant recouvre le traitement du précédent.
-const DEFAULT_PARALLEL_BATCHES = 2;
+// Un seul lot HTTP en vol : évite de saturer le tunnel Codespace pendant la Vision.
+const DEFAULT_PARALLEL_BATCHES = 1;
 // Les scans font souvent 1 à 2 Mo ; au-delà, le tunnel Codespace coupe.
 const MAX_BATCH_BYTES = 3 * 1024 * 1024;
 
@@ -124,10 +128,15 @@ async function extractBatch(batch, apiUrl, normalizedIce) {
   batch.forEach((file) => formData.append("files", file));
   if (normalizedIce.length === 15) formData.append("client_ice", normalizedIce);
 
-  const response = await fetchWithRetry(`${apiUrl}/api/extract`, {
-    method: "POST",
-    body: formData,
-  });
+  const response = await fetchWithRetry(
+    `${apiUrl}/api/extract`,
+    {
+      method: "POST",
+      body: formData,
+    },
+    2,
+    EXTRACT_TIMEOUT_MS,
+  );
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }
