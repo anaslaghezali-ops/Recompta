@@ -48,13 +48,15 @@ export function buildPipelineSteps({
   clientId = null,
   pendingAnalysis = 0,
   bankPending = 0,
+  invoicePending = 0,
 }) {
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
   const hasBank = bank.length > 0;
   const hasBankDocument = hasBank || bankPending > 0;
   const hasLines = lines.length > 0;
-  const hasDocuments = hasLines || pendingAnalysis > 0;
+  const hasInvoiceWork = hasLines || invoicePending > 0;
+  const needsAnalysis = bankPending > 0 || invoicePending > 0;
   const isExported = statusKey === "exported";
   const isReview = statusKey === "in_review";
 
@@ -65,14 +67,14 @@ export function buildPipelineSteps({
   }
 
   const bankDone = hasBankDocument;
-  const purchasesDone = hasDocuments;
-  const analysisDone = hasLines;
+  const purchasesDone = hasInvoiceWork;
+  const analysisDone = !needsAnalysis && (hasLines || hasBank || !hasBankDocument);
   const reviewDone = hasLines && anomalyCount === 0;
   const exportDone = isExported;
 
   const bankCurrent = !hasBankDocument && !isExported;
-  const purchasesCurrent = hasBankDocument && !hasDocuments && !isExported;
-  const analysisCurrent = hasDocuments && !hasLines && !isExported;
+  const purchasesCurrent = hasBankDocument && !needsAnalysis && !hasInvoiceWork && !isExported;
+  const analysisCurrent = needsAnalysis && !isExported;
   const reviewCurrent = hasLines && anomalyCount > 0 && !isExported;
   const exportCurrent = hasLines && anomalyCount === 0 && !isExported && !isReview;
 
@@ -99,17 +101,27 @@ export function buildPipelineSteps({
     {
       key: "purchases",
       label: "Factures achats",
-      desc: hasLines ? `${lines.length} ligne${lines.length > 1 ? "s" : ""}` : "Importer les factures",
+      desc: hasLines
+        ? `${lines.length} ligne${lines.length > 1 ? "s" : ""}`
+        : invoicePending > 0
+          ? `${invoicePending} doc(s) en attente`
+          : hasBankDocument
+            ? "Optionnel"
+            : "Importer les factures",
       icon: "file-input",
-      status: stepStatus(purchasesDone, purchasesCurrent && !hasLines),
+      status: stepStatus(purchasesDone, purchasesCurrent),
       href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
     },
     {
       key: "analysis",
       label: "Analyse IA",
-      desc: hasLines ? "Extraction terminée" : "Lancer l'extraction",
+      desc: analysisDone
+        ? "Extraction terminée"
+        : bankPending > 0 && invoicePending === 0
+          ? "Lancer l'extraction du relevé"
+          : "Lancer l'extraction",
       icon: "sparkles",
-      status: stepStatus(hasLines, !hasLines && purchasesDone && !isExported),
+      status: stepStatus(analysisDone, analysisCurrent),
       action: "analysis",
     },
     {
@@ -172,6 +184,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
     clientId: client.id,
     pendingAnalysis,
     bankPending,
+    invoicePending,
   });
   const lastActivity = workspace?.updated_at || dossier.updated_at || dossier.created_at;
 
