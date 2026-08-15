@@ -26,6 +26,18 @@ import {
   markDossierExported,
   saveDossierWorkspace,
 } from "./dossier-persistence.js?v=persist1";
+import {
+  findDocumentForLine,
+  fetchDossierDocumentBytes,
+  listDossierDocuments,
+} from "./dossier-documents.js?v=doc12";
+import {
+  bindPreviewControls,
+  clearSourceFiles,
+  hasSourceFile,
+  registerSourceFile,
+  showLinePreview,
+} from "./document-preview.js?v=preview9";
 import { periodToMmaaaa } from "./dossiers-client.js?v=dash2";
 import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
 
@@ -43,6 +55,10 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   let saver = null;
   let anomaliesOnly = false;
   let pendingFieldBulk = null;
+  let previewOpen = false;
+  let selectedLineIndex = null;
+  let documentsCache = [];
+  const documentFetchInFlight = new Map();
 
   const els = {
     mount: mountEl,
@@ -54,6 +70,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     anomaliesToggle: mountEl.querySelector("#reviewAnomaliesToggle"),
     tableBody: mountEl.querySelector("#reviewTableBody"),
     emptyState: mountEl.querySelector("#reviewEmptyState"),
+    reviewLayout: mountEl.querySelector("#reviewLayout"),
     tableWrap: mountEl.querySelector("#reviewTableWrap"),
     exportBtn: mountEl.querySelector("#reviewExportBtn"),
     exportDialog: document.getElementById("reviewExportDialog"),
@@ -64,6 +81,47 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     fieldBulkTitle: document.getElementById("reviewFieldBulkTitle"),
     fieldBulkIntro: document.getElementById("reviewFieldBulkIntro"),
     fieldBulkApplyAll: document.getElementById("reviewFieldBulkApplyAll"),
+    previewPanel: mountEl.querySelector("#documentPreviewPanel"),
+    previewTitle: mountEl.querySelector("#previewTitle"),
+    previewSubtitle: mountEl.querySelector("#previewSubtitle"),
+    previewNav: mountEl.querySelector("#previewNav"),
+    previewPrevPage: mountEl.querySelector("#previewPrevPage"),
+    previewNextPage: mountEl.querySelector("#previewNextPage"),
+    previewPageInfo: mountEl.querySelector("#previewPageInfo"),
+    previewZoom: mountEl.querySelector("#previewZoom"),
+    previewZoomIn: mountEl.querySelector("#previewZoomIn"),
+    previewZoomOut: mountEl.querySelector("#previewZoomOut"),
+    previewZoomReset: mountEl.querySelector("#previewZoomReset"),
+    previewZoomLabel: mountEl.querySelector("#previewZoomLabel"),
+    previewIssues: mountEl.querySelector("#previewIssues"),
+    previewEmpty: mountEl.querySelector("#previewEmpty"),
+    previewMissing: mountEl.querySelector("#previewMissing"),
+    previewCanvasWrap: mountEl.querySelector("#previewCanvasWrap"),
+    previewCanvas: mountEl.querySelector("#previewCanvas"),
+    previewImage: mountEl.querySelector("#previewImage"),
+    previewCloseBtn: mountEl.querySelector("#previewCloseBtn"),
+  };
+
+  const previewUi = {
+    panel: els.previewPanel,
+    title: els.previewTitle,
+    subtitle: els.previewSubtitle,
+    nav: els.previewNav,
+    prevBtn: els.previewPrevPage,
+    nextBtn: els.previewNextPage,
+    pageInfo: els.previewPageInfo,
+    zoom: els.previewZoom,
+    zoomInBtn: els.previewZoomIn,
+    zoomOutBtn: els.previewZoomOut,
+    zoomResetBtn: els.previewZoomReset,
+    zoomLabel: els.previewZoomLabel,
+    issues: els.previewIssues,
+    empty: els.previewEmpty,
+    missing: els.previewMissing,
+    canvasWrap: els.previewCanvasWrap,
+    canvas: els.previewCanvas,
+    image: els.previewImage,
+    missingMessage: "Document introuvable dans le dossier. Vérifiez l'onglet Documents ou réimportez la facture.",
   };
 
   function ctx() {
@@ -107,6 +165,96 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     if (!name) return "";
     const parts = name.split("/");
     return parts.length > 1 ? parts.slice(-2).join("/") : name;
+  }
+
+  function syncPreviewLayout() {
+    const open = lines.length > 0 && previewOpen;
+    els.reviewLayout?.classList.toggle("review-layout--preview-open", open);
+    if (els.previewPanel) els.previewPanel.hidden = !open;
+    els.mount?.classList.toggle("ws-review-panel--preview-open", open);
+  }
+
+  function closeLinePreview({ clearSelection = false } = {}) {
+    previewOpen = false;
+    if (clearSelection) selectedLineIndex = null;
+    showLinePreview(previewUi, null);
+    syncPreviewLayout();
+    renderTable();
+  }
+
+  async function ensureLineDocumentCached(line) {
+    if (hasSourceFile(line)) return true;
+
+    const { dossierId } = ctx();
+    if (!dossierId || !line) return false;
+
+    if (!documentsCache.length) {
+      documentsCache = await listDossierDocuments(dossierId);
+    }
+
+    const doc = findDocumentForLine(line, documentsCache);
+    if (!doc) return false;
+
+    const cacheKey = line.source_id || doc.source_id || String(doc.id);
+    if (documentFetchInFlight.has(cacheKey)) {
+      await documentFetchInFlight.get(cacheKey);
+      return hasSourceFile(line);
+    }
+
+    const promise = (async () => {
+      const { content, mime, filename } = await fetchDossierDocumentBytes(doc);
+      const id = line.source_id || doc.source_id;
+      if (!id) return;
+      registerSourceFile({ id, filename, content, mime });
+    })();
+
+    documentFetchInFlight.set(cacheKey, promise);
+    try {
+      await promise;
+    } finally {
+      documentFetchInFlight.delete(cacheKey);
+    }
+    return hasSourceFile(line);
+  }
+
+  async function openLinePreview(index) {
+    if (index == null || index < 0 || index >= lines.length) {
+      closeLinePreview({ clearSelection: true });
+      return;
+    }
+
+    previewOpen = true;
+    selectedLineIndex = index;
+    syncPreviewLayout();
+    renderTable();
+
+    const line = lines[index];
+    if (els.previewMissing) {
+      els.previewMissing.hidden = false;
+      els.previewMissing.textContent = "Chargement du document…";
+    }
+    if (els.previewCanvasWrap) els.previewCanvasWrap.hidden = true;
+
+    try {
+      await ensureLineDocumentCached(line);
+    } catch (error) {
+      if (els.previewMissing) {
+        els.previewMissing.hidden = false;
+        els.previewMissing.textContent = `Impossible de charger le document : ${error.message}`;
+      }
+      return;
+    }
+
+    await showLinePreview(previewUi, line, index);
+  }
+
+  function refreshOpenPreview() {
+    if (!previewOpen || selectedLineIndex == null) return;
+    if (selectedLineIndex < 0 || selectedLineIndex >= lines.length) {
+      closeLinePreview({ clearSelection: true });
+      return;
+    }
+    showLinePreview(previewUi, lines[selectedLineIndex], selectedLineIndex);
   }
 
   function scheduleSave(eventType = "save", summary = "Modifications enregistrées") {
@@ -183,6 +331,20 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   function deleteLineAt(index) {
     if (index < 0 || index >= lines.length) return;
     lines.splice(index, 1);
+
+    if (selectedLineIndex === index) {
+      selectedLineIndex = lines.length ? Math.min(index, lines.length - 1) : null;
+      if (previewOpen) {
+        if (selectedLineIndex != null) {
+          openLinePreview(selectedLineIndex);
+        } else {
+          closeLinePreview({ clearSelection: true });
+        }
+      }
+    } else if (selectedLineIndex != null && selectedLineIndex > index) {
+      selectedLineIndex -= 1;
+    }
+
     render();
     scheduleSave("delete_line", "Ligne supprimée");
   }
@@ -292,6 +454,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       if (lineIssueSummary(line, { isDuplicate }).some((item) => item.level === "error")) {
         tr.classList.add("ws-review-anomaly-error");
       }
+      if (previewOpen && selectedLineIndex === index) {
+        tr.classList.add("selected-row");
+      }
 
       tr.appendChild(renderIssueCell(line, isDuplicate));
 
@@ -388,6 +553,21 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       const actionTd = document.createElement("td");
       actionTd.className = "row-actions";
 
+      const viewBtn = document.createElement("button");
+      viewBtn.type = "button";
+      viewBtn.className = "view-btn";
+      const previewingThisLine = previewOpen && selectedLineIndex === index;
+      viewBtn.textContent = previewingThisLine ? "Masquer" : "Voir";
+      viewBtn.title = previewingThisLine
+        ? "Fermer l'aperçu document"
+        : "Afficher la facture à côté pour revue";
+      viewBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (previewingThisLine) closeLinePreview();
+        else openLinePreview(index);
+      });
+      actionTd.appendChild(viewBtn);
+
       const hasReviewFlag = lineNeedsReview(line, { isDuplicate })
         || isLineReviewVerified(line);
       if (hasReviewFlag) {
@@ -428,7 +608,10 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
           "Les champs en orange clair (date de paiement, IF) se complètent via le rapprochement bancaire ou à la demande.";
       }
     }
+    if (els.reviewLayout) els.reviewLayout.hidden = lines.length === 0;
     if (els.tableWrap) els.tableWrap.hidden = lines.length === 0 || (anomaliesOnly && visibleRows === 0);
+    if (lines.length === 0) closeLinePreview({ clearSelection: true });
+    else refreshOpenPreview();
   }
 
   function render() {
@@ -440,6 +623,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     const { dossierId } = ctx();
     if (!dossierId) {
       lines = [];
+      documentsCache = [];
+      clearSourceFiles();
+      closeLinePreview({ clearSelection: true });
       render();
       return;
     }
@@ -447,6 +633,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     try {
       const data = await loadDossierWorkspace(dossierId);
       lines = [...(data?.lines || [])];
+      documentsCache = [];
+      clearSourceFiles();
+      closeLinePreview({ clearSelection: true });
       render();
       setStatus(lines.length ? `${lines.length} ligne(s) chargée(s)` : "Aucune ligne — lancez l'extraction", "muted");
     } catch (error) {
@@ -517,6 +706,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   els.fieldBulkDialog?.addEventListener("close", () => {
     pendingFieldBulk = null;
   });
+
+  bindPreviewControls(previewUi);
+  els.previewCloseBtn?.addEventListener("click", () => closeLinePreview());
 
   saver = createDebouncedSaver(async ({ eventType, summary }) => {
     await persistNow(eventType, summary, { line_count: lines.length });

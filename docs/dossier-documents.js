@@ -476,6 +476,44 @@ export async function getDocumentDownloadUrl(storagePath, expiresIn = 3600) {
   return data?.signedUrl || null;
 }
 
+export async function fetchDossierDocumentBytes(doc) {
+  const url = await getDocumentDownloadUrl(doc.storage_path);
+  if (!url) throw new Error("Lien de téléchargement indisponible.");
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Téléchargement impossible (${response.status}).`);
+  }
+
+  const content = await response.arrayBuffer();
+  const mime = doc.mime_type || response.headers.get("content-type") || "application/octet-stream";
+  return {
+    content,
+    mime,
+    filename: doc.original_filename || "document",
+  };
+}
+
+export function findDocumentForLine(line, documents = []) {
+  if (!line) return null;
+  const invoiceDocs = (documents || []).filter(
+    (doc) => doc && doc.doc_type !== "bank" && doc.doc_type !== "archive" && !isZipDocument(doc),
+  );
+
+  if (line.source_id) {
+    const byId = invoiceDocs.find((doc) => doc.source_id === line.source_id);
+    if (byId) return byId;
+  }
+
+  if (line.source_file) {
+    return invoiceDocs.find(
+      (doc) => documentsShareIdentity(doc.original_filename, line.source_file),
+    ) || null;
+  }
+
+  return null;
+}
+
 export async function downloadDossierDocument(doc) {
   const url = await getDocumentDownloadUrl(doc.storage_path);
   if (!url) throw new Error("Lien de téléchargement indisponible.");

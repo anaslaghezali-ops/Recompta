@@ -91,6 +91,19 @@ export function addSourceFiles(items) {
   return records;
 }
 
+export function registerSourceFile({ id, filename, content, mime }) {
+  const normalizedId = String(id || "").trim();
+  if (!normalizedId) return null;
+  const rec = {
+    id: normalizedId,
+    filename: normalizePath(filename),
+    content,
+    mime: mime || "application/octet-stream",
+  };
+  sourceFiles.set(normalizedId, rec);
+  return rec;
+}
+
 /** Conserve les documents déjà extraits ; ajoute le lot courant. */
 export function cacheSourceFiles(items) {
   return addSourceFiles(items);
@@ -241,8 +254,8 @@ export async function showLinePreview(ui, line, lineIndex = null) {
   if (!source) {
     if (ui.missing) {
       ui.missing.hidden = false;
-      ui.missing.textContent =
-        "Document non disponible en local. Réimportez le ZIP pour afficher l'aperçu.";
+      ui.missing.textContent = ui.missingMessage
+        || "Document non disponible en local. Réimportez le ZIP pour afficher l'aperçu.";
     }
     if (ui.canvasWrap) ui.canvasWrap.hidden = true;
     if (ui.nav) ui.nav.hidden = true;

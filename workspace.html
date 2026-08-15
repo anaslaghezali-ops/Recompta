@@ -277,22 +277,66 @@
               </button>
             </div>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
+            <p class="hint ws-review-preview-hint">Cliquez <strong>Voir</strong> pour afficher la facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau.</p>
             <div id="reviewEmptyState" class="ws-empty">
               <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
               <h3>Aucune ligne extraite</h3>
               <p>Importez des factures puis lancez l'extraction depuis l'onglet Période active.</p>
             </div>
-            <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
-              <table class="ws-review-table">
-                <thead>
-                  <tr>
-                    <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
-                    <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
-                    <th>Date fact.</th><th>Date paie</th><th></th>
-                  </tr>
-                </thead>
-                <tbody id="reviewTableBody"></tbody>
-              </table>
+            <div id="reviewLayout" class="review-layout" hidden>
+              <div class="review-table-pane">
+                <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
+                  <table class="ws-review-table">
+                    <thead>
+                      <tr>
+                        <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
+                        <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
+                        <th>Date fact.</th><th>Date paie</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="reviewTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <aside id="documentPreviewPanel" class="review-preview-pane" hidden>
+                <div class="preview-header">
+                  <div>
+                    <h3 id="previewTitle">Document</h3>
+                    <p id="previewSubtitle" class="hint preview-subtitle"></p>
+                  </div>
+                  <div class="preview-toolbar">
+                    <div class="preview-toolbar-row">
+                      <div id="previewZoom" class="preview-zoom" hidden>
+                        <button id="previewZoomOut" class="dash-btn dash-btn-sm" type="button" aria-label="Dézoomer">−</button>
+                        <span id="previewZoomLabel">100%</span>
+                        <button id="previewZoomIn" class="dash-btn dash-btn-sm" type="button" aria-label="Zoomer">+</button>
+                        <button id="previewZoomReset" class="dash-btn dash-btn-sm" type="button" title="Réinitialiser le zoom">100%</button>
+                      </div>
+                      <button
+                        id="previewCloseBtn"
+                        class="dash-btn dash-btn-sm preview-close-btn"
+                        type="button"
+                        aria-label="Fermer l'aperçu"
+                        title="Fermer l'aperçu"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div id="previewNav" class="preview-nav" hidden>
+                      <button id="previewPrevPage" class="dash-btn dash-btn-sm" type="button" aria-label="Page précédente">‹</button>
+                      <span id="previewPageInfo">1 / 1</span>
+                      <button id="previewNextPage" class="dash-btn dash-btn-sm" type="button" aria-label="Page suivante">›</button>
+                    </div>
+                  </div>
+                </div>
+                <div id="previewIssues" class="preview-issues" hidden></div>
+                <p id="previewEmpty" class="hint preview-empty">Cliquez « Voir » sur une ligne pour afficher la facture.</p>
+                <p id="previewMissing" class="hint warn preview-missing" hidden></p>
+                <div id="previewCanvasWrap" class="preview-canvas-wrap" hidden>
+                  <canvas id="previewCanvas"></canvas>
+                  <img id="previewImage" alt="Aperçu facture" hidden />
+                </div>
+              </aside>
             </div>
           </section>
         </div>
@@ -446,7 +490,7 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review5";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review6";
     import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload1";
     import {
       bindSidebarMobile,
