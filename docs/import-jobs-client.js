@@ -271,6 +271,60 @@ export function importDocTypeLabel(docType) {
   return DOC_TYPE_LABELS[docType] || "import";
 }
 
+export function isAnalysisJob(job) {
+  return Boolean(job?.options?.analysis_from_documents);
+}
+
+function ensureImportToastContainer() {
+  let container = document.getElementById("importToastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "importToastContainer";
+    container.className = "import-toast-container";
+    document.body.appendChild(container);
+  }
+  return container;
+}
+
+export function showWorkspaceToast({
+  title,
+  message,
+  variant = "info",
+  linkUrl = null,
+  linkLabel = "Voir",
+  durationMs = 12000,
+} = {}) {
+  const container = ensureImportToastContainer();
+  const toast = document.createElement("div");
+  toast.className = `import-toast import-toast-${variant}`;
+  toast.innerHTML = `
+    <div class="import-toast-body">
+      <strong>${title || ""}</strong>
+      ${message ? `<p>${message}</p>` : ""}
+    </div>
+    ${linkUrl ? `<a class="import-toast-link" href="${linkUrl}">${linkLabel}</a>` : ""}
+  `;
+  container.appendChild(toast);
+
+  window.setTimeout(() => {
+    toast.classList.add("is-leaving");
+    window.setTimeout(() => toast.remove(), 300);
+  }, durationMs);
+}
+
+export function showAnalysisStartedToast({ fileCount = 0, dossierName = "" } = {}) {
+  const prefix = dossierName ? `${dossierName} — ` : "";
+  const countLabel = fileCount > 0
+    ? `${fileCount} fichier${fileCount > 1 ? "s" : ""} en file d'attente`
+    : "Traitement démarré";
+  showWorkspaceToast({
+    title: "Analyse IA lancée",
+    message: `${prefix}${countLabel}. Suivez la progression sur cette page.`,
+    variant: "info",
+    durationMs: 10000,
+  });
+}
+
 export function workspacePageUrl(clientId, dossierId, { tab = null, view = null } = {}) {
   const params = new URLSearchParams();
   if (clientId) params.set("client", clientId);
@@ -295,14 +349,18 @@ export function formatActiveImportLabel(job) {
   if (!job) return "";
   const progress = jobProgressPercent(job);
   const status = JOB_STATUS_LABELS[job.status] || job.status;
-  const kind = importDocTypeLabel(job.doc_type);
+  const analysis = isAnalysisJob(job);
+  const kind = analysis ? "Analyse IA" : importDocTypeLabel(job.doc_type);
+  const docKind = importDocTypeLabel(job.doc_type);
   const counts = `${job.processed_files || 0}/${job.total_files || 0}`;
   const batchNote = job.aggregated_job_count > 1 ? ` · ${job.aggregated_job_count} lots` : "";
   if (job.status === "processing" || job.status === "uploading") {
-    return `${kind} ${progress}% · ${counts} fichier(s)${batchNote}`;
+    const detail = analysis ? docKind : kind;
+    return `${kind} — ${detail} ${progress}% · ${counts} fichier(s)${batchNote}`;
   }
   if (job.status === "queued") {
-    return `${kind} en attente · ${job.total_files || 0} fichier(s)${batchNote}`;
+    const detail = analysis ? docKind : kind;
+    return `${kind} — ${detail} en attente · ${job.total_files || 0} fichier(s)${batchNote}`;
   }
   return `${kind} · ${status}`;
 }
@@ -310,17 +368,30 @@ export function formatActiveImportLabel(job) {
 export function formatImportCompletionMessage(job) {
   if (!job) return "";
   const kind = importDocTypeLabel(job.doc_type);
+  const analysis = isAnalysisJob(job);
   if (job.status === "failed") {
+    if (analysis) {
+      return `Analyse ${kind} échouée${job.error_summary ? ` — ${job.error_summary}` : ""}`;
+    }
     return `Import ${kind} échoué${job.error_summary ? ` — ${job.error_summary}` : ""}`;
   }
   if (job.doc_type === "bank") {
+    if (analysis) {
+      return `Relevé bancaire analysé — ${job.processed_files || 1} fichier traité`;
+    }
     return `Relevé bancaire importé — ${job.processed_files || 1} fichier traité`;
   }
   const total = job.total_files || 0;
   const processed = job.processed_files || 0;
   const failed = job.failed_files || 0;
   if (failed > 0) {
+    if (analysis) {
+      return `Analyse ${kind} terminée — ${processed}/${total} fichier(s), ${failed} erreur(s)`;
+    }
     return `Import ${kind} terminé — ${processed}/${total} fichier(s), ${failed} erreur(s)`;
+  }
+  if (analysis) {
+    return `Analyse ${kind} terminée — ${processed} fichier(s) traité(s)`;
   }
   return `Import ${kind} terminé — ${processed} fichier(s) traité(s)`;
 }
@@ -377,37 +448,21 @@ export function showImportCompletionToast(job, { dossierName = "", clientId = nu
   const message = formatImportCompletionMessage(job);
   const prefix = dossierName ? `${dossierName} — ` : "";
   const text = `${prefix}${message}`;
-  const isAnalysis = Boolean(job.options?.analysis_from_documents);
+  const analysis = isAnalysisJob(job);
   const title = job.status === "failed"
-    ? (isAnalysis ? "Analyse échouée" : "Import échoué")
-    : (isAnalysis ? "Analyse IA terminée" : "Import terminé");
+    ? (analysis ? "Analyse échouée" : "Import échoué")
+    : (analysis ? "Analyse IA terminée" : "Import terminé");
   const linkUrl = clientId
-    ? workspacePageUrl(clientId, job.dossier_id, { tab: "review" })
+    ? workspacePageUrl(clientId, job.dossier_id, { tab: analysis ? "review" : "cockpit" })
     : importJobPageUrl(job, job.dossier_id, clientId);
 
-  let container = document.getElementById("importToastContainer");
-  if (!container) {
-    container = document.createElement("div");
-    container.id = "importToastContainer";
-    container.className = "import-toast-container";
-    document.body.appendChild(container);
-  }
-
-  const toast = document.createElement("div");
-  toast.className = `import-toast import-toast-${job.status === "failed" ? "error" : "success"}`;
-  toast.innerHTML = `
-    <div class="import-toast-body">
-      <strong>${title}</strong>
-      <p>${text}</p>
-    </div>
-    <a class="import-toast-link" href="${linkUrl}">Voir</a>
-  `;
-  container.appendChild(toast);
-
-  window.setTimeout(() => {
-    toast.classList.add("is-leaving");
-    window.setTimeout(() => toast.remove(), 300);
-  }, 12000);
+  showWorkspaceToast({
+    title,
+    message: text,
+    variant: job.status === "failed" ? "error" : "success",
+    linkUrl,
+    linkLabel: analysis ? "Revue" : "Voir",
+  });
 
   if (shouldNotifyImportCompletion(job) && "Notification" in window && Notification.permission === "granted") {
     try {
