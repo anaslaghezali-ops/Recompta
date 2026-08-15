@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=suppliers1" />
+  <link rel="stylesheet" href="dashboard.css?v=review-detail2" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -278,68 +278,76 @@
               </button>
             </div>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
-            <p class="hint ws-review-preview-hint">Cliquez <strong>Voir</strong> pour afficher la facture à côté. Fermez l'aperçu (<strong>Masquer</strong> ou ✕) pour voir tout le tableau.</p>
+            <p class="hint ws-review-preview-hint">Cliquez <strong>Ouvrir</strong> ou une ligne pour afficher la facture en grand avec tous les champs à vérifier.</p>
             <div id="reviewEmptyState" class="ws-empty">
               <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
               <h3>Aucune ligne extraite</h3>
               <p>Importez des factures puis lancez l'extraction depuis l'onglet Période active.</p>
             </div>
             <div id="reviewLayout" class="review-layout" hidden>
-              <div class="review-table-pane">
-                <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
-                  <table class="ws-review-table">
-                    <thead>
-                      <tr>
-                        <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
-                        <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
-                        <th>Date fact.</th><th>Date paie</th><th></th>
-                      </tr>
-                    </thead>
-                    <tbody id="reviewTableBody"></tbody>
-                  </table>
-                </div>
+              <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
+                <table class="ws-review-table">
+                  <thead>
+                    <tr>
+                      <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
+                      <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
+                      <th>Date fact.</th><th>Date paie</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="reviewTableBody"></tbody>
+                </table>
               </div>
-              <aside id="documentPreviewPanel" class="review-preview-pane" hidden>
-                <div class="preview-header">
-                  <div>
-                    <h3 id="previewTitle">Document</h3>
-                    <p id="previewSubtitle" class="hint preview-subtitle"></p>
-                  </div>
-                  <div class="preview-toolbar">
-                    <div class="preview-toolbar-row">
-                      <div id="previewZoom" class="preview-zoom" hidden>
-                        <button id="previewZoomOut" class="dash-btn dash-btn-sm" type="button" aria-label="Dézoomer">−</button>
-                        <span id="previewZoomLabel">100%</span>
-                        <button id="previewZoomIn" class="dash-btn dash-btn-sm" type="button" aria-label="Zoomer">+</button>
-                        <button id="previewZoomReset" class="dash-btn dash-btn-sm" type="button" title="Réinitialiser le zoom">100%</button>
-                      </div>
-                      <button
-                        id="previewCloseBtn"
-                        class="dash-btn dash-btn-sm preview-close-btn"
-                        type="button"
-                        aria-label="Fermer l'aperçu"
-                        title="Fermer l'aperçu"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div id="previewNav" class="preview-nav" hidden>
-                      <button id="previewPrevPage" class="dash-btn dash-btn-sm" type="button" aria-label="Page précédente">‹</button>
-                      <span id="previewPageInfo">1 / 1</span>
-                      <button id="previewNextPage" class="dash-btn dash-btn-sm" type="button" aria-label="Page suivante">›</button>
-                    </div>
-                  </div>
-                </div>
-                <div id="previewIssues" class="preview-issues" hidden></div>
-                <p id="previewEmpty" class="hint preview-empty">Cliquez « Voir » sur une ligne pour afficher la facture.</p>
-                <p id="previewMissing" class="hint warn preview-missing" hidden></p>
-                <div id="previewCanvasWrap" class="preview-canvas-wrap" hidden>
-                  <canvas id="previewCanvas"></canvas>
-                  <img id="previewImage" alt="Aperçu facture" hidden />
-                </div>
-              </aside>
             </div>
           </section>
+        </div>
+
+        </div>
+
+        <div id="reviewDetailOverlay" class="ws-review-detail" hidden>
+          <header class="ws-review-detail-header">
+            <button type="button" class="dash-btn" id="reviewDetailBack">
+              <i data-lucide="arrow-left"></i> Retour au tableau
+            </button>
+            <div class="ws-review-detail-title">
+              <h2 id="reviewDetailHeading">Facture</h2>
+              <p id="reviewDetailSubheading" class="hint"></p>
+            </div>
+            <div class="ws-review-detail-header-actions">
+              <span id="reviewDetailCounter" class="ws-review-detail-counter"></span>
+              <button type="button" class="ws-review-detail-nav-btn" id="reviewDetailPrev" aria-label="Ligne précédente">‹</button>
+              <button type="button" class="ws-review-detail-nav-btn" id="reviewDetailNext" aria-label="Ligne suivante">›</button>
+            </div>
+          </header>
+          <div class="ws-review-detail-body">
+            <div class="ws-review-detail-form">
+              <div id="reviewDetailIssues" class="ws-review-detail-issues" hidden></div>
+              <div id="reviewDetailFormMount"></div>
+              <div class="ws-review-detail-actions">
+                <button type="button" class="dash-btn dash-btn-primary" id="reviewDetailValidate">Valider la ligne</button>
+                <button type="button" class="dash-btn danger" id="reviewDetailDelete">Supprimer la ligne</button>
+              </div>
+            </div>
+            <aside class="ws-review-detail-preview">
+              <div class="ws-review-detail-preview-toolbar">
+                <div id="previewZoom" class="preview-zoom" hidden>
+                  <button id="previewZoomOut" class="dash-btn dash-btn-sm" type="button" aria-label="Dézoomer">−</button>
+                  <span id="previewZoomLabel">100%</span>
+                  <button id="previewZoomIn" class="dash-btn dash-btn-sm" type="button" aria-label="Zoomer">+</button>
+                  <button id="previewZoomReset" class="dash-btn dash-btn-sm" type="button" title="Réinitialiser le zoom">100%</button>
+                </div>
+                <div id="previewNav" class="preview-nav" hidden>
+                  <button id="previewPrevPage" class="dash-btn dash-btn-sm" type="button" aria-label="Page précédente">‹</button>
+                  <span id="previewPageInfo">1 / 1</span>
+                  <button id="previewNextPage" class="dash-btn dash-btn-sm" type="button" aria-label="Page suivante">›</button>
+                </div>
+              </div>
+              <p id="previewMissing" class="hint warn preview-missing" hidden></p>
+              <div id="previewCanvasWrap" class="preview-canvas-wrap" hidden>
+                <canvas id="previewCanvas"></canvas>
+                <img id="previewImage" alt="Aperçu facture" hidden />
+              </div>
+            </aside>
+          </div>
         </div>
 
         <div id="suppliersView" hidden>
@@ -535,7 +543,7 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review8";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review9";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
     import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload1";
     import {
