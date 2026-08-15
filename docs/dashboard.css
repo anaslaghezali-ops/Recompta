@@ -2716,6 +2716,38 @@
   color: var(--dash-success, #059669);
 }
 
+.ws-review-validate-head {
+  min-width: 5.5rem;
+  text-align: center;
+  vertical-align: bottom;
+}
+
+.ws-review-validate-head span {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: inherit;
+}
+
+.ws-review-validate-all {
+  white-space: nowrap;
+  width: 100%;
+}
+
+.ws-review-validate-all:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-review-validate-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.ws-review-actions-col {
+  width: 1%;
+  white-space: nowrap;
+}
+
 .ws-review-delete { white-space: nowrap; }
 
 .ws-export-review-list {

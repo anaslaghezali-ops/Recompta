@@ -69,6 +69,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     removeDuplicatesBtn: mountEl.querySelector("#reviewRemoveDuplicatesBtn"),
     anomaliesToggle: mountEl.querySelector("#reviewAnomaliesToggle"),
     tableBody: mountEl.querySelector("#reviewTableBody"),
+    validateAllBtn: mountEl.querySelector("#reviewValidateAllBtn"),
     emptyState: mountEl.querySelector("#reviewEmptyState"),
     reviewLayout: mountEl.querySelector("#reviewLayout"),
     tableWrap: mountEl.querySelector("#reviewTableWrap"),
@@ -588,6 +589,34 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     scheduleSave("verify_line", isLineReviewVerified(line) ? "Ligne validée" : "Validation annulée");
   }
 
+  function countLinesToValidate() {
+    const duplicates = new Set(findDuplicateLineIndexes(lines));
+    return lines.reduce((count, line, index) => {
+      if (isLineReviewVerified(line)) return count;
+      if (!lineNeedsReview(line, { isDuplicate: duplicates.has(index) })) return count;
+      return count + 1;
+    }, 0);
+  }
+
+  function validateAllLines() {
+    const duplicates = new Set(findDuplicateLineIndexes(lines));
+    let count = 0;
+    lines.forEach((line, index) => {
+      if (isLineReviewVerified(line)) return;
+      const isDuplicate = duplicates.has(index);
+      if (!lineNeedsReview(line, { isDuplicate })) return;
+      verifyReviewLine(line, { isDuplicate });
+      count += 1;
+    });
+    if (!count) {
+      setStatus("Aucune ligne à valider", "muted");
+      return;
+    }
+    render();
+    scheduleSave("verify_all", `${count} ligne(s) validée(s)`);
+    setStatus(`${count} ligne(s) validée(s)`, "success");
+  }
+
   function removeDuplicates() {
     const duplicates = new Set(findDuplicateLineIndexes(lines));
     if (!duplicates.size) return;
@@ -635,6 +664,13 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     }
     if (els.removeDuplicatesBtn) els.removeDuplicatesBtn.hidden = duplicates.length === 0;
     if (els.exportBtn) els.exportBtn.disabled = lines.length === 0;
+    if (els.validateAllBtn) {
+      const pending = countLinesToValidate();
+      els.validateAllBtn.disabled = pending === 0;
+      els.validateAllBtn.title = pending
+        ? `Valider les ${pending} ligne(s) en attente`
+        : "Toutes les lignes sont déjà validées";
+    }
   }
 
   function renderIssueCell(line, isDuplicate) {
@@ -763,6 +799,10 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
         openLinePreview(index);
       });
       actionTd.appendChild(viewBtn);
+      tr.appendChild(actionTd);
+
+      const validateTd = document.createElement("td");
+      validateTd.className = "row-actions ws-review-validate-cell";
 
       const hasReviewFlag = lineNeedsReview(line, { isDuplicate })
         || isLineReviewVerified(line);
@@ -776,17 +816,28 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
           ? "Ligne validée — recliquez pour annuler"
           : "Confirmer que cette ligne est correcte";
         validateBtn.classList.toggle("is-verified", verified);
-        validateBtn.addEventListener("click", () => toggleLineValidation(index));
-        actionTd.appendChild(validateBtn);
+        validateBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          toggleLineValidation(index);
+        });
+        validateTd.appendChild(validateBtn);
+      } else {
+        validateTd.textContent = "—";
       }
+      tr.appendChild(validateTd);
 
+      const deleteTd = document.createElement("td");
+      deleteTd.className = "row-actions";
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "dash-btn dash-btn-sm ws-review-delete";
       deleteBtn.textContent = duplicates.has(index) ? "Doublon" : "Suppr.";
-      deleteBtn.addEventListener("click", () => deleteLineAt(index));
-      actionTd.appendChild(deleteBtn);
-      tr.appendChild(actionTd);
+      deleteBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteLineAt(index);
+      });
+      deleteTd.appendChild(deleteBtn);
+      tr.appendChild(deleteTd);
       els.tableBody.appendChild(tr);
     });
 
@@ -893,6 +944,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     downloadExcel();
   });
   els.anomaliesToggle?.addEventListener("click", () => setAnomaliesOnly(!anomaliesOnly));
+  els.validateAllBtn?.addEventListener("click", () => validateAllLines());
   els.fieldBulkApplyAll?.addEventListener("click", () => {
     const count = applyPendingFieldBulk();
     render();
