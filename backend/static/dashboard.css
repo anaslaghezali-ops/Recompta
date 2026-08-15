@@ -2296,6 +2296,40 @@
 .ws-analysis-copy p { margin: 0; font-size: 0.84rem; color: var(--dash-muted); }
 .ws-analysis-meta { margin-top: 0.35rem !important; font-size: 0.78rem !important; }
 
+.ws-analysis-server {
+  margin-top: 0.65rem;
+  font-size: 0.78rem;
+  color: var(--dash-muted);
+}
+
+.ws-analysis-server summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.ws-analysis-server-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.ws-analysis-server-field input {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.ws-analysis-server-status {
+  font-size: 0.74rem;
+}
+
+.ws-analysis-server-status[data-tone="ok"] { color: #15803d; }
+.ws-analysis-server-status[data-tone="warn"] { color: #b45309; }
+.ws-analysis-server-status[data-tone="muted"] { color: var(--dash-muted); }
+
 .ws-analysis-actions {
   display: flex;
   gap: 0.5rem;

@@ -16,11 +16,15 @@ export function saveApiUrl(url) {
 }
 
 const UNREACHABLE_HINT =
-  "Connexion au serveur interrompue. Vérifiez, dans l'ordre : (1) uvicorn tourne " +
-  "toujours dans le Codespace, (2) port 8000 en Public, (3) l'URL correspond au " +
-  "Codespace actuel.";
+  "Le serveur ne répond pas pour l'instant. Si le Codespace vient de démarrer, attendez 10–20 s puis réessayez. " +
+  "Sinon : uvicorn actif, port 8000 en Public, URL à jour dans les paramètres ci-dessous.";
+
+const PORT_ACCESS_HINT =
+  "Accès refusé au Codespace — ouvrez l'onglet Ports, port 8000 → visibilité Public, puis réessayez.";
 
 const FETCH_TIMEOUT_MS = 15000;
+const HEALTH_TIMEOUT_MS = 12000;
+const HEALTH_RETRY_ATTEMPTS = 3;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -29,7 +33,10 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS)
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error(`${UNREACHABLE_HINT} (délai dépassé — le Codespace ne répond pas en ${Math.round(timeoutMs / 1000)} s.)`);
+      throw new Error(
+        `Le serveur met trop de temps à répondre (${Math.round(timeoutMs / 1000)} s). ` +
+        "Réessayez dans quelques secondes — le Codespace peut être en train de se réveiller.",
+      );
     }
     throw new Error(UNREACHABLE_HINT);
   } finally {
@@ -37,17 +44,17 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS)
   }
 }
 
-async function fetchOrExplain(url, options) {
-  return fetchWithTimeout(url, options);
+async function fetchOrExplain(url, options, { attempts = 2, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
+  return fetchWithRetry(url, options, attempts, timeoutMs);
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Une coupure ponctuelle du tunnel Codespace ne doit pas perdre le lot. */
-async function fetchWithRetry(url, options, attempts = 2) {
+async function fetchWithRetry(url, options, attempts = 2, timeoutMs = FETCH_TIMEOUT_MS) {
   for (let i = 0; ; i += 1) {
     try {
-      return await fetchWithTimeout(url, options);
+      return await fetchWithTimeout(url, options, timeoutMs);
     } catch (error) {
       if (i >= attempts - 1) throw error;
       await sleep(1000 * (i + 1));
@@ -68,14 +75,17 @@ async function errorFromResponse(response) {
     detail = "";
   }
   if (response.status === 302 || response.status === 401 || response.status === 403) {
-    return new Error(UNREACHABLE_HINT);
+    return new Error(PORT_ACCESS_HINT);
   }
   return new Error(detail || `Erreur serveur (${response.status})`);
 }
 
 export async function fetchServerHealth(apiUrl, { refresh = false } = {}) {
   const url = refresh ? `${apiUrl}/api/health?refresh=true` : `${apiUrl}/api/health`;
-  const response = await fetchOrExplain(url);
+  const response = await fetchOrExplain(url, {}, {
+    attempts: HEALTH_RETRY_ATTEMPTS,
+    timeoutMs: HEALTH_TIMEOUT_MS,
+  });
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
 }
@@ -226,25 +236,33 @@ export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
     return {
       ok: false,
       message:
-        "Configurez l'URL du Codespace (port 8000) : sans serveur actif, la file d'attente ne peut pas être traitée.",
+        "URL serveur non configurée — renseignez l'URL publique du Codespace (port 8000) ci-dessous.",
     };
   }
 
-  const health = await fetchServerHealth(apiUrl);
-  if (!health.import_worker_enabled) {
+  try {
+    const health = await fetchServerHealth(apiUrl);
+    if (!health.import_worker_enabled) {
+      return {
+        ok: false,
+        message:
+          "Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env du Codespace, puis redémarrez uvicorn.",
+      };
+    }
+
+    await kickImportJobWorker(apiUrl, { limit });
+    return {
+      ok: true,
+      message: "Traitement lancé sur le serveur.",
+      pollSeconds: health.import_worker_poll_seconds,
+    };
+  } catch (error) {
     return {
       ok: false,
-      message:
-        "Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env du Codespace, puis redémarrez uvicorn.",
+      transient: true,
+      message: error.message || UNREACHABLE_HINT,
     };
   }
-
-  await kickImportJobWorker(apiUrl, { limit });
-  return {
-    ok: true,
-    message: "Traitement lancé sur le serveur.",
-    pollSeconds: health.import_worker_poll_seconds,
-  };
 }
 
 export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
@@ -297,11 +315,12 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
 }
 
 export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "" } = {}) {
-  if (!apiUrl) throw new Error("Configurez l'URL du Codespace (port 8000) pour lancer l'analyse IA.");
+  if (!apiUrl) throw new Error("Renseignez l'URL du Codespace (port 8000) pour lancer l'analyse IA.");
   const params = new URLSearchParams({ doc_type: docType, client_ice: clientIce || "" });
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/dossiers/${dossierId}/analyze?${params}`,
     { method: "POST" },
+    { attempts: 3, timeoutMs: HEALTH_TIMEOUT_MS },
   );
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
