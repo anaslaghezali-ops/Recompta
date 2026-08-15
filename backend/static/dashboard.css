@@ -2743,14 +2743,9 @@
 
 .review-layout--preview-open {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 46%);
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 48%);
   gap: 1rem;
   align-items: start;
-}
-
-.ws-review-panel--preview-open.review-layout--preview-open,
-.ws-review-panel .review-layout--preview-open {
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 48%);
 }
 
 .review-table-pane {
@@ -2928,5 +2923,214 @@
   .ws-review-panel--preview-open .preview-canvas-wrap {
     min-height: 320px;
     max-height: 70vh;
+  }
+}
+
+.ws-suppliers-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.ws-suppliers-header h2 {
+  margin: 0 0 0.2rem;
+}
+
+.ws-suppliers-header p {
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 0.88rem;
+}
+
+.ws-suppliers-search {
+  min-width: 260px;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.88rem;
+}
+
+.ws-suppliers-status {
+  margin: 0 0 0.75rem;
+  font-size: 0.84rem;
+}
+
+.ws-suppliers-status[data-tone="success"] { color: var(--dash-success, #059669); }
+.ws-suppliers-status[data-tone="error"] { color: var(--dash-danger); }
+
+.ws-suppliers-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 420px;
+}
+
+.ws-suppliers-list-pane {
+  border: 1px solid var(--dash-border);
+  border-radius: 12px;
+  background: var(--dash-surface, #fff);
+  overflow: hidden;
+}
+
+.ws-suppliers-list {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 16rem);
+  overflow: auto;
+}
+
+.ws-suppliers-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: none;
+  border-bottom: 1px solid var(--dash-border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-suppliers-list-item:hover {
+  background: var(--dash-surface-2, #f8fafc);
+}
+
+.ws-suppliers-list-item.is-active {
+  background: #eef6ff;
+  box-shadow: inset 3px 0 0 var(--dash-accent);
+}
+
+.ws-suppliers-list-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.ws-suppliers-list-meta,
+.ws-suppliers-list-total {
+  font-size: 0.78rem;
+  color: var(--dash-muted);
+}
+
+.ws-suppliers-list-empty {
+  padding: 1rem;
+}
+
+.ws-suppliers-detail-pane {
+  min-width: 0;
+}
+
+.ws-suppliers-detail-empty {
+  min-height: 280px;
+}
+
+.ws-suppliers-detail-header {
+  margin-bottom: 0.85rem;
+}
+
+.ws-suppliers-detail-header h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.ws-suppliers-detail-meta,
+.ws-suppliers-detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--dash-muted);
+}
+
+.ws-suppliers-detail-stats {
+  margin-top: 0.35rem;
+  font-weight: 600;
+  color: var(--dash-text);
+}
+
+.ws-suppliers-months {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.ws-suppliers-month {
+  border: 1px solid var(--dash-border);
+  border-radius: 12px;
+  background: var(--dash-surface, #fff);
+  overflow: hidden;
+}
+
+.ws-suppliers-month-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--dash-border);
+  background: var(--dash-surface-2, #f8fafc);
+}
+
+.ws-suppliers-month-head h4 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.ws-suppliers-table-wrap {
+  overflow: auto;
+}
+
+.ws-suppliers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.ws-suppliers-table th,
+.ws-suppliers-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--dash-border);
+  text-align: left;
+}
+
+.ws-suppliers-table th {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--dash-muted);
+  background: #fff;
+}
+
+.ws-suppliers-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-suppliers-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 960px) {
+  .ws-suppliers-header {
+    flex-direction: column;
+  }
+
+  .ws-suppliers-search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .ws-suppliers-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-suppliers-list {
+    max-height: 240px;
   }
 }
