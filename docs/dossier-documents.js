@@ -179,14 +179,42 @@ function zipArchiveStem(filename) {
   return base.replace(/\.zip$/i, "");
 }
 
+function zipBasename(filename) {
+  return String(filename || "").replace(/\\/g, "/").split("/").pop().toLowerCase();
+}
+
+function zipUploadBounds(zipDoc, docs) {
+  const zipCreated = String(zipDoc.created_at || "");
+  const base = zipBasename(zipDoc.original_filename);
+  let nextCreated = null;
+  for (const doc of docs || []) {
+    if (!doc || doc.id === zipDoc.id || !isZipDocument(doc)) continue;
+    if (zipBasename(doc.original_filename) !== base) continue;
+    const created = String(doc.created_at || "");
+    if (created > zipCreated && (!nextCreated || created < nextCreated)) {
+      nextCreated = created;
+    }
+  }
+  return { zipCreated, nextCreated };
+}
+
+function docInZipWindow(doc, zipCreated, nextCreated) {
+  const created = String(doc.created_at || "");
+  if (created < zipCreated) return false;
+  if (nextCreated && created >= nextCreated) return false;
+  return true;
+}
+
 export function getZipChildDocuments(zipDoc, docs) {
   if (!zipDoc || !isZipDocument(zipDoc)) return [];
   const stemLower = zipArchiveStem(zipDoc.original_filename).toLowerCase();
   const stemPrefix = stemLower.split("-")[0].trim();
+  const { zipCreated, nextCreated } = zipUploadBounds(zipDoc, docs);
 
   const direct = (docs || []).filter((doc) => {
     if (!doc || doc.id === zipDoc.id) return false;
     if (isZipDocument(doc)) return false;
+    if (!docInZipWindow(doc, zipCreated, nextCreated)) return false;
     const path = String(doc.original_filename || "").replace(/\\/g, "/");
     const parts = path.split("/").filter(Boolean);
     if (parts.length < 2) return false;
@@ -203,6 +231,7 @@ export function getZipChildDocuments(zipDoc, docs) {
   if (zips.length !== 1 || zips[0].id !== zipDoc.id) return [];
   return (docs || []).filter((doc) => {
     if (!doc || doc.id === zipDoc.id || isZipDocument(doc)) return false;
+    if (!docInZipWindow(doc, zipCreated, nextCreated)) return false;
     if (doc.doc_type && doc.doc_type !== "invoice") return false;
     const parts = String(doc.original_filename || "").replace(/\\/g, "/").split("/").filter(Boolean);
     return parts.length >= 2;

@@ -329,7 +329,7 @@ class SupabaseService:
             f"{self.base}/rest/v1/dossier_documents",
             params={
                 "dossier_id": f"eq.{dossier_id}",
-                "select": "id, storage_path, source_id, original_filename, created_at",
+                "select": "id, storage_path, source_id, original_filename, size_bytes, created_at",
                 "order": "created_at.desc",
                 "limit": "200",
             },
@@ -357,7 +357,7 @@ class SupabaseService:
             source_id=source_id or None,
             original_filename=filename,
         )
-        if existing:
+        if existing and int(existing.get("size_bytes") or 0) == len(content):
             return existing
 
         import re
