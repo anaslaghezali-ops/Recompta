@@ -679,6 +679,38 @@
   min-width: 11rem;
 }
 
+.ws-period-history-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--dash-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ws-period-history-link:hover {
+  color: #1d4ed8;
+}
+
+.ws-client-meta-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ws-client-meta-link:hover strong {
+  color: var(--dash-accent);
+}
+
 .ws-hero {
   display: flex;
   align-items: stretch;

@@ -43,6 +43,9 @@
         <div class="ws-period-bar" id="periodBar" hidden>
           <label for="periodSelect">Période active</label>
           <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période"></select>
+          <button type="button" class="ws-period-history-link" id="periodHistoryLink" hidden>
+            Voir les périodes clôturées →
+          </button>
         </div>
 
         <div class="ws-import-banner" id="importBanner" hidden>
@@ -1655,13 +1658,29 @@
     function renderPeriodSelector() {
       const periods = cockpit?.allPeriods || [];
       const openPeriods = periods.filter((d) => d.status !== "exported");
+      const closedCount = periods.length - openPeriods.length;
+      const historyLink = document.getElementById("periodHistoryLink");
+      if (historyLink) {
+        historyLink.hidden = closedCount === 0;
+        historyLink.textContent = closedCount === 1
+          ? "Voir la période clôturée →"
+          : `Voir les ${closedCount} périodes clôturées →`;
+      }
 
-      if (openPeriods.length <= 1) {
+      if (openPeriods.length <= 1 && closedCount === 0) {
         periodBar.hidden = true;
         return;
       }
 
       periodBar.hidden = false;
+      const showSelect = openPeriods.length > 1;
+      periodSelect.hidden = !showSelect;
+      periodBar.querySelector("label")?.toggleAttribute("hidden", !showSelect);
+
+      if (!showSelect) {
+        return;
+      }
+
       periodSelect.innerHTML = openPeriods.map((d) => {
         const label = `${formatMonthLabel(d.period_month)} ${d.period_year}`;
         const meta = STATUS_META[d.status]?.label || "";
@@ -1883,8 +1902,11 @@
         <span>Client depuis <strong>${new Date(client.created_at).toLocaleDateString("fr-FR")}</strong></span>
         <span><strong>${client.dossiers.length}</strong> période${client.dossiers.length > 1 ? "s" : ""} TVA</span>
         <span><strong>${openCount}</strong> en cours</span>
-        <span><strong>${doneCount}</strong> clôturée${doneCount > 1 ? "s" : ""}</span>
+        ${doneCount > 0
+          ? `<button type="button" class="ws-client-meta-link" id="clientClosedPeriodsLink"><strong>${doneCount}</strong> clôturée${doneCount > 1 ? "s" : ""}</button>`
+          : `<span><strong>0</strong> clôturée</span>`}
       `;
+      document.getElementById("clientClosedPeriodsLink")?.addEventListener("click", () => setTab("history"));
     }
 
     function renderYearTabs() {
@@ -2121,6 +2143,7 @@
       selectedDossierId = Number(periodSelect.value);
       await reloadCockpit(selectedDossierId);
     });
+    document.getElementById("periodHistoryLink")?.addEventListener("click", () => setTab("history"));
 
     document.getElementById("newPeriodBtn").addEventListener("click", () => openNewPeriodModal());
     document.getElementById("historyNewPeriodBtn").addEventListener("click", () => openNewPeriodModal());
