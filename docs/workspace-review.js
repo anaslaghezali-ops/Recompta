@@ -5,12 +5,12 @@ import {
   countLinesWithFieldValue,
   countSupplierFieldTargets,
   findDuplicateLineIndexes,
-  refreshLinesFieldConfidence,
 } from "./extract-client.js?v=dedupe2";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
+  refreshLinesFieldConfidence,
 } from "./field-confidence.js";
 import {
   createDebouncedSaver,
@@ -149,7 +149,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     if (!pendingFieldBulk) return 0;
     const { fieldKey, oldValue, newValue, supplierName, scope } = pendingFieldBulk;
     const count = scope === "supplier"
-      ? applySupplierFieldValueBulk(lines, fieldKey, oldValue, newValue, supplierName)
+      ? applySupplierFieldValueBulk(lines, fieldKey, supplierName, oldValue, newValue)
       : applyFieldValueBulk(lines, fieldKey, oldValue, newValue);
     pendingFieldBulk = null;
     return count;
