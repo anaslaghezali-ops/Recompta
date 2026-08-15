@@ -47,6 +47,53 @@ const ambiguousTxn = { ...mproTxn, id: "amb-1", absAmount: 3474, amount: -3474 }
 const ambiguousResult = applyBankStatement([ambiguousTxn], ambiguousLines);
 assert(ambiguousResult.pendingMatches[0].proposals.length === 2, "two proposals when ambiguous");
 
+const mproMobTxn = {
+  id: "mpro-mob-1",
+  date: "2026-06-15",
+  label: "EMISSION D'UN VIREMENT MOBPRO N° 014290 EN FAVEUR DE MPro, 007780000191200000073923 A BCM CASABLANCA",
+  amount: -3474,
+  absAmount: 3474,
+  type: "payment",
+};
+
+const moseFoodLines = [
+  { fact_num: "V081505", lib_frss: "Mose Food", m_ttc: 867, designation: "A", source_file: "a.pdf", taux: 0.1 },
+  { fact_num: "V081505", lib_frss: "Mose Food", m_ttc: 867, designation: "A", source_file: "a.pdf", taux: 0.2 },
+  { fact_num: "V081351", lib_frss: "Mose Food", m_ttc: 1740, designation: "B", source_file: "b.pdf", taux: 0.2 },
+];
+
+const mosePending = applyBankStatement([mproMobTxn], moseFoodLines);
+assert(mosePending.pendingMatches.length === 1, "Mose Food pending match");
+assert(mosePending.pendingMatches[0].proposals[0].invoiceCount === 2, "two Mose Food invoices");
+assert(mosePending.pendingMatches[0].proposals[0].lineCount === 3, "three Mose Food lines");
+
+const storedPaymentTxn = {
+  id: "stored-1",
+  date: "2026-06-15",
+  label: "EMISSION D'UN VIREMENT MOBPRO EN FAVEUR DE MPro",
+  amount: 3474,
+  type: "payment",
+};
+const normalizedPayment = applyBankStatement([storedPaymentTxn], moseFoodLines);
+assert(normalizedPayment.pendingMatches.length === 1, "stored positive payment amount still matches");
+
+const paidLines = moseFoodLines.map((line) => ({ ...line, date_paie: "2026-06-01" }));
+const skipPaid = applyBankStatement([mproMobTxn], paidLines);
+assert(skipPaid.pendingMatches.length === 0, "already paid lines are ignored");
+assert(skipPaid.stats.paymentsUnmatched === 1, "payment unmatched when invoices already paid");
+
+const aliasBlockedLines = [
+  { fact_num: "A1", lib_frss: "Mode Food", m_ttc: 2000, designation: "x", source_file: "a.pdf" },
+  { fact_num: "A2", lib_frss: "Mode Food", m_ttc: 1474, designation: "y", source_file: "a2.pdf" },
+  { fact_num: "B1", lib_frss: "Eat Meat", m_ttc: 1000, designation: "z", source_file: "b.pdf" },
+];
+const aliasBlockedTxn = { ...mproTxn, id: "alias-blocked", absAmount: 3474, amount: -3474 };
+const aliasBlocked = applyBankStatement([aliasBlockedTxn], aliasBlockedLines, {
+  supplierAliases: { MPRO: "EATMEAT" },
+});
+assert(aliasBlocked.pendingMatches.length === 1, "learned alias mismatch still prompts confirmation");
+assert(aliasBlocked.pendingMatches[0].proposals[0].lib_frss === "Mode Food", "Mode Food proposal kept");
+
 const achibestLines = [
   {
     fact_num: "FV-001",

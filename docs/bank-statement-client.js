@@ -232,9 +232,16 @@ export function normalizeBankTransactions(rawList) {
       const normalizedLabel = normalizeText(label);
       if (SKIP_KEYWORDS.test(normalizedLabel)) return null;
 
+      const declaredType = String(item.type || "").trim().toLowerCase();
+      if (declaredType === "payment" || declaredType === "fee") {
+        amount = -Math.abs(amount);
+      } else if (declaredType === "credit") {
+        amount = Math.abs(amount);
+      }
+
       const isDebit = amount < 0;
-      const isFee = item.type === "fee" || (FEE_KEYWORDS.test(normalizedLabel) && isDebit);
-      let type = item.type || "other";
+      const isFee = declaredType === "fee" || (FEE_KEYWORDS.test(normalizedLabel) && isDebit);
+      let type = declaredType || "other";
       if (isFee) type = "fee";
       else if (isDebit) type = "payment";
       else type = "credit";
@@ -255,10 +262,21 @@ function invoiceGroupKey(line) {
   return [line.fact_num || "", line.lib_frss || "", line.source_file || ""].join("|");
 }
 
-function buildInvoiceGroups(lines) {
+function lineHasPaymentDate(line) {
+  return Boolean(String(line?.date_paie || "").trim());
+}
+
+function lineIsAvailableForMatch(line, index, usedLineIndices) {
+  if (!line || line.designation === "FRAIS BANCAIRE") return false;
+  if (usedLineIndices.has(index)) return false;
+  if (lineHasPaymentDate(line)) return false;
+  return true;
+}
+
+function buildInvoiceGroups(lines, usedLineIndices = new Set()) {
   const groups = new Map();
   lines.forEach((line, index) => {
-    if (line.designation === "FRAIS BANCAIRE") return;
+    if (!lineIsAvailableForMatch(line, index, usedLineIndices)) return;
     const key = invoiceGroupKey(line);
     if (!groups.has(key)) {
       groups.set(key, { key, indices: [], totalTtc: 0, lib_frss: line.lib_frss || "", fact_num: line.fact_num || "" });
@@ -322,8 +340,7 @@ function supplierKeysFromLabel(label, groups, lines, usedLineIndices, supplierAl
     }
   });
   lines.forEach((line, index) => {
-    if (usedLineIndices.has(index)) return;
-    if (line.designation === "FRAIS BANCAIRE") return;
+    if (!lineIsAvailableForMatch(line, index, usedLineIndices)) return;
     if (labelScore(label, line.lib_frss, line.fact_num) > 0) {
       const key = supplierNameKey(line.lib_frss);
       if (key) keys.add(key);
@@ -347,11 +364,6 @@ export function extractBankBeneficiaryToken(label) {
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
-}
-
-function labelMatchesLearnedAlias(label, supplierAliases) {
-  const hay = normalizeText(label);
-  return Object.keys(supplierAliases || {}).some((token) => token && hay.includes(token));
 }
 
 /** Candidats fournisseur dont la somme TTC des factures non rapprochées = montant du virement. */
@@ -458,8 +470,9 @@ export function applyBankStatement(
     updated.filter((l) => l.designation === "FRAIS BANCAIRE").map(existingFeeKey),
   );
 
-  const groups = buildInvoiceGroups(updated);
-  const paymentTxns = transactions.filter((t) => t.type === "payment");
+  const groups = buildInvoiceGroups(updated, usedLineIndices);
+  const normalizedTransactions = normalizeBankTransactions(transactions);
+  const paymentTxns = normalizedTransactions.filter((t) => t.type === "payment");
 
   for (const txn of paymentTxns) {
     const debitAmount = txn.absAmount;
@@ -485,8 +498,7 @@ export function applyBankStatement(
     const lineCandidates = updated
       .map((line, index) => ({ line, index }))
       .filter(({ line, index }) => {
-        if (line.designation === "FRAIS BANCAIRE") return false;
-        if (usedLineIndices.has(index)) return false;
+        if (!lineIsAvailableForMatch(line, index, usedLineIndices)) return false;
         const ttc = lineTtcAmount(line);
         return ttc > 0 && amountsMatch(ttc, debitAmount);
       })
@@ -555,7 +567,7 @@ export function applyBankStatement(
     }
 
     const amountCandidates = findSupplierAmountCandidates(groups, usedGroupKeys, debitAmount);
-    if (amountCandidates.length > 0 && !labelMatchesLearnedAlias(txn.label, supplierAliases)) {
+    if (amountCandidates.length > 0) {
       pendingMatches.push({
         txn,
         bankToken: extractBankBeneficiaryToken(txn.label),
@@ -571,7 +583,7 @@ export function applyBankStatement(
   }
 
   const newFeeLines = [];
-  for (const txn of transactions) {
+  for (const txn of normalizedTransactions) {
     if (txn.type !== "fee") {
       if (txn.type === "credit" || txn.type === "other") skipped.push(txn);
       continue;

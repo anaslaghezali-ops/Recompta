@@ -1,7 +1,8 @@
 import {
   applyBankStatement,
   applyPaymentToLineIndices,
-} from "./bank-statement-client.js?v=bank2";
+  normalizeBankTransactions,
+} from "./bank-statement-client.js?v=bank3";
 import {
   bankAliasLookup,
   normalizeBankAliasToken,
@@ -48,6 +49,7 @@ export function createWorkspaceBankMatch({
   };
 
   let lines = [];
+  let bankTransactions = [];
   let pendingQueue = [];
   let lastStats = null;
   let skipCloseHandler = false;
@@ -57,6 +59,13 @@ export function createWorkspaceBankMatch({
     return (item.proposals || []).filter((proposal) =>
       proposal.indices.every((index) => !lines[index]?.date_paie_from_bank),
     );
+  }
+
+  function bankTxnPosition(txn) {
+    const payments = bankTransactions.filter((entry) => entry.type === "payment");
+    const index = payments.findIndex((entry) => entry.id === txn.id);
+    if (index < 0) return "";
+    return ` (${index + 1}/${payments.length} sur le relevé)`;
   }
 
   function proposalInvoiceRows(proposal) {
@@ -76,7 +85,9 @@ export function createWorkspaceBankMatch({
 
   function renderTxn(item) {
     const txn = item.txn;
-    if (els.txnDate) els.txnDate.textContent = formatBankDate(txn.date);
+    const date = formatBankDate(txn.date);
+    const position = bankTxnPosition(txn);
+    if (els.txnDate) els.txnDate.textContent = date ? `${date}${position}` : position || "—";
     if (els.txnAmount) els.txnAmount.textContent = `${formatMad(txn.absAmount)} MAD`;
     if (els.txnLabel) els.txnLabel.textContent = String(txn.label || "").trim() || "—";
   }
@@ -126,6 +137,7 @@ export function createWorkspaceBankMatch({
       updateInvoiceDetail();
       const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
       if (els.learnWrap) els.learnWrap.hidden = !bankToken;
+      if (bankToken && els.learnAlias) els.learnAlias.checked = true;
       els.dialog?.showModal();
       return;
     }
@@ -138,14 +150,14 @@ export function createWorkspaceBankMatch({
     const workspace = await loadDossierWorkspace(dossierId);
     await saveDossierWorkspace(dossierId, {
       lines,
-      bankTransactions: workspace?.bank_transactions || [],
+      bankTransactions: workspace?.bank_transactions || bankTransactions,
       bankMeta: workspace?.bank_meta || {},
     });
     await logDossierActivity(dossierId, eventType, summary, lastStats || {});
     onComplete?.();
   }
 
-  function finishAfterDialog() {
+  async function finishAfterDialog() {
     if (!lastStats) return;
     const { paymentsMatched, paymentsUnmatched, paymentsPending, feesAdded } = lastStats;
     let message = `${paymentsMatched} paiement(s) rapproché(s), ${feesAdded} frais bancaire(s) ajouté(s).`;
@@ -156,10 +168,10 @@ export function createWorkspaceBankMatch({
       message,
       variant: paymentsUnmatched || paymentsPending ? "warn" : "info",
     });
-    persistLines(message);
+    await persistLines(message);
   }
 
-  function confirmMatch() {
+  async function confirmMatch() {
     const item = pendingQueue[0];
     if (!item) return;
     const proposals = validProposals(item);
@@ -179,6 +191,7 @@ export function createWorkspaceBankMatch({
     if (lastStats?.paymentsPending > 0) lastStats.paymentsPending -= 1;
     if (lastStats) lastStats.paymentsMatched += 1;
     pendingQueue.shift();
+    await persistLines("Rapprochement confirmé", "bank_match");
     skipCloseHandler = true;
     els.dialog?.close();
     skipCloseHandler = false;
@@ -204,7 +217,7 @@ export function createWorkspaceBankMatch({
     running = true;
     try {
       const workspace = await loadDossierWorkspace(dossierId);
-      const bankTransactions = workspace?.bank_transactions || [];
+      bankTransactions = normalizeBankTransactions(workspace?.bank_transactions || []);
       const bankMeta = workspace?.bank_meta || {};
       lines = (workspace?.lines || []).map((line) => ({ ...line }));
 
@@ -237,13 +250,17 @@ export function createWorkspaceBankMatch({
       pendingQueue = result.pendingMatches || [];
       lastStats = { ...result.stats };
 
+      const autoMatched = (lastStats.paymentsMatched || 0) > 0 || (lastStats.feesAdded || 0) > 0;
+      if (autoMatched) {
+        await persistLines("Rapprochement bancaire partiel (auto)", "bank_apply");
+      }
+
       if (pendingQueue.length) {
         showNextDialog();
         return { ok: true, pending: pendingQueue.length, stats: lastStats };
       }
 
-      await persistLines("Rapprochement bancaire appliqué", "bank_apply");
-      finishAfterDialog();
+      await finishAfterDialog();
       return { ok: true, stats: lastStats };
     } finally {
       running = false;
