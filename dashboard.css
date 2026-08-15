@@ -2602,8 +2602,25 @@
 .ws-review-badge.success { background: var(--dash-success-soft, #ecfdf5); color: var(--dash-success, #059669); }
 
 .ws-review-declare-btn {
-  border-color: #86efac;
-  color: var(--dash-success, #059669);
+  background: var(--dash-success, #059669);
+  border-color: var(--dash-success, #059669);
+  color: #fff;
+}
+
+.ws-review-declare-btn:hover {
+  background: #047857;
+  border-color: #047857;
+}
+
+.ws-hero-declare-btn {
+  margin-top: 0.85rem;
+  background: var(--dash-success, #059669);
+  border-color: var(--dash-success, #059669);
+}
+
+.ws-hero-declare-btn:hover {
+  background: #047857;
+  border-color: #047857;
 }
 
 .ws-review-toolbar {

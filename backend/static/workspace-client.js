@@ -59,7 +59,6 @@ export function buildPipelineSteps({
   const hasInvoiceWork = hasLines || invoicePending > 0 || invoiceDocumentCount > 0;
   const needsAnalysis = bankPending > 0 || invoicePending > 0;
   const isExported = statusKey === "exported";
-  const isReview = statusKey === "in_review";
   const postAnalysis = !needsAnalysis && !isExported;
 
   function stepStatus(done, current) {
@@ -72,14 +71,12 @@ export function buildPipelineSteps({
   const purchasesDone = hasInvoiceWork;
   const analysisDone = postAnalysis && (hasLines || hasBank || !hasBankDocument);
   const reviewDone = hasLines && anomalyCount === 0;
-  const exportDone = isExported;
 
   const bankCurrent = !hasBankDocument && !isExported;
   const reviewReady = postAnalysis && (hasLines || hasBank || invoiceDocumentCount > 0);
   const purchasesCurrent = postAnalysis && hasBankDocument && !hasInvoiceWork && !reviewReady;
   const analysisCurrent = needsAnalysis && !isExported;
   const reviewCurrent = reviewReady && (hasLines ? anomalyCount > 0 : true);
-  const exportCurrent = hasLines && anomalyCount === 0 && !isExported && !isReview;
 
   const wsReview = clientId && dossier
     ? `workspace.html?client=${clientId}&dossier=${dossier.id}&tab=review`
@@ -144,11 +141,20 @@ export function buildPipelineSteps({
     {
       key: "export",
       label: "Export TVA",
-      desc: isExported ? "Déclaration exportée" : "Excel DED TVA",
+      desc: isExported ? "Excel exporté" : "Excel DED TVA",
       icon: "file-spreadsheet",
-      status: stepStatus(exportDone, exportCurrent),
+      status: stepStatus(isExported, hasLines && anomalyCount === 0 && !isExported),
       href: wsReview,
       tab: "review",
+    },
+    {
+      key: "declare",
+      label: "Déclaration TVA",
+      desc: isExported ? "Période clôturée" : "Valider le dépôt",
+      icon: "badge-check",
+      status: stepStatus(isExported, hasLines && anomalyCount === 0 && !isExported),
+      tab: "review",
+      action: "declare",
     },
   ];
 }
