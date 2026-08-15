@@ -986,6 +986,63 @@ export async function getActiveImportSummary(dossierId) {
   return aggregateActiveImportJobs(jobs);
 }
 
+export async function listActiveAnalysisJobs(dossierId) {
+  const jobs = await listImportJobs(dossierId, { limit: 50, activeOnly: true });
+  return (jobs || []).filter(isAnalysisJob);
+}
+
+/**
+ * Attend la fin réelle des jobs d'analyse IA (completed/failed), pas seulement leur apparition.
+ * Relance le worker périodiquement pour vider la file (ex. 6 PDFs = 6 jobs).
+ */
+export async function waitForDossierAnalysisComplete(
+  dossierId,
+  {
+    apiUrl = null,
+    expectedJobs = 0,
+    onProgress = null,
+    timeoutMs = 20 * 60 * 1000,
+    pollMs = 2000,
+    kickImportWorker = null,
+  } = {},
+) {
+  const started = Date.now();
+  let lastKick = 0;
+  let lastActive = [];
+
+  while (Date.now() - started < timeoutMs) {
+    const active = await listActiveAnalysisJobs(dossierId);
+    lastActive = active;
+
+    if (!active.length) {
+      return { completed: true, active: [], timedOut: false };
+    }
+
+    const summary = aggregateActiveImportJobs(active) || active[0];
+    const processed = summary?.processed_files || 0;
+    const total = summary?.total_files || expectedJobs || active.length;
+    onProgress?.({
+      processed,
+      total,
+      job: summary,
+      activeCount: active.length,
+    });
+
+    if (apiUrl && kickImportWorker && Date.now() - lastKick > 5000) {
+      try {
+        await kickImportWorker(apiUrl, { limit: Math.max(active.length, expectedJobs, 3) });
+      } catch {
+        /* worker kick is best-effort */
+      }
+      lastKick = Date.now();
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, pollMs));
+  }
+
+  return { completed: false, active: lastActive, timedOut: true };
+}
+
 export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {
   let stopped = false;
 

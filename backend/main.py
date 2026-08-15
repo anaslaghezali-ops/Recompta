@@ -335,9 +335,12 @@ async def analyze_dossier_documents(
 
     if result.get("queued_jobs", 0) > 0:
 
+        queued_count = int(result.get("queued_jobs") or 0)
+
         async def kick_worker() -> None:
             try:
-                await process_pending_import_jobs(max_jobs=3)
+                batch_size = max(1, min(queued_count, 25))
+                await process_pending_import_jobs(max_jobs=batch_size)
             except Exception:  # noqa: BLE001
                 import traceback
 
@@ -352,7 +355,7 @@ async def analyze_dossier_documents(
 async def process_import_jobs(limit: int = 1) -> dict:
     """Déclenche le traitement des jobs en file d'attente (worker asynchrone)."""
     try:
-        results = await process_pending_import_jobs(max_jobs=max(1, min(limit, 3)))
+        results = await process_pending_import_jobs(max_jobs=max(1, min(limit, 25)))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"processed_jobs": len(results), "results": results}

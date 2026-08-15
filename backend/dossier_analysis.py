@@ -166,6 +166,63 @@ def _should_skip_zip_for_analysis(
     return True
 
 
+async def _inflight_analysis_doc_keys(
+    db: SupabaseService,
+    dossier_id: int,
+    *,
+    doc_type: str,
+) -> tuple[set[str], set[str]]:
+    """source_ids et clés de nom de fichier déjà présents dans des jobs d'analyse actifs."""
+    response = await db.client.get(
+        f"{db.base}/rest/v1/import_jobs",
+        params={
+            "dossier_id": f"eq.{dossier_id}",
+            "doc_type": f"eq.{doc_type}",
+            "status": "in.(uploading,queued,processing)",
+            "select": "id,options",
+            "order": "created_at.desc",
+            "limit": "200",
+        },
+        headers=service_headers(),
+    )
+    response.raise_for_status()
+
+    source_ids: set[str] = set()
+    filename_keys: set[str] = set()
+    for job in response.json():
+        options = job.get("options") or {}
+        if not options.get("analysis_from_documents"):
+            continue
+        files_response = await db.client.get(
+            f"{db.base}/rest/v1/import_job_files",
+            params={
+                "job_id": f"eq.{job['id']}",
+                "select": "source_id,original_filename",
+                "limit": "50",
+            },
+            headers=service_headers(),
+        )
+        files_response.raise_for_status()
+        for row in files_response.json():
+            source_id = str(row.get("source_id") or "").strip()
+            if source_id:
+                source_ids.add(source_id)
+            filename_keys.update(_document_identity_keys(row.get("original_filename") or ""))
+    return source_ids, filename_keys
+
+
+def _doc_already_inflight(
+    doc: dict[str, Any],
+    inflight_source_ids: set[str],
+    inflight_filename_keys: set[str],
+) -> bool:
+    source_id = str(doc.get("source_id") or "").strip()
+    if source_id and source_id in inflight_source_ids:
+        return True
+    doc_keys = _document_identity_keys(doc.get("original_filename") or "")
+    return bool(doc_keys & inflight_filename_keys)
+
+
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:
     params: dict[str, str] = {
         "dossier_id": f"eq.{dossier_id}",
@@ -212,17 +269,39 @@ async def queue_dossier_analysis(
         else:
             raise ValueError(f"Type de document non supporté : {doc_type}")
 
-        if not pending:
+        inflight_source_ids, inflight_filename_keys = await _inflight_analysis_doc_keys(
+            db, dossier_id, doc_type=doc_type,
+        )
+        to_queue: list[dict[str, Any]] = []
+        skipped_inflight = 0
+        for doc in pending:
+            if _doc_already_inflight(doc, inflight_source_ids, inflight_filename_keys):
+                skipped_inflight += 1
+                continue
+            to_queue.append(doc)
+
+        if not to_queue:
+            if skipped_inflight:
+                return {
+                    "queued_jobs": 0,
+                    "pending_documents": len(pending),
+                    "skipped_inflight": skipped_inflight,
+                    "message": (
+                        f"{skipped_inflight} document(s) déjà en cours d'extraction — "
+                        "attendez la fin du traitement."
+                    ),
+                }
             return {
                 "queued_jobs": 0,
                 "pending_documents": 0,
+                "skipped_inflight": 0,
                 "message": "Aucun document en attente d'analyse.",
             }
 
         options = {"client_ice": client_ice, "analysis_from_documents": True}
         jobs: list[dict[str, Any]] = []
 
-        for doc in pending:
+        for doc in to_queue:
             content = await db.download_storage_file(DOCUMENTS_BUCKET, doc["storage_path"])
             filename = doc.get("original_filename") or "document"
             mime_type = doc.get("mime_type") or "application/octet-stream"
@@ -287,9 +366,14 @@ async def queue_dossier_analysis(
             {"doc_type": doc_type, "job_count": len(jobs)},
         )
 
+        message = f"{len(jobs)} analyse(s) mise(s) en file d'attente."
+        if skipped_inflight:
+            message += f" {skipped_inflight} déjà en cours."
+
         return {
             "queued_jobs": len(jobs),
             "pending_documents": len(pending),
+            "skipped_inflight": skipped_inflight,
             "jobs": jobs,
-            "message": f"{len(jobs)} analyse(s) mise(s) en file d'attente.",
+            "message": message,
         }
