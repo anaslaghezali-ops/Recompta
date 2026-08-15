@@ -41,9 +41,51 @@ def test_merge_preserves_distinct_lines() -> None:
     assert ids == {"src-1", "src-2", "src-3"}
 
 
+def test_merge_keeps_multi_vat_same_source_id() -> None:
+    """Facture MPRO : 2 taux (10 % + 20 %) sur le même PDF / source_id."""
+    new_lines = [
+        {
+            "source_file": "MPRO/scan.pdf",
+            "source_id": "src-mpro",
+            "fact_num": "F1",
+            "taux": 0.2,
+            "m_ht": 1070.0,
+            "tva": 214.0,
+            "m_ttc": 1284.0,
+        },
+        {
+            "source_file": "MPRO/scan.pdf",
+            "source_id": "src-mpro",
+            "fact_num": "F1",
+            "taux": 0.1,
+            "m_ht": 409.09,
+            "tva": 40.91,
+            "m_ttc": 450.0,
+        },
+    ]
+    merged = _merge_workspace_lines([], new_lines)
+    assert len(merged) == 2, merged
+    rates = sorted(line["taux"] for line in merged)
+    assert rates == [0.1, 0.2]
+
+
+def test_merge_skips_exact_duplicate_line() -> None:
+    line = {
+        "source_file": "scan.pdf",
+        "source_id": "src-1",
+        "fact_num": "F1",
+        "taux": 0.2,
+        "m_ht": 100.0,
+    }
+    merged = _merge_workspace_lines([line], [line.copy()])
+    assert len(merged) == 1
+
+
 def main() -> int:
     test_same_basename_different_source_ids()
     test_merge_preserves_distinct_lines()
+    test_merge_keeps_multi_vat_same_source_id()
+    test_merge_skips_exact_duplicate_line()
     print("OK test_worker_dedup")
     return 0
 

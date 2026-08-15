@@ -155,28 +155,29 @@ def _dossier_lock(dossier_id: int) -> asyncio.Lock:
     return lock
 
 
+def _workspace_line_dedup_key(line: dict[str, Any]) -> tuple:
+    """Clé de dédup : une facture multi-TVA = plusieurs lignes pour le même source_id."""
+    source_id = str(line.get("source_id") or "").strip()
+    fact_num = str(line.get("fact_num") or "").strip().lower()
+    try:
+        taux = round(float(line.get("taux") or 0), 4)
+    except (TypeError, ValueError):
+        taux = 0.0
+    if source_id:
+        return ("sid", source_id, fact_num, taux)
+    identity = tuple(sorted(_document_identity_keys(str(line.get("source_file") or ""))))
+    return ("file", identity, fact_num, taux)
+
+
 def _merge_workspace_lines(existing: list[dict[str, Any]], new_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged = list(existing)
-    seen_source_ids = {
-        str(line.get("source_id") or "").strip()
-        for line in existing
-        if str(line.get("source_id") or "").strip()
-    }
-    seen_identity_keys: set[str] = set()
-    for line in existing:
-        seen_identity_keys.update(_document_identity_keys(str(line.get("source_file") or "")))
+    seen_keys = {_workspace_line_dedup_key(line) for line in existing}
 
     for line in new_lines:
-        source_id = str(line.get("source_id") or "").strip()
-        if source_id:
-            if source_id in seen_source_ids:
-                continue
-            seen_source_ids.add(source_id)
-        else:
-            line_keys = _document_identity_keys(str(line.get("source_file") or ""))
-            if line_keys & seen_identity_keys:
-                continue
-            seen_identity_keys.update(line_keys)
+        key = _workspace_line_dedup_key(line)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
         merged.append(line)
     return merged
 
