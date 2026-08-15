@@ -87,11 +87,48 @@ def _processed_invoice_keys(lines: list[dict[str, Any]]) -> set[str]:
 
 def _work_item_already_processed(item: dict[str, Any], processed_keys: set[str]) -> bool:
     source_id = str(item.get("source_id") or "").strip()
-    if source_id and f"sid:{source_id}" in processed_keys:
-        return True
+    if source_id:
+        return f"sid:{source_id}" in processed_keys
     filename = str(item.get("filename") or "")
     doc_keys = _document_identity_keys(filename)
     return bool(doc_keys & processed_keys)
+
+
+_dossier_locks: dict[int, asyncio.Lock] = {}
+
+
+def _dossier_lock(dossier_id: int) -> asyncio.Lock:
+    lock = _dossier_locks.get(dossier_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _dossier_locks[dossier_id] = lock
+    return lock
+
+
+def _merge_workspace_lines(existing: list[dict[str, Any]], new_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged = list(existing)
+    seen_source_ids = {
+        str(line.get("source_id") or "").strip()
+        for line in existing
+        if str(line.get("source_id") or "").strip()
+    }
+    seen_identity_keys: set[str] = set()
+    for line in existing:
+        seen_identity_keys.update(_document_identity_keys(str(line.get("source_file") or "")))
+
+    for line in new_lines:
+        source_id = str(line.get("source_id") or "").strip()
+        if source_id:
+            if source_id in seen_source_ids:
+                continue
+            seen_source_ids.add(source_id)
+        else:
+            line_keys = _document_identity_keys(str(line.get("source_file") or ""))
+            if line_keys & seen_identity_keys:
+                continue
+            seen_identity_keys.update(line_keys)
+        merged.append(line)
+    return merged
 
 
 def extraction_concurrency() -> int:
@@ -441,9 +478,12 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 )
 
         if new_lines:
-            lines.extend(new_lines)
-            await db.save_workspace(dossier_id, lines=lines)
-            await db.touch_dossier_status(dossier_id, len(lines))
+            async with _dossier_lock(dossier_id):
+                latest = await db.load_workspace(dossier_id)
+                current_lines = list(latest.get("lines") or [])
+                merged_lines = _merge_workspace_lines(current_lines, new_lines)
+                await db.save_workspace(dossier_id, lines=merged_lines)
+                await db.touch_dossier_status(dossier_id, len(merged_lines))
             await db.log_activity(
                 dossier_id,
                 "import_job",

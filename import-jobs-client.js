@@ -570,8 +570,15 @@ async function packFilesForQueue(files, onProgress) {
 
   onProgress?.("Préparation de l'archive…", 8);
   const zip = new JSZip();
-  for (const file of list) {
-    zip.file(file.name, await file.arrayBuffer());
+  const usedNames = new Set();
+  for (let index = 0; index < list.length; index += 1) {
+    const file = list[index];
+    let entryName = file.name;
+    if (usedNames.has(entryName)) {
+      entryName = `${index + 1}_${file.name}`;
+    }
+    usedNames.add(entryName);
+    zip.file(entryName, await file.arrayBuffer());
   }
   const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
   return [new File([blob], `import-${Date.now()}.zip`, { type: "application/zip" })];
