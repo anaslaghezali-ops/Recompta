@@ -1,7 +1,9 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { isInvoiceFile, isZipFile } from "./extract-client.js";
 import {
+  dedupeDocuments,
   documentIdentityKeys,
+  partitionDocumentsForDisplay,
   shouldSkipZipForAnalysis,
   sourceIdsWithLines,
 } from "./dossier-documents.js?v=doc10";
@@ -332,7 +334,7 @@ export function showExtractionStartedToast({
 } = {}) {
   const prefix = dossierName ? `${dossierName} — ` : "";
   const countLabel = fileCount > 0
-    ? `${fileCount} fichier${fileCount > 1 ? "s" : ""} en file d'attente`
+    ? `${fileCount} document${fileCount > 1 ? "s" : ""} à analyser`
     : "Traitement démarré";
   showWorkspaceToast({
     title: label,
@@ -1146,12 +1148,12 @@ export function countPendingAnalysis(documents, workspace) {
     if (line.source_id) processedKeys.add(`sid:${line.source_id}`);
   }
 
+  const { workingDocs } = partitionDocumentsForDisplay(dedupeDocuments(documents));
   let invoicePending = 0;
   let bankPending = 0;
   const withLines = sourceIdsWithLines(lines);
 
-  for (const doc of documents || []) {
-    if (doc.doc_type === "archive") continue;
+  for (const doc of workingDocs) {
     if (doc.doc_type === "invoice") {
       if (shouldSkipZipForAnalysis(doc, documents, processedKeys, withLines)) continue;
       const sid = doc.source_id ? `sid:${doc.source_id}` : null;
