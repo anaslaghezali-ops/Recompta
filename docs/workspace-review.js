@@ -50,7 +50,14 @@ const DESIGNATIONS = [
 
 const SUPPLIER_SCOPED_BULK_FIELDS = new Set(["ice_frs", "if"]);
 
-export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
+export function createWorkspaceReview({
+  mountEl,
+  getContext,
+  onStateChange,
+  onWorkspaceSaved,
+  onPeriodDeclared,
+}) {
+  const notifyWorkspaceSaved = onWorkspaceSaved || onStateChange;
   let lines = [];
   let saver = null;
   let anomaliesOnly = false;
@@ -505,7 +512,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       });
       if (eventType) await logDossierActivity(dossierId, eventType, summary, meta);
       setStatus("Enregistré", "success");
-      onStateChange?.();
+      notifyWorkspaceSaved?.();
     } catch (error) {
       setStatus(`Erreur : ${error.message}`, "error");
       throw error;
@@ -736,7 +743,11 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       );
       els.declareDialog?.close();
       setStatus(periodLabel ? `${periodLabel} — période déclarée` : "Période déclarée", "success");
-      onStateChange?.();
+      if (onPeriodDeclared) {
+        await onPeriodDeclared();
+      } else {
+        notifyWorkspaceSaved?.();
+      }
       updateDeclareUi();
     } catch (error) {
       setStatus(`Erreur : ${error.message}`, "error");
