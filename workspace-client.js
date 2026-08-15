@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio6";
+} from "./portfolio-client.js?v=portfolio7";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -164,7 +164,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
 
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
-  const anomalyCount = countLineAnomalies(lines);
+  const anomalyCount = countLineAnomalies(lines, client?.ice || "");
   const progress = computeProgress(dossier, workspace);
   const statusKey = dossier.status || "draft";
   const statusLabel = STATUS_META[statusKey]?.label || "En cours";

@@ -269,6 +269,25 @@ export function refreshLinesFieldConfidence(lines, options = {}) {
   return attachFieldConfidence(lines, options);
 }
 
+/** Ligne à relire : doublon ou au moins un champ en warn/error (après calcul de confiance). */
+export function lineNeedsReview(line, { isDuplicate = false } = {}) {
+  if (isDuplicate) return true;
+  const conf = line.field_confidence || {};
+  return Object.values(conf).some(
+    (entry) => entry?.level === "error" || entry?.level === "warn",
+  );
+}
+
+/** Nombre de lignes à corriger — même règle que le filtre « Anomalies seulement » de la revue. */
+export function countLinesNeedingReview(lines, options = {}) {
+  const { clientIce = "", duplicateIndexes = [] } = options;
+  const duplicates = new Set(duplicateIndexes);
+  refreshLinesFieldConfidence(lines, { clientIce, duplicateIndexes });
+  return (lines || []).filter((line, index) =>
+    lineNeedsReview(line, { isDuplicate: duplicates.has(index) }),
+  ).length;
+}
+
 export function countConfidenceIssues(lines) {
   let errors = 0;
   let warns = 0;

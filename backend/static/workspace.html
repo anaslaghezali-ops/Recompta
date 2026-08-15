@@ -424,12 +424,12 @@
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs22";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace8";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace9";
     import {
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws1";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review2";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review3";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -1334,7 +1334,7 @@
       if (dossierId) window.location.href = `import-achats.html?dossier=${dossierId}`;
     }
 
-    function setTab(tab, { view = null } = {}) {
+    async function setTab(tab, { view = null } = {}) {
       activeTab = tab;
       document.querySelectorAll("#viewTabs [data-tab]").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.tab === tab);
@@ -1352,7 +1352,7 @@
       }
       if (tab === "review") {
         const review = ensureReviewController();
-        review?.load();
+        await review?.load();
         if (view === "anomalies") review?.setAnomaliesOnly(true);
       }
       initLucide();
