@@ -821,12 +821,6 @@ function guessTaux(ht, tva) {
   return 0.2;
 }
 
-function extractVatLinesFromText(text) {
-  const candidates = [extractTvaVentilation(text), extractAchibestTvaTable(text)].filter((c) => c.length);
-  if (!candidates.length) return [];
-  return candidates.sort((a, b) => b.length - a.length)[0];
-}
-
 function extractSupplierName(text, filename = "") {
   const pathHint = supplierHintFromPath(filename);
   if (pathHint?.lib_frss) return pathHint.lib_frss;
@@ -1005,7 +999,7 @@ function extractAchibestTvaTable(text) {
 
 function extractTvaVentilation(text) {
   const items = [];
-  const pattern = /(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)/gi;
+  const pattern = /(?:\d+\)\s*)?(\d+[,.]\d+)\s*TTC\s+(\d+[,.]\d+)\s*%?\s+([\d.,]+)(?:\s*DH)?/gi;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     const ttc = parseAmount(match[1]);
@@ -1013,10 +1007,26 @@ function extractTvaVentilation(text) {
     const tva = parseAmount(match[3]);
     if (ttc === null || taux === null || tva === null) continue;
     const tauxNorm = taux > 1 ? taux / 100 : taux;
+    if (![0, 0.1, 0.2].includes(tauxNorm)) continue;
     const ht = Math.round((ttc - tva) * 100) / 100;
     items.push({ m_ht: ht, tva, m_ttc: ttc, taux: tauxNorm });
   }
   return items;
+}
+
+function ventilationMarkerCount(text) {
+  return (text.match(/\d+[,.]\d+\s*TTC\s+\d+[,.]\d+\s*%/gi) || []).length;
+}
+
+function extractVatLinesFromText(text) {
+  const candidates = [extractTvaVentilation(text), extractAchibestTvaTable(text)].filter((c) => c.length);
+  if (!candidates.length) return [];
+  let best = candidates.sort((a, b) => b.length - a.length)[0];
+  if (best.length < 2 && ventilationMarkerCount(text) >= 2) {
+    const forced = extractTvaVentilation(text);
+    if (forced.length > best.length) best = forced;
+  }
+  return best;
 }
 
 function extractAllDecimalAmounts(text) {
