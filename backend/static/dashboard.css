@@ -2599,6 +2599,12 @@
 .ws-review-badge.warn { background: var(--dash-warn-soft); color: var(--dash-warn); }
 .ws-review-badge.danger { background: var(--dash-danger-soft); color: var(--dash-danger); }
 .ws-review-badge.muted { background: var(--dash-neutral-soft); color: var(--dash-muted); }
+.ws-review-badge.success { background: var(--dash-success-soft, #ecfdf5); color: var(--dash-success, #059669); }
+
+.ws-review-declare-btn {
+  border-color: #86efac;
+  color: var(--dash-success, #059669);
+}
 
 .ws-review-toolbar {
   display: flex;
