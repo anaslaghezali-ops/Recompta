@@ -90,9 +90,28 @@ def _zip_child_documents(zip_doc: dict[str, Any], documents: list[dict[str, Any]
         if len(parts) < 2 or _is_zip_filename(parts[-1]):
             continue
         folder_lower = parts[0].lower()
-        if stem_lower.startswith(folder_lower) or folder_lower == stem_prefix:
+        if (
+            folder_lower == stem_lower
+            or stem_lower.startswith(folder_lower)
+            or folder_lower == stem_prefix
+        ):
             children.append(doc)
-    return children
+
+    if children:
+        return children
+
+    # Archive unique + PDFs dans des sous-dossiers (ex. « Mose food/… »).
+    zips = [doc for doc in documents if _is_zip_filename(doc.get("original_filename") or "")]
+    if len(zips) != 1 or zips[0].get("id") != zip_id:
+        return []
+    return [
+        doc
+        for doc in documents
+        if doc.get("id") != zip_id
+        and not _is_zip_filename(doc.get("original_filename") or "")
+        and (doc.get("doc_type") or "invoice") == "invoice"
+        and len([part for part in str(doc.get("original_filename") or "").replace("\\", "/").split("/") if part]) >= 2
+    ]
 
 
 def _should_skip_zip_for_analysis(
@@ -106,10 +125,8 @@ def _should_skip_zip_for_analysis(
     children = _zip_child_documents(doc, documents)
     if not children:
         return False
-    return any(
-        _is_invoice_processed(child, processed_keys, source_ids_with_lines)
-        for child in children
-    )
+    # Archive déjà décompressée : ne pas re-mettre le ZIP en file (seulement les PDFs).
+    return True
 
 
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:

@@ -24,6 +24,7 @@ const PORT_ACCESS_HINT =
 
 const FETCH_TIMEOUT_MS = 15000;
 const HEALTH_TIMEOUT_MS = 12000;
+const ANALYSIS_QUEUE_TIMEOUT_MS = 120000;
 const HEALTH_RETRY_ATTEMPTS = 3;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -320,7 +321,7 @@ export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoi
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/dossiers/${dossierId}/analyze?${params}`,
     { method: "POST" },
-    { attempts: 3, timeoutMs: HEALTH_TIMEOUT_MS },
+    { attempts: 2, timeoutMs: ANALYSIS_QUEUE_TIMEOUT_MS },
   );
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();

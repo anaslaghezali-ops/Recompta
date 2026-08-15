@@ -42,6 +42,20 @@ def iter_invoice_files(filename: str, content: bytes, mime_type: str) -> list[tu
     return []
 
 
+def storage_path_for_zip_member(zip_filename: str, member_path: str) -> str:
+    """Normalise le chemin d'un membre ZIP pour le stockage dossier_documents."""
+    normalized = member_path.replace("\\", "/").strip().lstrip("./")
+    parts = [part for part in normalized.split("/") if part and part != "."]
+    if not parts:
+        return normalized
+    zip_stem = PurePosixPath(zip_filename).stem
+    if len(parts) == 1:
+        return f"{zip_stem}/{parts[0]}"
+    if parts[0].lower() != zip_stem.lower():
+        return f"{zip_stem}/{'/'.join(parts)}"
+    return "/".join(parts)
+
+
 def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
     files: list[tuple[str, bytes, str]] = []
     with zipfile.ZipFile(BytesIO(content)) as archive:
