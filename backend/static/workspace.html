@@ -41,12 +41,20 @@
         <div class="ws-client-meta" id="clientMeta"></div>
 
         <div class="ws-period-bar" id="periodBar" hidden>
-          <label for="periodSelect" id="periodBarLabel">Période active</label>
-          <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période"></select>
-          <span id="periodViewingLabel" class="ws-period-viewing" hidden></span>
-          <button type="button" class="ws-period-history-link" id="periodHistoryLink" hidden>
-            Voir les périodes clôturées →
-          </button>
+          <div class="ws-period-bar-main">
+            <label for="periodSelect" id="periodBarLabel">Période active</label>
+            <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période en cours"></select>
+            <span id="periodViewingLabel" class="ws-period-viewing" hidden></span>
+            <select id="periodOpenSelect" class="ws-period-select ws-period-open-select" hidden aria-label="Passer à une période en cours"></select>
+          </div>
+          <div class="ws-period-bar-actions">
+            <button type="button" class="ws-period-nav-link ws-period-nav-link--back" id="periodBackToOpenBtn" hidden>
+              ← Retour aux périodes en cours
+            </button>
+            <button type="button" class="ws-period-nav-link" id="periodHistoryLink" hidden>
+              Voir les périodes clôturées →
+            </button>
+          </div>
         </div>
 
         <div class="ws-import-banner" id="importBanner" hidden>
@@ -88,6 +96,11 @@
                 <span class="ws-hero-period" id="heroPeriod">—</span>
                 <div class="ws-hero-badges" id="heroBadges"></div>
                 <p class="ws-hero-deadline" id="heroDeadline">—</p>
+                <p id="heroConsultBanner" class="ws-hero-consult" hidden>
+                  <i data-lucide="archive"></i>
+                  <span>Consultation seule — période déclarée.</span>
+                  <button type="button" class="ws-hero-consult-btn" id="heroBackToOpenBtn">Retour aux périodes en cours</button>
+                </p>
                 <button type="button" class="dash-btn dash-btn-primary ws-hero-declare-btn" id="heroDeclareBtn" hidden>
                   <i data-lucide="badge-check"></i> Valider la déclaration TVA
                 </button>
@@ -658,6 +671,10 @@
     }
 
     function openInvoiceUpload({ focusDocuments = false } = {}) {
+      if (cockpit?.statusKey === "exported") {
+        runCockpitAction("add_invoices");
+        return;
+      }
       const controller = ensureInvoiceUploadController();
       if (focusDocuments) {
         setTab("documents").then(() => {
@@ -836,6 +853,61 @@
       };
     }
 
+    function getOpenPeriods() {
+      return (client?.dossiers || []).filter((d) => d.status !== "exported");
+    }
+
+    function pickLatestOpenPeriod() {
+      const open = getOpenPeriods();
+      if (!open.length) return null;
+      return open.reduce((best, dossier) => {
+        if (!best) return dossier;
+        const bestTs = new Date(best.updated_at || best.created_at || 0).getTime();
+        const curTs = new Date(dossier.updated_at || dossier.created_at || 0).getTime();
+        return curTs > bestTs ? dossier : best;
+      }, null);
+    }
+
+    function focusOpenPeriodPicker() {
+      const openSelect = document.getElementById("periodOpenSelect");
+      if (openSelect && !openSelect.hidden) {
+        openSelect.focus();
+        if (typeof openSelect.showPicker === "function") {
+          openSelect.showPicker();
+        }
+        return true;
+      }
+      return false;
+    }
+
+    async function goToOpenPeriod(dossierId = null) {
+      const open = getOpenPeriods();
+      if (!open.length) return;
+
+      if (!dossierId && open.length > 1 && cockpit?.statusKey === "exported") {
+        await setTab("cockpit");
+        if (focusOpenPeriodPicker()) return;
+      }
+
+      const target = dossierId
+        ? open.find((d) => d.id === dossierId)
+        : pickLatestOpenPeriod();
+      if (!target) return;
+      selectedDossierId = target.id;
+      await reloadCockpit(target.id);
+      setTab("cockpit");
+    }
+
+    function updateCockpitTabLabel() {
+      const cockpitTab = document.querySelector('#viewTabs [data-tab="cockpit"]');
+      if (!cockpitTab) return;
+      const isConsulting = cockpit?.statusKey === "exported";
+      cockpitTab.textContent = isConsulting ? "Consultation" : "Période active";
+      cockpitTab.setAttribute("aria-label", isConsulting
+        ? "Consultation d'une période clôturée"
+        : "Période active en cours de production");
+    }
+
     let reloadCockpitPromise = null;
 
     async function refreshCockpitMetadata() {
@@ -1000,6 +1072,16 @@
     }
 
     function runCockpitAction(action) {
+      if (cockpit?.statusKey === "exported") {
+        showWorkspaceToast({
+          title: "Période clôturée",
+          message: "Cette période est déclarée. Repassez sur une période en cours pour modifier la production.",
+          variant: "warn",
+          actionLabel: getOpenPeriods().length ? "Périodes en cours" : null,
+          onAction: getOpenPeriods().length ? () => goToOpenPeriod() : null,
+        });
+        return;
+      }
       if (action === "analysis") handleLaunchExtraction();
       else if (action === "extract_bank") handleExtractBank();
       else if (action === "bank_match") handleLaunchBankMatch();
@@ -1024,6 +1106,8 @@
       }
 
       card.hidden = false;
+      const isReadOnly = cockpit.statusKey === "exported";
+      card.classList.toggle("is-readonly", isReadOnly);
       const hasLines = cockpit.lineCount > 0;
       const hasBank = cockpit.bankCount > 0;
       const isJobRunning = Boolean(activeImportJob) || analysisInFlight || bankExtractInFlight;
@@ -1033,7 +1117,12 @@
 
       openReviewBtn.hidden = !hasLines;
       if (addInvoicesBtn) {
-        addInvoicesBtn.disabled = isJobRunning || invoiceUploadController?.isUploading?.();
+        addInvoicesBtn.disabled = isReadOnly || isJobRunning || invoiceUploadController?.isUploading?.();
+      }
+      if (isReadOnly) {
+        launchBtn.disabled = true;
+        extractBankBtn.disabled = true;
+        launchBankMatchBtn.disabled = true;
       }
 
       if (activeImportJob || analysisInFlight || bankExtractInFlight) {
@@ -1710,23 +1799,71 @@
       const historyLink = document.getElementById("periodHistoryLink");
       const viewingLabel = document.getElementById("periodViewingLabel");
       const periodLabel = document.getElementById("periodBarLabel");
-      if (historyLink) {
-        historyLink.hidden = closedCount === 0;
-        historyLink.textContent = closedCount === 1
-          ? "Voir la période clôturée →"
-          : `Voir les ${closedCount} périodes clôturées →`;
-      }
+      const backToOpenBtn = document.getElementById("periodBackToOpenBtn");
+      const openSelect = document.getElementById("periodOpenSelect");
 
-      if (viewingClosed && viewingLabel) {
-        periodBar.hidden = false;
-        periodSelect.hidden = true;
-        viewingLabel.hidden = false;
-        viewingLabel.textContent = `${formatMonthLabel(current.period_month)} ${current.period_year} — Déclaré`;
-        if (periodLabel) periodLabel.textContent = "Période consultée";
+      if (!periods.length) {
+        periodBar.hidden = true;
         return;
       }
 
+      periodBar.hidden = false;
+      periodBar.classList.toggle("is-consulting", viewingClosed);
+
+      if (viewingClosed) {
+        if (periodLabel) periodLabel.textContent = "Période consultée";
+        if (viewingLabel) {
+          viewingLabel.hidden = false;
+          viewingLabel.textContent = `${formatMonthLabel(current.period_month)} ${current.period_year} — Déclaré`;
+        }
+        periodSelect.hidden = true;
+        periodLabel?.removeAttribute("hidden");
+
+        if (openPeriods.length === 1) {
+          const target = openPeriods[0];
+          if (backToOpenBtn) {
+            backToOpenBtn.hidden = false;
+            backToOpenBtn.textContent = `← Retour à ${formatMonthLabel(target.period_month)} ${target.period_year}`;
+            backToOpenBtn.onclick = () => goToOpenPeriod(target.id);
+          }
+          if (openSelect) openSelect.hidden = true;
+        } else if (openPeriods.length > 1) {
+          if (backToOpenBtn) backToOpenBtn.hidden = true;
+          if (openSelect) {
+            openSelect.hidden = false;
+            openSelect.innerHTML = [
+              `<option value="">Passer à une période en cours…</option>`,
+              ...openPeriods.map((d) => {
+                const label = `${formatMonthLabel(d.period_month)} ${d.period_year}`;
+                const meta = STATUS_META[d.status]?.label || "";
+                return `<option value="${d.id}">${escapeHtml(label)} — ${escapeHtml(meta)}</option>`;
+              }),
+            ].join("");
+            openSelect.onchange = async () => {
+              const nextId = Number(openSelect.value);
+              if (!nextId) return;
+              openSelect.value = "";
+              await goToOpenPeriod(nextId);
+            };
+          }
+        } else {
+          if (backToOpenBtn) backToOpenBtn.hidden = true;
+          if (openSelect) openSelect.hidden = true;
+        }
+
+        if (historyLink) {
+          historyLink.hidden = closedCount === 0;
+          historyLink.textContent = closedCount <= 1
+            ? "Historique des périodes →"
+            : `Historique (${closedCount} clôturées) →`;
+        }
+        return;
+      }
+
+      periodBar.classList.remove("is-consulting");
       if (viewingLabel) viewingLabel.hidden = true;
+      if (backToOpenBtn) backToOpenBtn.hidden = true;
+      if (openSelect) openSelect.hidden = true;
       if (periodLabel) periodLabel.textContent = "Période active";
 
       if (openPeriods.length <= 1 && closedCount === 0) {
@@ -1734,20 +1871,24 @@
         return;
       }
 
-      periodBar.hidden = false;
       const showSelect = openPeriods.length > 1;
       periodSelect.hidden = !showSelect;
-      periodBar.querySelector("label")?.toggleAttribute("hidden", !showSelect);
+      periodLabel?.toggleAttribute("hidden", !showSelect);
 
-      if (!showSelect) {
-        return;
+      if (showSelect) {
+        periodSelect.innerHTML = openPeriods.map((d) => {
+          const label = `${formatMonthLabel(d.period_month)} ${d.period_year}`;
+          const meta = STATUS_META[d.status]?.label || "";
+          return `<option value="${d.id}" ${d.id === selectedDossierId ? "selected" : ""}>${escapeHtml(label)} — ${escapeHtml(meta)}</option>`;
+        }).join("");
       }
 
-      periodSelect.innerHTML = openPeriods.map((d) => {
-        const label = `${formatMonthLabel(d.period_month)} ${d.period_year}`;
-        const meta = STATUS_META[d.status]?.label || "";
-        return `<option value="${d.id}" ${d.id === selectedDossierId ? "selected" : ""}>${escapeHtml(label)} — ${escapeHtml(meta)}</option>`;
-      }).join("");
+      if (historyLink) {
+        historyLink.hidden = closedCount === 0;
+        historyLink.textContent = closedCount === 1
+          ? "Voir la période clôturée →"
+          : `Voir les ${closedCount} périodes clôturées →`;
+      }
     }
 
     function renderCockpit() {
@@ -1811,10 +1952,29 @@
       document.getElementById("kpiDeadlineWrap").classList.toggle("dash-kpi-alert", cockpit.isLate);
 
       const heroDeclareBtn = document.getElementById("heroDeclareBtn");
-      const canDeclare = cockpit.statusKey !== "exported" && cockpit.lineCount > 0;
+      const heroConsultBanner = document.getElementById("heroConsultBanner");
+      const heroBackToOpenBtn = document.getElementById("heroBackToOpenBtn");
+      const isDeclared = cockpit.statusKey === "exported";
+      const openPeriods = getOpenPeriods();
+      const canDeclare = !isDeclared && cockpit.lineCount > 0;
+
       if (heroDeclareBtn) {
         heroDeclareBtn.hidden = !canDeclare;
         heroDeclareBtn.onclick = () => openDeclarePeriod();
+      }
+      if (heroConsultBanner) {
+        heroConsultBanner.hidden = !isDeclared;
+      }
+      if (heroBackToOpenBtn) {
+        heroBackToOpenBtn.hidden = !isDeclared || openPeriods.length === 0;
+        if (openPeriods.length === 1) {
+          const onlyOpen = openPeriods[0];
+          heroBackToOpenBtn.textContent =
+            `Retour à ${formatMonthLabel(onlyOpen.period_month)} ${onlyOpen.period_year}`;
+        } else {
+          heroBackToOpenBtn.textContent = `Choisir une période en cours (${openPeriods.length})`;
+        }
+        heroBackToOpenBtn.onclick = () => goToOpenPeriod();
       }
 
       document.getElementById("pipelineSteps").innerHTML = cockpit.pipeline.map((step) => `
@@ -1862,8 +2022,26 @@
 
       const cta = document.getElementById("primaryCta");
       const ctaLabel = document.getElementById("primaryCtaLabel");
-      ctaLabel.textContent = cockpit.nextAction.label;
-      if (cockpit.nextAction.tab) {
+      const latestOpen = pickLatestOpenPeriod();
+      let productionLabel = "Continuer";
+      let productionIcon = "play";
+
+      if (cockpit.statusKey === "exported" && latestOpen) {
+        const backLabel = openPeriods.length > 1
+          ? `Choisir une période en cours (${openPeriods.length})`
+          : `Retour à ${formatMonthLabel(latestOpen.period_month)} ${latestOpen.period_year}`;
+        productionLabel = backLabel;
+        productionIcon = "arrow-left";
+        ctaLabel.textContent = backLabel;
+        cta.href = "#";
+        cta.classList.remove("is-muted");
+        cta.onclick = (event) => {
+          event.preventDefault();
+          goToOpenPeriod();
+        };
+      } else if (cockpit.nextAction.tab) {
+        productionLabel = cockpit.nextAction.label;
+        ctaLabel.textContent = cockpit.nextAction.label;
         cta.href = "#";
         cta.classList.remove("is-muted");
         cta.onclick = (event) => {
@@ -1871,24 +2049,34 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
-          else           if (cockpit.nextAction.action === "add_invoices") openInvoiceUpload({ focusDocuments: true });
+          else if (cockpit.nextAction.action === "add_invoices") openInvoiceUpload({ focusDocuments: true });
           else if (cockpit.nextAction.action === "declare") openDeclarePeriod();
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         };
       } else if (cockpit.nextAction.href) {
+        productionLabel = cockpit.nextAction.label;
+        ctaLabel.textContent = cockpit.nextAction.label;
         cta.href = cockpit.nextAction.href;
         cta.onclick = null;
         cta.classList.remove("is-muted");
       } else {
+        ctaLabel.textContent = cockpit.nextAction.label;
         cta.href = "#";
         cta.onclick = null;
         cta.classList.add("is-muted");
       }
 
+      openProductionBtn.innerHTML = `<i data-lucide="${productionIcon}"></i> ${productionLabel}`;
+
       document.getElementById("lastActivityLine").textContent =
         `Dernière activité : ${cockpit.lastActivityLabel}`;
 
       openProductionBtn.onclick = () => {
+        const latestOpenPeriod = pickLatestOpenPeriod();
+        if (cockpit.statusKey === "exported" && latestOpenPeriod) {
+          goToOpenPeriod();
+          return;
+        }
         if (cockpit.nextAction?.tab) {
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
@@ -1939,6 +2127,7 @@
       });
 
       renderPeriodSelector();
+      updateCockpitTabLabel();
       renderAnalysisCard();
       initLucide();
     }
@@ -1954,11 +2143,14 @@
       document.getElementById("clientMeta").innerHTML = `
         <span>Client depuis <strong>${new Date(client.created_at).toLocaleDateString("fr-FR")}</strong></span>
         <span><strong>${client.dossiers.length}</strong> période${client.dossiers.length > 1 ? "s" : ""} TVA</span>
-        <span><strong>${openCount}</strong> en cours</span>
+        ${openCount > 0
+          ? `<button type="button" class="ws-client-meta-link" id="clientOpenPeriodsLink"><strong>${openCount}</strong> en cours</button>`
+          : `<span><strong>0</strong> en cours</span>`}
         ${doneCount > 0
           ? `<button type="button" class="ws-client-meta-link" id="clientClosedPeriodsLink"><strong>${doneCount}</strong> clôturée${doneCount > 1 ? "s" : ""}</button>`
           : `<span><strong>0</strong> clôturée</span>`}
       `;
+      document.getElementById("clientOpenPeriodsLink")?.addEventListener("click", () => goToOpenPeriod());
       document.getElementById("clientClosedPeriodsLink")?.addEventListener("click", () => setTab("history"));
     }
 
