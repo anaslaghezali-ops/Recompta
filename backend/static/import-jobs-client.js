@@ -172,10 +172,12 @@ export function isImportJobStale(job, now = Date.now()) {
     return now - touched > 90 * 1000;
   }
   if (job.status === "queued" && (job.processed_files || 0) === 0) {
-    return now - touched > 2 * 60 * 1000;
+    const analysisLimit = job?.options?.analysis_from_documents ? 15 * 60 * 1000 : 2 * 60 * 1000;
+    return now - touched > analysisLimit;
   }
   if (job.status === "processing" && (job.processed_files || 0) === 0) {
-    return now - touched > 8 * 60 * 1000;
+    const analysisLimit = job?.options?.analysis_from_documents ? 25 * 60 * 1000 : 8 * 60 * 1000;
+    return now - touched > analysisLimit;
   }
 
   const maxAge = STALE_IMPORT_MS[job.status];
@@ -472,11 +474,11 @@ export function showImportCompletionToast(job, { dossierName = "", clientId = nu
   }
 }
 
-export async function pollImportCompletions(dossierIds, onComplete, { sinceMinutes = 180 } = {}) {
+export async function pollImportCompletions(dossierIds, onComplete, { sinceMinutes = 180, sinceIso = null } = {}) {
   const supabase = getSupabase();
   if (!supabase || !dossierIds?.length) return [];
 
-  const since = new Date(Date.now() - sinceMinutes * 60 * 1000).toISOString();
+  const since = sinceIso || new Date(Date.now() - sinceMinutes * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("import_jobs")
     .select(
@@ -497,14 +499,22 @@ export async function pollImportCompletions(dossierIds, onComplete, { sinceMinut
   return fresh;
 }
 
-export function startImportCompletionWatcher(dossierIds, onComplete, intervalMs = 10000) {
+export function startImportCompletionWatcher(
+  dossierIds,
+  onComplete,
+  { intervalMs = 10000, sinceIso = null } = {},
+) {
   let stopped = false;
   requestImportNotificationPermission().catch(() => {});
 
   async function tick() {
     if (stopped) return;
     try {
-      await pollImportCompletions(dossierIds, onComplete);
+      await pollImportCompletions(
+        dossierIds,
+        onComplete,
+        sinceIso ? { sinceIso } : {},
+      );
     } catch {
       /* ignore transient errors */
     }
@@ -986,6 +996,72 @@ export async function getActiveImportSummary(dossierId) {
   return aggregateActiveImportJobs(jobs);
 }
 
+export async function listActiveAnalysisJobs(dossierId) {
+  const jobs = await listImportJobs(dossierId, { limit: 50, activeOnly: true });
+  return (jobs || []).filter(isAnalysisJob);
+}
+
+/**
+ * Attend la fin réelle des jobs d'analyse IA (completed/failed), pas seulement leur apparition.
+ * Relance le worker périodiquement pour vider la file (ex. 6 PDFs = 6 jobs).
+ */
+export async function waitForDossierAnalysisComplete(
+  dossierId,
+  {
+    apiUrl = null,
+    expectedJobs = 0,
+    onProgress = null,
+    timeoutMs = 20 * 60 * 1000,
+    pollMs = 2000,
+    kickImportWorker = null,
+  } = {},
+) {
+  const started = Date.now();
+  let lastKick = 0;
+  let lastActive = [];
+
+  while (Date.now() - started < timeoutMs) {
+    const active = await listActiveAnalysisJobs(dossierId);
+    lastActive = active;
+
+    if (!active.length) {
+      return { completed: true, active: [], timedOut: false };
+    }
+
+    const summary = aggregateActiveImportJobs(active) || active[0];
+    const processed = summary?.processed_files || 0;
+    const total = summary?.total_files || expectedJobs || active.length;
+    onProgress?.({
+      processed,
+      total,
+      job: summary,
+      activeCount: active.length,
+    });
+
+    if (apiUrl && kickImportWorker && Date.now() - lastKick > 5000) {
+      try {
+        await kickImportWorker(apiUrl, { limit: Math.max(active.length, expectedJobs, 3) });
+      } catch {
+        /* worker kick is best-effort */
+      }
+      lastKick = Date.now();
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, pollMs));
+  }
+
+  return { completed: false, active: lastActive, timedOut: true };
+}
+
+/** Marque les jobs terminés récents comme vus (évite une pluie de toasts à l'ouverture). */
+export async function dismissHistoricImportJobs(dossierIds, { sinceHours = 48 } = {}) {
+  await pollImportCompletions(
+    dossierIds,
+    (job) => markImportJobSeen(job.id),
+    { sinceMinutes: sinceHours * 60 },
+  );
+}
+
 export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {
   let stopped = false;
 
@@ -1026,6 +1102,7 @@ export function countPendingAnalysis(documents, workspace) {
   const withLines = sourceIdsWithLines(lines);
 
   for (const doc of documents || []) {
+    if (doc.doc_type === "archive") continue;
     if (doc.doc_type === "invoice") {
       if (shouldSkipZipForAnalysis(doc, documents, processedKeys, withLines)) continue;
       const sid = doc.source_id ? `sid:${doc.source_id}` : null;
