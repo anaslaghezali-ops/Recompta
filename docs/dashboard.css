@@ -654,9 +654,34 @@
 .ws-period-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.75rem;
   flex-wrap: wrap;
   margin-bottom: 0.85rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+}
+
+.ws-period-bar.is-consulting {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.ws-period-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ws-period-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .ws-period-bar label {
@@ -679,20 +704,38 @@
   min-width: 11rem;
 }
 
+.ws-period-nav-link,
 .ws-period-history-link {
   border: none;
   background: none;
   padding: 0;
   font: inherit;
   font-size: 0.78rem;
+  font-weight: 600;
   color: var(--dash-accent);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+  white-space: nowrap;
 }
 
+.ws-period-nav-link:hover,
 .ws-period-history-link:hover {
   color: #1d4ed8;
+}
+
+.ws-period-nav-link--back {
+  color: var(--dash-success, #059669);
+}
+
+.ws-period-nav-link--back:hover {
+  color: #047857;
+}
+
+.ws-period-open-select {
+  border-color: #86efac;
+  background: #fff;
+  min-width: 14rem;
 }
 
 .ws-period-viewing {
@@ -762,6 +805,47 @@
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-bottom: 0.5rem;
+}
+
+.ws-hero-consult {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  margin: 0.55rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  font-size: 0.8rem;
+  color: #065f46;
+}
+
+.ws-hero-consult svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.ws-hero-consult-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  color: var(--dash-success, #059669);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ws-hero-consult-btn:hover {
+  color: #047857;
+}
+
+.ws-hero.is-done .ws-hero-declare-btn {
+  display: none;
 }
 
 .ws-hero-deadline {
@@ -2065,6 +2149,17 @@
   margin-bottom: 1rem;
 }
 
+.ws-docs-upload.is-highlighted {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.ws-docs-upload.is-readonly {
+  pointer-events: none;
+  opacity: 0.72;
+  cursor: default;
+}
+
 .ws-docs-upload.is-uploading {
   pointer-events: none;
   opacity: 0.85;
@@ -2357,6 +2452,15 @@
   border-radius: 14px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   padding: 1rem;
+}
+
+.ws-production-card.is-readonly {
+  opacity: 0.92;
+}
+
+.ws-production-card.is-readonly .ws-production-actions .dash-btn:not(#openReviewBtn) {
+  pointer-events: none;
+  opacity: 0.55;
 }
 
 .ws-production-grid {

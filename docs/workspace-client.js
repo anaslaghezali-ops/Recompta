@@ -112,7 +112,7 @@ export function buildPipelineSteps({
               : "Ajoutez vos factures",
       icon: "file-input",
       status: stepStatus(purchasesDone, purchasesCurrent),
-      action: "add_invoices",
+      tab: "documents",
     },
     {
       key: "analysis",

@@ -118,9 +118,9 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
   }
   if (lines.length === 0) {
     return {
-      label: "Ajouter des factures achats",
+      label: "Voir les documents factures",
       href: wsBase ? `${wsBase}&tab=documents` : null,
-      action: "add_invoices",
+      action: "documents",
       tab: "documents",
     };
   }
