@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=analysis1" />
+  <link rel="stylesheet" href="dashboard.css?v=analysis2" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -195,6 +195,18 @@
               </div>
             </div>
             <div id="documentsList" class="ws-docs-list"></div>
+            <section class="ws-doc-archives" id="documentArchivesSection" hidden>
+              <button type="button" class="ws-doc-archives-toggle" id="documentArchivesToggle" aria-expanded="false">
+                <span class="ws-doc-archives-toggle-main">
+                  <i data-lucide="archive"></i>
+                  <span>Archives sources</span>
+                  <span class="ws-doc-archives-count" id="documentArchivesCount">0</span>
+                </span>
+                <i data-lucide="chevron-down" class="ws-doc-archives-chevron"></i>
+              </button>
+              <p class="ws-doc-archives-hint">ZIP d'origine conservés pour audit — les pièces extraites sont listées ci-dessus.</p>
+              <div id="documentArchivesList" class="ws-doc-archives-list" hidden></div>
+            </section>
             <p class="ws-docs-empty" id="documentsEmpty" hidden>Aucun document importé pour cette période.</p>
           </section>
         </div>
@@ -331,6 +343,7 @@
       downloadDossierDocument,
       groupDocumentsBySupplier,
       listDossierDocuments,
+      partitionDocumentsForDisplay,
     } from "./dossier-documents.js?v=doc6";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
@@ -388,6 +401,7 @@
     let activeImportJob = null;
     let documentsCache = [];
     let documentFilter = "all";
+    let archivesExpanded = false;
     let pendingAnalysisCount = 0;
     let bankPendingCount = 0;
     let invoicePendingCount = 0;
@@ -740,59 +754,41 @@
       importPollTimer = null;
     }
 
-    function renderDocumentsList() {
-      const listEl = document.getElementById("documentsList");
-      const emptyEl = document.getElementById("documentsEmpty");
-      const filtered = documentFilter === "all"
-        ? documentsCache
-        : documentsCache.filter((doc) => doc.doc_type === documentFilter);
+    function renderDocumentRow(doc) {
+      const icon = DOC_TYPE_ICONS[doc.doc_type] || "file";
+      const typeLabel = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
+      const dateLabel = new Date(doc.created_at).toLocaleString("fr-FR", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const displayName = doc.displayName || doc.original_filename;
+      const extraMeta = doc.extractedCount
+        ? ` · ${doc.extractedCount} pièce(s) extraite(s)`
+        : "";
+      return `
+        <div class="ws-doc-row" data-doc-id="${doc.id}">
+          <span class="ws-doc-icon"><i data-lucide="${icon}"></i></span>
+          <div class="ws-doc-meta">
+            <strong title="${escapeHtml(doc.original_filename)}">${escapeHtml(displayName)}</strong>
+            <span>${escapeHtml(typeLabel)}${extraMeta} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
+          </div>
+          <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}">
+            <i data-lucide="download"></i> Télécharger
+          </button>
+        </div>
+      `;
+    }
 
-      if (!selectedDossierId) {
-        listEl.innerHTML = "";
-        emptyEl.hidden = false;
-        emptyEl.textContent = "Sélectionnez une période TVA pour voir ses documents.";
-        return;
-      }
-
-      if (!filtered.length) {
-        listEl.innerHTML = "";
-        emptyEl.hidden = false;
-        emptyEl.textContent = documentsCache.length
-          ? "Aucun document dans cette catégorie."
-          : "Aucun document importé pour cette période.";
-        return;
-      }
-
-      emptyEl.hidden = true;
-      const groups = groupDocumentsBySupplier(filtered);
-      listEl.innerHTML = groups.map((group) => {
+    function renderDocumentGroups(docs) {
+      const groups = groupDocumentsBySupplier(docs);
+      return groups.map((group) => {
         const countLabel = group.docs.length > 1
           ? `${group.docs.length} documents`
           : "1 document";
-        const rows = group.docs.map((doc) => {
-          const icon = DOC_TYPE_ICONS[doc.doc_type] || "file";
-          const typeLabel = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
-          const dateLabel = new Date(doc.created_at).toLocaleString("fr-FR", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-          const displayName = doc.displayName || doc.original_filename;
-          return `
-            <div class="ws-doc-row" data-doc-id="${doc.id}">
-              <span class="ws-doc-icon"><i data-lucide="${icon}"></i></span>
-              <div class="ws-doc-meta">
-                <strong title="${escapeHtml(doc.original_filename)}">${escapeHtml(displayName)}</strong>
-                <span>${escapeHtml(typeLabel)} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
-              </div>
-              <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}">
-                <i data-lucide="download"></i> Télécharger
-              </button>
-            </div>
-          `;
-        }).join("");
+        const rows = group.docs.map((doc) => renderDocumentRow(doc)).join("");
         const groupIcon = group.kind === "bank" ? "landmark"
           : group.kind === "archive" ? "archive"
             : "building-2";
@@ -809,8 +805,10 @@
           </section>
         `;
       }).join("");
+    }
 
-      listEl.querySelectorAll("[data-download-doc]").forEach((btn) => {
+    function bindDocumentDownloads(rootEl) {
+      rootEl?.querySelectorAll("[data-download-doc]").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const doc = documentsCache.find((row) => String(row.id) === btn.dataset.downloadDoc);
           if (!doc) return;
@@ -824,6 +822,60 @@
           }
         });
       });
+    }
+
+    function renderDocumentsList() {
+      const listEl = document.getElementById("documentsList");
+      const emptyEl = document.getElementById("documentsEmpty");
+      const archivesSection = document.getElementById("documentArchivesSection");
+      const archivesList = document.getElementById("documentArchivesList");
+      const archivesCount = document.getElementById("documentArchivesCount");
+      const archivesToggle = document.getElementById("documentArchivesToggle");
+      const { workingDocs, sourceArchives } = partitionDocumentsForDisplay(documentsCache);
+      const filtered = documentFilter === "all"
+        ? workingDocs
+        : workingDocs.filter((doc) => doc.doc_type === documentFilter);
+
+      if (!selectedDossierId) {
+        listEl.innerHTML = "";
+        archivesSection.hidden = true;
+        emptyEl.hidden = false;
+        emptyEl.textContent = "Sélectionnez une période TVA pour voir ses documents.";
+        return;
+      }
+
+      if (!filtered.length && !sourceArchives.length) {
+        listEl.innerHTML = "";
+        archivesSection.hidden = true;
+        emptyEl.hidden = false;
+        emptyEl.textContent = documentsCache.length
+          ? "Aucun document dans cette catégorie."
+          : "Aucun document importé pour cette période.";
+        return;
+      }
+
+      emptyEl.hidden = true;
+      listEl.innerHTML = filtered.length
+        ? renderDocumentGroups(filtered)
+        : `<p class="ws-docs-filter-empty">Aucun document dans cette catégorie. Les archives sources restent accessibles ci-dessous.</p>`;
+
+      if (sourceArchives.length) {
+        archivesSection.hidden = false;
+        archivesCount.textContent = String(sourceArchives.length);
+        archivesToggle.setAttribute("aria-expanded", archivesExpanded ? "true" : "false");
+        archivesToggle.classList.toggle("is-open", archivesExpanded);
+        archivesList.hidden = !archivesExpanded;
+        archivesList.innerHTML = sourceArchives.map((doc) => renderDocumentRow({
+          ...doc,
+          doc_type: "archive",
+        })).join("");
+        bindDocumentDownloads(archivesList);
+      } else {
+        archivesSection.hidden = true;
+        archivesList.innerHTML = "";
+      }
+
+      bindDocumentDownloads(listEl);
       initLucide();
     }
 
@@ -1286,6 +1338,11 @@
       document.querySelectorAll("#docFilters [data-filter]").forEach((el) => {
         el.classList.toggle("active", el.dataset.filter === documentFilter);
       });
+      renderDocumentsList();
+    });
+
+    document.getElementById("documentArchivesToggle")?.addEventListener("click", () => {
+      archivesExpanded = !archivesExpanded;
       renderDocumentsList();
     });
 

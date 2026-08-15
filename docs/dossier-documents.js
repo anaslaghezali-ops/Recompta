@@ -219,6 +219,34 @@ export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
   return `${base} (${sizeKb} Ko)`;
 }
 
+export function getZipExtractedChildren(zipDoc, docs) {
+  return getZipChildDocuments(zipDoc, docs);
+}
+
+export function isExtractedArchiveZip(zipDoc, docs) {
+  return isZipDocument(zipDoc) && getZipExtractedChildren(zipDoc, docs).length > 0;
+}
+
+export function partitionDocumentsForDisplay(docs) {
+  const all = dedupeDocuments(docs || []);
+  const sourceArchives = [];
+  const workingDocs = [];
+
+  for (const doc of all) {
+    if (isExtractedArchiveZip(doc, all)) {
+      sourceArchives.push({
+        ...doc,
+        displayName: documentDisplayName(doc, { withSize: true }),
+        extractedCount: getZipExtractedChildren(doc, all).length,
+      });
+      continue;
+    }
+    workingDocs.push(doc);
+  }
+
+  return { workingDocs, sourceArchives };
+}
+
 export function documentSupplierGroup(doc) {
   if (doc?.doc_type === "bank") {
     return {
