@@ -1406,6 +1406,12 @@ export function completeSupplierIdentifiers(lines) {
   return completed;
 }
 
+function normalizeDuplicateTaux(taux) {
+  const value = Number(taux);
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 10000) / 10000;
+}
+
 function duplicateSignatures(line) {
   const factNum = String(line.fact_num || "")
     .toUpperCase()
@@ -1416,6 +1422,7 @@ function duplicateSignatures(line) {
     String(line.lib_frss || "")
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, "");
+  const taux = normalizeDuplicateTaux(line.taux);
   const ttc = Math.round((Number(line.m_ttc) || 0) * 100);
   const date = String(line.date_fac || "").slice(0, 10);
   const source = String(line.source_file || "")
@@ -1424,14 +1431,18 @@ function duplicateSignatures(line) {
     .filter(Boolean)
     .join("/")
     .toLowerCase();
+  const sourceId = String(line.source_id || "").trim();
   const isBankFee = String(line.designation || "").toUpperCase().includes("FRAIS BANCAIRE");
 
   const keys = [];
   if (supplier && factNum) {
-    keys.push(`fact:${supplier}|${factNum}|${ttc}`);
+    keys.push(`fact:${supplier}|${factNum}|${taux}|${ttc}`);
+  }
+  if (sourceId && factNum) {
+    keys.push(`sid:${sourceId}|${factNum}|${taux}|${ttc}`);
   }
   if (!isBankFee && source && factNum && ttc !== 0) {
-    keys.push(`file:${source}|${factNum}|${ttc}`);
+    keys.push(`file:${source}|${factNum}|${taux}|${ttc}`);
   }
   if (!isBankFee && !factNum && source && date && ttc !== 0) {
     keys.push(`filedate:${source}|${date}|${ttc}`);
@@ -1440,7 +1451,8 @@ function duplicateSignatures(line) {
 }
 
 /**
- * Doublon = même fournisseur + même n° de facture + même TTC.
+ * Doublon = même fournisseur (ou source) + même n° de facture + même taux + même TTC.
+ * Une facture multi-TVA (10 % + 20 %) produit plusieurs lignes légitimes.
  * Les frais bancaires récurrents (même montant, dates différentes) ne sont pas des doublons.
  */
 export function findDuplicateLineIndexes(lines) {
