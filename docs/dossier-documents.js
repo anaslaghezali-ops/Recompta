@@ -184,14 +184,28 @@ export function getZipChildDocuments(zipDoc, docs) {
   const stemLower = zipArchiveStem(zipDoc.original_filename).toLowerCase();
   const stemPrefix = stemLower.split("-")[0].trim();
 
-  return (docs || []).filter((doc) => {
+  const direct = (docs || []).filter((doc) => {
     if (!doc || doc.id === zipDoc.id) return false;
     if (isZipDocument(doc)) return false;
     const path = String(doc.original_filename || "").replace(/\\/g, "/");
     const parts = path.split("/").filter(Boolean);
     if (parts.length < 2) return false;
     const folderLower = parts[0].toLowerCase();
-    return stemLower.startsWith(folderLower) || folderLower === stemPrefix;
+    return (
+      folderLower === stemLower
+      || stemLower.startsWith(folderLower)
+      || folderLower === stemPrefix
+    );
+  });
+  if (direct.length) return direct;
+
+  const zips = (docs || []).filter((doc) => doc && isZipDocument(doc));
+  if (zips.length !== 1 || zips[0].id !== zipDoc.id) return [];
+  return (docs || []).filter((doc) => {
+    if (!doc || doc.id === zipDoc.id || isZipDocument(doc)) return false;
+    if (doc.doc_type && doc.doc_type !== "invoice") return false;
+    const parts = String(doc.original_filename || "").replace(/\\/g, "/").split("/").filter(Boolean);
+    return parts.length >= 2;
   });
 }
 
@@ -219,7 +233,8 @@ export function shouldSkipZipForAnalysis(doc, documents, processedKeys, sourceId
   if (!isZipDocument(doc)) return false;
   const children = getZipChildDocuments(doc, documents);
   if (!children.length) return false;
-  return children.some((child) => isInvoiceDocumentProcessed(child, processedKeys, sourceIdsWithLines));
+  // Archive déjà décompressée : ne pas re-mettre le ZIP en file (seulement les PDFs).
+  return true;
 }
 
 export function documentDisplayName(docOrFilename, { withSize = false } = {}) {

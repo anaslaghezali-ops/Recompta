@@ -17,7 +17,7 @@ from normalize_results import (
     normalize_extraction_results,
 )
 from supabase_service import SupabaseService, _document_identity_keys
-from zip_utils import iter_invoice_files
+from zip_utils import iter_invoice_files, storage_path_for_zip_member
 
 IMPORT_QUEUE_BUCKET = "import-queue"
 
@@ -334,10 +334,15 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     source_id=parent_source,
                 )
 
+            zip_expanded = len(expanded) > 1
             for relative_name, file_content, file_mime in expanded:
-                normalized_name = relative_name.replace("\\", "/")
+                normalized_name = (
+                    storage_path_for_zip_member(filename, relative_name)
+                    if zip_expanded
+                    else relative_name.replace("\\", "/")
+                )
                 source_id = parent_source if len(expanded) == 1 else _next_source_id()
-                if len(expanded) > 1:
+                if zip_expanded:
                     await db.save_dossier_document(
                         dossier_id,
                         filename=normalized_name,
