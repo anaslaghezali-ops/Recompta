@@ -51,6 +51,37 @@ def _is_bank_processed(doc: dict[str, Any], workspace: dict[str, Any]) -> bool:
     return bool(doc_keys & stored_keys)
 
 
+def _is_zip_filename(filename: str) -> bool:
+    return str(filename or "").lower().endswith(".zip")
+
+
+def _zip_has_extracted_children(zip_doc: dict[str, Any], documents: list[dict[str, Any]]) -> bool:
+    from pathlib import PurePosixPath
+
+    zip_name = PurePosixPath(str(zip_doc.get("original_filename") or "")).name
+    if not zip_name.lower().endswith(".zip"):
+        return False
+    stem_lower = zip_name[:-4].lower()
+    stem_prefix = stem_lower.split("-")[0].strip()
+    zip_id = zip_doc.get("id")
+
+    for doc in documents:
+        if doc.get("id") == zip_id:
+            continue
+        name = str(doc.get("original_filename") or "").replace("\\", "/")
+        parts = [part for part in name.split("/") if part]
+        if len(parts) < 2:
+            continue
+        if _is_zip_filename(parts[-1]):
+            continue
+        folder_lower = parts[0].lower()
+        if stem_lower.startswith(folder_lower) or folder_lower == stem_prefix:
+            return True
+        if stem_prefix and stem_lower.startswith(stem_prefix):
+            return True
+    return False
+
+
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:
     params: dict[str, str] = {
         "dossier_id": f"eq.{dossier_id}",
@@ -83,7 +114,11 @@ async def queue_dossier_analysis(
 
         if doc_type == "invoice":
             processed_keys = _processed_invoice_keys(list(workspace.get("lines") or []))
-            pending = [doc for doc in documents if not _is_invoice_processed(doc, processed_keys)]
+            pending = [
+                doc for doc in documents
+                if not _is_invoice_processed(doc, processed_keys)
+                and not (_is_zip_filename(doc.get("original_filename") or "") and _zip_has_extracted_children(doc, documents))
+            ]
         elif doc_type == "bank":
             pending = [doc for doc in documents if not _is_bank_processed(doc, workspace)]
         else:

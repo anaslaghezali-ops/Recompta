@@ -176,6 +176,61 @@ export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
   return `${base} (${sizeKb} Ko)`;
 }
 
+export function isZipDocument(docOrFilename) {
+  const name = typeof docOrFilename === "object"
+    ? docOrFilename?.original_filename
+    : docOrFilename;
+  const base = String(name || "").replace(/\\/g, "/").split("/").pop() || "";
+  return /\.zip$/i.test(base);
+}
+
+function zipArchiveStem(filename) {
+  const base = String(filename || "").replace(/\\/g, "/").split("/").pop() || "";
+  return base.replace(/\.zip$/i, "");
+}
+
+export function getZipExtractedChildren(zipDoc, docs) {
+  if (!zipDoc || !isZipDocument(zipDoc)) return [];
+  const stemLower = zipArchiveStem(zipDoc.original_filename).toLowerCase();
+  const stemPrefix = stemLower.split("-")[0].trim();
+
+  return (docs || []).filter((doc) => {
+    if (!doc || doc.id === zipDoc.id) return false;
+    if (isZipDocument(doc)) return false;
+    const path = String(doc.original_filename || "").replace(/\\/g, "/");
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 2) return false;
+    const folderLower = parts[0].toLowerCase();
+    return stemLower.startsWith(folderLower)
+      || folderLower === stemPrefix
+      || (stemPrefix && stemLower.startsWith(stemPrefix));
+  });
+}
+
+export function isExtractedArchiveZip(zipDoc, docs) {
+  return isZipDocument(zipDoc) && getZipExtractedChildren(zipDoc, docs).length > 0;
+}
+
+export function partitionDocumentsForDisplay(docs) {
+  const all = dedupeDocuments(docs || []);
+  const sourceArchives = [];
+  const workingDocs = [];
+
+  for (const doc of all) {
+    if (isExtractedArchiveZip(doc, all)) {
+      sourceArchives.push({
+        ...doc,
+        displayName: documentDisplayName(doc, { withSize: true }),
+        extractedCount: getZipExtractedChildren(doc, all).length,
+      });
+      continue;
+    }
+    workingDocs.push(doc);
+  }
+
+  return { workingDocs, sourceArchives };
+}
+
 export function documentSupplierGroup(doc) {
   if (doc?.doc_type === "bank") {
     return {
