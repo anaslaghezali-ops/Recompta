@@ -452,7 +452,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     work_items = pending_items
 
     if not work_items:
-        final_status = "completed" if skipped_items else "failed"
+        final_status = "failed"
         error_summary = (
             f"{skipped_items} fichier(s) déjà extrait(s), rien à refaire."
             if skipped_items
@@ -581,7 +581,12 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     total = len(work_items)
     if processed == 0:
         final_status = "failed"
-        error_summary = "Aucun fichier n'a pu être extrait."
+        warning_bits = []
+        for result in extraction_results:
+            for warning in (result.warnings or [])[:2]:
+                if warning and warning not in warning_bits:
+                    warning_bits.append(warning)
+        error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
     elif failed > 0 or archive_failures > 0:
         final_status = "completed"
         error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."

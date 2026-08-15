@@ -55,7 +55,7 @@ export async function listImportJobs(dossierId, { limit = 10, activeOnly = false
   let query = supabase
     .from("import_jobs")
     .select(
-      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, error_summary, created_at, started_at, finished_at, updated_at",
+      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, options, error_summary, created_at, started_at, finished_at, updated_at",
     )
     .eq("dossier_id", dossierId)
     .order("created_at", { ascending: false })
@@ -219,7 +219,6 @@ export async function abandonStaleImportJob(job) {
     .eq("id", job.id)
     .in("status", ["uploading", "queued", "processing"]);
 
-  if (!error) markImportJobSeen(job.id);
   return !error;
 }
 
@@ -254,19 +253,6 @@ export async function reconcileStaleImportJobs(dossierIds) {
   for (const job of data || []) {
     if (isImportJobStale(job)) {
       await abandonStaleImportJob(job);
-    }
-  }
-
-  const { data: failedRecent, error: failedError } = await supabase
-    .from("import_jobs")
-    .select("id")
-    .in("dossier_id", dossierIds)
-    .eq("status", "failed")
-    .gte("finished_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-  if (!failedError) {
-    for (const job of failedRecent || []) {
-      markImportJobSeen(job.id);
     }
   }
 }
@@ -431,7 +417,7 @@ export function markImportJobSeen(jobId) {
 }
 
 export function shouldNotifyImportCompletion(job) {
-  if (!job || job.status !== "completed") return false;
+  if (!job || !["completed", "failed"].includes(job.status)) return false;
   if (readSeenJobIds().includes(String(job.id))) return false;
   if (job.options?.analysis_from_documents) return true;
   if ((job.total_files || 0) >= COMPLETION_NOTIFY_MIN_FILES) return true;
@@ -494,10 +480,10 @@ export async function pollImportCompletions(dossierIds, onComplete, { sinceMinut
   const { data, error } = await supabase
     .from("import_jobs")
     .select(
-      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, error_summary, finished_at, updated_at",
+      "id, dossier_id, doc_type, status, total_files, uploaded_files, processed_files, failed_files, options, error_summary, finished_at, updated_at",
     )
     .in("dossier_id", dossierIds)
-    .eq("status", "completed")
+    .in("status", ["completed", "failed"])
     .gte("finished_at", since)
     .order("finished_at", { ascending: false })
     .limit(20);
@@ -998,6 +984,63 @@ export async function startBankImportUpload({
 export async function getActiveImportSummary(dossierId) {
   const jobs = await listImportJobs(dossierId, { limit: 50, activeOnly: true });
   return aggregateActiveImportJobs(jobs);
+}
+
+export async function listActiveAnalysisJobs(dossierId) {
+  const jobs = await listImportJobs(dossierId, { limit: 50, activeOnly: true });
+  return (jobs || []).filter(isAnalysisJob);
+}
+
+/**
+ * Attend la fin réelle des jobs d'analyse IA (completed/failed), pas seulement leur apparition.
+ * Relance le worker périodiquement pour vider la file (ex. 6 PDFs = 6 jobs).
+ */
+export async function waitForDossierAnalysisComplete(
+  dossierId,
+  {
+    apiUrl = null,
+    expectedJobs = 0,
+    onProgress = null,
+    timeoutMs = 20 * 60 * 1000,
+    pollMs = 2000,
+    kickImportWorker = null,
+  } = {},
+) {
+  const started = Date.now();
+  let lastKick = 0;
+  let lastActive = [];
+
+  while (Date.now() - started < timeoutMs) {
+    const active = await listActiveAnalysisJobs(dossierId);
+    lastActive = active;
+
+    if (!active.length) {
+      return { completed: true, active: [], timedOut: false };
+    }
+
+    const summary = aggregateActiveImportJobs(active) || active[0];
+    const processed = summary?.processed_files || 0;
+    const total = summary?.total_files || expectedJobs || active.length;
+    onProgress?.({
+      processed,
+      total,
+      job: summary,
+      activeCount: active.length,
+    });
+
+    if (apiUrl && kickImportWorker && Date.now() - lastKick > 5000) {
+      try {
+        await kickImportWorker(apiUrl, { limit: Math.max(active.length, expectedJobs, 3) });
+      } catch {
+        /* worker kick is best-effort */
+      }
+      lastKick = Date.now();
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, pollMs));
+  }
+
+  return { completed: false, active: lastActive, timedOut: true };
 }
 
 export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {

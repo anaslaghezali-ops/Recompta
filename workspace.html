@@ -418,9 +418,11 @@
       showExtractionStartedToast,
       showWorkspaceToast,
       showImportCompletionToast,
+      pollImportCompletions,
+      waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs18";
-    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth } from "./api-client.js?v=api6";
+    } from "./import-jobs-client.js?v=jobs20";
+    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace8";
     import {
       createWorkspaceBankMatch,
@@ -475,6 +477,7 @@
     let reviewController = null;
     let analysisInFlight = false;
     let analysisLaunchQueued = 0;
+    let analysisProgress = null;
     let serverHealthOk = null;
     let bankMatchController = null;
     let bankMatchInFlight = false;
@@ -764,8 +767,13 @@
 
       if (activeImportJob || analysisInFlight || bankExtractInFlight) {
         const percent = activeImportJob ? jobProgressPercent(activeImportJob) : 0;
+        const progressNote = analysisProgress?.total
+          ? `${analysisProgress.processed}/${analysisProgress.total} facture(s) analysée(s)`
+          : null;
         const runningLabel = bankExtractInFlight && !activeImportJob
           ? "Extraction du relevé en cours…"
+          : progressNote
+            ? `Extraction en cours — ${progressNote}`
           : isAnalysisJob(activeImportJob)
             ? "Extraction des factures en cours sur le serveur."
             : activeImportJob
@@ -775,8 +783,8 @@
         extractionMeta.textContent = activeImportJob
           ? `${JOB_STATUS_LABELS[activeImportJob.status] || "Extraction"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`
           : analysisLaunchQueued > 0
-            ? `${analysisLaunchQueued} fichier(s) en cours de mise en file.`
-            : "Vérification des documents à traiter.";
+            ? `${analysisLaunchQueued} fichier(s) en file — traitement en cours sur le serveur.`
+            : "Connexion au serveur et mise en file des documents.";
         launchBtn.disabled = true;
         launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Extraction en cours…';
         renderAnalysisStatusPanel({ launching: !activeImportJob, job: activeImportJob });
@@ -850,7 +858,7 @@
 
     const renderAnalysisCard = renderProductionCard;
 
-    async function refreshPendingAnalysis() {
+    async function refreshPendingAnalysis({ forceDocuments = false } = {}) {
       if (!selectedDossierId) {
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
@@ -859,7 +867,7 @@
         return;
       }
       try {
-        if (!documentsCache.length) {
+        if (forceDocuments || !documentsCache.length) {
           documentsCache = await listDossierDocuments(selectedDossierId);
         }
         const workspace = await loadDossierWorkspace(selectedDossierId);
@@ -889,7 +897,7 @@
         return 0;
       }
 
-      await refreshPendingAnalysis();
+      await refreshPendingAnalysis({ forceDocuments: true });
       const pendingForType = docType === "bank" ? bankPendingCount : invoicePendingCount;
       if (!pendingForType) {
         await reloadCockpit(selectedDossierId);
@@ -907,9 +915,34 @@
         clientIce: client?.ice || "",
       });
       const queuedJobs = result.queued_jobs || 0;
-      if (!queuedJobs) return 0;
+      const skippedInflight = result.skipped_inflight || 0;
+      if (!queuedJobs) {
+        showWorkspaceToast({
+          title: skippedInflight ? "Extraction déjà en cours" : "Extraction non démarrée",
+          message: result.message
+            || "Le serveur n'a trouvé aucun document à analyser. Vérifiez l'URL Codespace et SUPABASE_SERVICE_ROLE_KEY.",
+          variant: skippedInflight ? "info" : "warn",
+          durationMs: 14000,
+        });
+        if (skippedInflight) {
+          await waitForActiveImportJob({ attempts: 8, delayMs: 500 });
+          const waitResult = await waitForDossierAnalysisComplete(selectedDossierId, {
+            apiUrl,
+            kickImportWorker: kickImportJobWorker,
+            onProgress: ({ processed, total, job }) => {
+              analysisProgress = { processed, total };
+              activeImportJob = job;
+              renderProductionCard();
+              renderImportBanner().catch(() => {});
+            },
+          });
+          return waitResult.completed ? -skippedInflight : 0;
+        }
+        return 0;
+      }
 
       analysisLaunchQueued = queuedJobs;
+      analysisProgress = { processed: 0, total: queuedJobs };
       renderProductionCard();
       showExtractionStartedToast({
         fileCount: queuedJobs,
@@ -917,18 +950,50 @@
         label: docType === "bank" ? "Extraction du relevé lancée" : "Extraction lancée",
       });
 
-      const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: 3 });
-      if (!workerResult.ok && !workerResult.transient) {
+      const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: Math.max(queuedJobs, 3) });
+      if (!workerResult.ok) {
         showWorkspaceToast({
-          title: "Extraction en file d'attente",
+          title: workerResult.transient ? "Serveur injoignable" : "Extraction en file d'attente",
           message: workerResult.message,
+          variant: "warn",
+          durationMs: 14000,
+        });
+      }
+
+      await waitForActiveImportJob({ attempts: 8, delayMs: 500 });
+      startImportPolling();
+      const waitResult = await waitForDossierAnalysisComplete(selectedDossierId, {
+        apiUrl,
+        expectedJobs: queuedJobs,
+        kickImportWorker: kickImportJobWorker,
+        onProgress: ({ processed, total, job }) => {
+          analysisProgress = { processed, total };
+          activeImportJob = job;
+          renderProductionCard();
+          renderImportBanner().catch(() => {});
+        },
+      });
+
+      if (waitResult.timedOut) {
+        showWorkspaceToast({
+          title: "Extraction toujours en cours",
+          message: "Le serveur traite encore des factures. Revenez dans quelques minutes ou laissez cette page ouverte.",
           variant: "warn",
         });
       }
 
-      await waitForActiveImportJob();
-      if (!activeImportJob) startImportPolling();
-      return queuedJobs;
+      return waitResult.completed ? queuedJobs : 0;
+    }
+
+    async function notifyRecentImportOutcomes() {
+      if (!selectedDossierId) return;
+      try {
+        await pollImportCompletions([selectedDossierId], (job) => {
+          showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
+        }, { sinceMinutes: 10 });
+      } catch {
+        /* ignore transient polling errors */
+      }
     }
 
     async function handleLaunchExtraction() {
@@ -961,7 +1026,21 @@
       } finally {
         analysisInFlight = false;
         analysisLaunchQueued = 0;
+        analysisProgress = null;
+        activeImportJob = null;
+        stopImportPolling();
+        await notifyRecentImportOutcomes();
+        await reloadCockpit(selectedDossierId);
+        await refreshPendingAnalysis({ forceDocuments: true });
         await renderProductionCard();
+        if (queuedJobs > 0 && cockpit?.lineCount > 0) {
+          showWorkspaceToast({
+            title: "Extraction terminée",
+            message: `${cockpit.lineCount} ligne(s) disponibles en revue.`,
+            variant: "success",
+            durationMs: 10000,
+          });
+        }
       }
     }
 
