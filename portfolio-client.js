@@ -74,15 +74,24 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
   const pendingAnalysis = workspace?.pendingAnalysis || 0;
+  const bankPending = workspace?.bankPending || 0;
   const wsBase = clientId
     ? `workspace.html?client=${clientId}&dossier=${dossier.id}`
     : null;
 
-  if (bank.length === 0) {
+  if (bank.length === 0 && bankPending === 0) {
     return {
       label: "Importer le relevé bancaire",
       href: `import-banque.html?dossier=${dossier.id}`,
       action: "bank",
+    };
+  }
+  if (bank.length === 0 && bankPending > 0 && lines.length === 0) {
+    return {
+      label: "Lancer l'analyse IA (relevé importé)",
+      href: wsBase ? `${wsBase}&tab=cockpit` : null,
+      action: "analysis",
+      tab: "cockpit",
     };
   }
   if (lines.length === 0 && pendingAnalysis > 0) {
