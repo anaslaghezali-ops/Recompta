@@ -29,6 +29,8 @@ const ANALYSIS_QUEUE_TIMEOUT_MS = 120000;
 const WORKER_KICK_TIMEOUT_MS = 45000;
 /** Scans + Vision : un lot peut dépasser 60 s (rendu PDF + appel OpenAI). */
 const EXTRACT_TIMEOUT_MS = 300000;
+/** Relevé PDF/image : même contrainte (OCR + parsing côté serveur). */
+const BANK_STATEMENT_TIMEOUT_MS = 300000;
 const HEALTH_RETRY_ATTEMPTS = 3;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -40,7 +42,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS)
     if (error?.name === "AbortError") {
       throw new Error(
         `Le serveur met trop de temps à répondre (${Math.round(timeoutMs / 1000)} s). ` +
-        (timeoutMs >= EXTRACT_TIMEOUT_MS
+        (timeoutMs >= EXTRACT_TIMEOUT_MS || timeoutMs >= BANK_STATEMENT_TIMEOUT_MS
           ? "Les scans IA sont lourds — réessayez ou réduisez le nombre de fichiers par lot."
           : "Réessayez dans quelques secondes — le Codespace peut être en train de se réveiller."),
       );
@@ -224,10 +226,15 @@ export async function parseBankStatementViaServer(file, apiUrl) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetchWithRetry(`${apiUrl}/api/import-bank-statement`, {
-    method: "POST",
-    body: formData,
-  });
+  const response = await fetchWithRetry(
+    `${apiUrl}/api/import-bank-statement`,
+    {
+      method: "POST",
+      body: formData,
+    },
+    2,
+    BANK_STATEMENT_TIMEOUT_MS,
+  );
 
   if (!response.ok) throw await errorFromResponse(response);
   return response.json();
