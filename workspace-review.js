@@ -346,10 +346,9 @@ export function createWorkspaceReview({
     const duplicates = new Set(findDuplicateLineIndexes(lines));
     const isDuplicate = duplicates.has(index);
     const verified = isLineReviewVerified(line);
-    const showValidate = lineNeedsReview(line, { isDuplicate }) || verified;
 
     if (els.detailValidate) {
-      els.detailValidate.hidden = !showValidate;
+      els.detailValidate.hidden = false;
       els.detailValidate.textContent = verified ? "Ligne validée" : "Valider la ligne";
       els.detailValidate.classList.toggle("is-verified", verified);
     }
@@ -602,12 +601,9 @@ export function createWorkspaceReview({
   }
 
   function countLinesToValidate() {
-    const duplicates = new Set(findDuplicateLineIndexes(lines));
-    return lines.reduce((count, line, index) => {
-      if (isLineReviewVerified(line)) return count;
-      if (!lineNeedsReview(line, { isDuplicate: duplicates.has(index) })) return count;
-      return count + 1;
-    }, 0);
+    return lines.reduce((count, line) => (
+      isLineReviewVerified(line) ? count : count + 1
+    ), 0);
   }
 
   function validateAllLines() {
@@ -615,9 +611,7 @@ export function createWorkspaceReview({
     let count = 0;
     lines.forEach((line, index) => {
       if (isLineReviewVerified(line)) return;
-      const isDuplicate = duplicates.has(index);
-      if (!lineNeedsReview(line, { isDuplicate })) return;
-      verifyReviewLine(line, { isDuplicate });
+      verifyReviewLine(line, { isDuplicate: duplicates.has(index) });
       count += 1;
     });
     if (!count) {
@@ -876,24 +870,20 @@ export function createWorkspaceReview({
       });
       actionTd.appendChild(viewBtn);
 
-      const hasReviewFlag = lineNeedsReview(line, { isDuplicate })
-        || isLineReviewVerified(line);
-      if (hasReviewFlag) {
-        const validateBtn = document.createElement("button");
-        validateBtn.type = "button";
-        validateBtn.className = "dash-btn dash-btn-sm ws-review-validate";
-        const verified = isLineReviewVerified(line);
-        validateBtn.textContent = verified ? "Validée" : "Valider";
-        validateBtn.title = verified
-          ? "Ligne validée — recliquez pour annuler"
-          : "Confirmer que cette ligne est correcte";
-        validateBtn.classList.toggle("is-verified", verified);
-        validateBtn.addEventListener("click", (event) => {
-          event.stopPropagation();
-          toggleLineValidation(index);
-        });
-        actionTd.appendChild(validateBtn);
-      }
+      const validateBtn = document.createElement("button");
+      validateBtn.type = "button";
+      validateBtn.className = "dash-btn dash-btn-sm ws-review-validate";
+      const verified = isLineReviewVerified(line);
+      validateBtn.textContent = verified ? "Validée" : "Valider";
+      validateBtn.title = verified
+        ? "Ligne validée — recliquez pour annuler"
+        : "Confirmer que cette ligne est correcte";
+      validateBtn.classList.toggle("is-verified", verified);
+      validateBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleLineValidation(index);
+      });
+      actionTd.appendChild(validateBtn);
 
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
