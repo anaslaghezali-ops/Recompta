@@ -141,20 +141,11 @@ export function buildPipelineSteps({
     {
       key: "export",
       label: "Export TVA",
-      desc: isExported ? "Excel exporté" : "Excel DED TVA",
+      desc: isExported ? "Période clôturée" : "Excel DED TVA",
       icon: "file-spreadsheet",
       status: stepStatus(isExported, hasLines && anomalyCount === 0 && !isExported),
       href: wsReview,
       tab: "review",
-    },
-    {
-      key: "declare",
-      label: "Déclaration TVA",
-      desc: isExported ? "Période clôturée" : "Valider le dépôt",
-      icon: "badge-check",
-      status: stepStatus(isExported, hasLines && anomalyCount === 0 && !isExported),
-      tab: "review",
-      action: "declare",
     },
   ];
 }
