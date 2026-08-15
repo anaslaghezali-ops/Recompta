@@ -30,6 +30,10 @@ export function createDebouncedSaver(fn, delayMs = 2000) {
       clearTimeout(timer);
       return run();
     },
+    cancel() {
+      clearTimeout(timer);
+      pending = null;
+    },
   };
 }
 
@@ -81,14 +85,24 @@ export async function saveDossierWorkspace(dossierId, { lines, bankTransactions,
 
   if (error) throw error;
 
-  const lineCount = (lines || []).length;
-  let status = "draft";
-  if (lineCount > 0) status = "in_review";
-
-  await supabase
+  const { data: dossier, error: dossierError } = await supabase
     .from("client_dossiers")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", dossierId);
+    .select("status")
+    .eq("id", dossierId)
+    .maybeSingle();
+  if (dossierError) throw dossierError;
+
+  if (dossier?.status !== "exported") {
+    const lineCount = (lines || []).length;
+    let status = "draft";
+    if (lineCount > 0) status = "in_review";
+
+    const { error: statusError } = await supabase
+      .from("client_dossiers")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", dossierId);
+    if (statusError) throw statusError;
+  }
 
   return data;
 }
@@ -96,10 +110,11 @@ export async function saveDossierWorkspace(dossierId, { lines, bankTransactions,
 export async function markDossierExported(dossierId) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return;
-  await supabase
+  const { error } = await supabase
     .from("client_dossiers")
     .update({ status: "exported", updated_at: new Date().toISOString() })
     .eq("id", dossierId);
+  if (error) throw error;
 }
 
 export async function logDossierActivity(dossierId, eventType, summary, meta = {}) {
