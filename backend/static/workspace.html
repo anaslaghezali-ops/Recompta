@@ -310,30 +310,35 @@
     </div>
   </div>
 
-  <dialog id="bankMatchDialog" class="dash-modal review-dialog">
-    <form method="dialog" class="dash-modal-inner">
-      <h3 style="margin:0 0 0.5rem;">Rapprochement à confirmer</h3>
-      <p class="hint" style="margin:0 0 1rem;">Vérifiez le mouvement bancaire et choisissez la facture correspondante.</p>
-      <table class="bank-match-txn-table">
-        <tbody>
-          <tr><th>Date</th><td id="bankMatchTxnDate"></td></tr>
-          <tr><th>Montant</th><td id="bankMatchTxnAmount" class="bank-match-txn-amount"></td></tr>
-          <tr><th>Libellé</th><td id="bankMatchTxnLabel"></td></tr>
-        </tbody>
-      </table>
-      <h4 style="margin:0.75rem 0 0.35rem;font-size:0.85rem;">Factures proposées</h4>
-      <div id="bankMatchProposals"></div>
-      <section id="bankMatchInvoiceDetail" hidden style="margin-top:0.75rem;">
-        <h4 style="margin:0 0 0.35rem;font-size:0.85rem;">Détail</h4>
-        <ul id="bankMatchInvoiceList" style="margin:0;padding-left:1.1rem;font-size:0.82rem;"></ul>
+  <dialog id="bankMatchDialog" class="dash-modal review-dialog bank-match-dialog">
+    <form method="dialog" class="dash-modal-inner" id="bankMatchForm">
+      <h3 style="margin:0 0 0.35rem;">Rapprochement à confirmer</h3>
+      <p class="hint" style="margin:0 0 1rem;">Vérifiez la ligne du relevé et choisissez les factures correspondantes.</p>
+
+      <section class="bank-match-txn" aria-labelledby="bankMatchTxnHeading">
+        <h4 id="bankMatchTxnHeading" style="margin:0 0 0.35rem;font-size:0.85rem;">Ligne du relevé bancaire</h4>
+        <table class="bank-match-txn-table">
+          <tbody>
+            <tr><th scope="row">Date</th><td id="bankMatchTxnDate"></td></tr>
+            <tr><th scope="row">Montant</th><td id="bankMatchTxnAmount" class="bank-match-txn-amount"></td></tr>
+            <tr><th scope="row">Libellé</th><td id="bankMatchTxnLabel" class="bank-match-txn-label"></td></tr>
+          </tbody>
+        </table>
       </section>
-      <label id="bankMatchLearnWrap" class="imp-checkbox" style="margin-top:0.75rem;" hidden>
+
+      <h4 class="bank-match-proposals-heading" style="margin:0.75rem 0 0.35rem;font-size:0.85rem;">Factures proposées</h4>
+      <div id="bankMatchProposals" class="bank-match-proposals"></div>
+      <section id="bankMatchInvoiceDetail" class="bank-match-invoices" hidden style="margin-top:0.75rem;">
+        <h4 style="margin:0 0 0.35rem;font-size:0.85rem;">Détail des factures sélectionnées</h4>
+        <ul id="bankMatchInvoiceList" class="bank-match-invoice-list" style="margin:0;padding-left:1.1rem;font-size:0.82rem;"></ul>
+      </section>
+      <label id="bankMatchLearnWrap" class="imp-checkbox bank-match-learn" style="margin-top:0.75rem;" hidden>
         <input id="bankMatchLearnAlias" type="checkbox" checked />
-        Mémoriser ce libellé pour ce fournisseur
+        Mémoriser ce libellé bancaire pour ce fournisseur (prochains relevés)
       </label>
       <div class="dash-form-actions" style="margin-top:1rem;">
-        <button type="submit" class="dash-btn">Ignorer</button>
-        <button type="button" class="dash-btn dash-btn-primary" id="bankMatchConfirm">Valider</button>
+        <button type="submit" class="dash-btn" value="skip">Ignorer ce virement</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="bankMatchConfirm">Valider le rapprochement</button>
       </div>
     </form>
   </dialog>
@@ -428,7 +433,7 @@
     import {
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
-    } from "./workspace-bank-match.js?v=bankws1";
+    } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review5";
     import {
       bindSidebarMobile,
