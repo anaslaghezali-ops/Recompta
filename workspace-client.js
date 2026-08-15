@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio4";
+} from "./portfolio-client.js?v=portfolio5";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -49,16 +49,18 @@ export function buildPipelineSteps({
   pendingAnalysis = 0,
   bankPending = 0,
   invoicePending = 0,
+  invoiceDocumentCount = 0,
 }) {
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
   const hasBank = bank.length > 0;
   const hasBankDocument = hasBank || bankPending > 0;
   const hasLines = lines.length > 0;
-  const hasInvoiceWork = hasLines || invoicePending > 0;
+  const hasInvoiceWork = hasLines || invoicePending > 0 || invoiceDocumentCount > 0;
   const needsAnalysis = bankPending > 0 || invoicePending > 0;
   const isExported = statusKey === "exported";
   const isReview = statusKey === "in_review";
+  const postAnalysis = !needsAnalysis && !isExported;
 
   function stepStatus(done, current) {
     if (done) return "done";
@@ -68,14 +70,15 @@ export function buildPipelineSteps({
 
   const bankDone = hasBankDocument;
   const purchasesDone = hasInvoiceWork;
-  const analysisDone = !needsAnalysis && (hasLines || hasBank || !hasBankDocument);
+  const analysisDone = postAnalysis && (hasLines || hasBank || !hasBankDocument);
   const reviewDone = hasLines && anomalyCount === 0;
   const exportDone = isExported;
 
   const bankCurrent = !hasBankDocument && !isExported;
-  const purchasesCurrent = hasBankDocument && !needsAnalysis && !hasInvoiceWork && !isExported;
+  const reviewReady = postAnalysis && (hasLines || hasBank || invoiceDocumentCount > 0);
+  const purchasesCurrent = postAnalysis && hasBankDocument && !hasInvoiceWork && !reviewReady;
   const analysisCurrent = needsAnalysis && !isExported;
-  const reviewCurrent = hasLines && anomalyCount > 0 && !isExported;
+  const reviewCurrent = reviewReady && (hasLines ? anomalyCount > 0 : true);
   const exportCurrent = hasLines && anomalyCount === 0 && !isExported && !isReview;
 
   const wsReview = clientId && dossier
@@ -105,9 +108,11 @@ export function buildPipelineSteps({
         ? `${lines.length} ligne${lines.length > 1 ? "s" : ""}`
         : invoicePending > 0
           ? `${invoicePending} doc(s) en attente`
-          : hasBankDocument
-            ? "Optionnel"
-            : "Importer les factures",
+          : invoiceDocumentCount > 0
+            ? `${invoiceDocumentCount} doc(s) importé${invoiceDocumentCount > 1 ? "s" : ""}`
+            : hasBankDocument
+              ? "Optionnel"
+              : "Importer les factures",
       icon: "file-input",
       status: stepStatus(purchasesDone, purchasesCurrent),
       href: dossier ? `import-achats.html?dossier=${dossier.id}` : null,
@@ -146,7 +151,7 @@ export function buildPipelineSteps({
   ];
 }
 
-export function buildCockpitState(client, dossier, workspace, { pendingAnalysis = 0, bankPending = 0, invoicePending = 0 } = {}) {
+export function buildCockpitState(client, dossier, workspace, { pendingAnalysis = 0, bankPending = 0, invoicePending = 0, invoiceDocumentCount = 0 } = {}) {
   if (!dossier) {
     return {
       hasPeriod: false,
@@ -171,7 +176,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
   });
   const nextAction = resolveNextAction({
     dossier,
-    workspace: { ...(workspace || {}), pendingAnalysis, bankPending, invoicePending },
+    workspace: { ...(workspace || {}), pendingAnalysis, bankPending, invoicePending, invoiceDocumentCount },
     anomalyCount,
     statusKey,
     clientId: client.id,
@@ -185,6 +190,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
     pendingAnalysis,
     bankPending,
     invoicePending,
+    invoiceDocumentCount,
   });
   const lastActivity = workspace?.updated_at || dossier.updated_at || dossier.created_at;
 
@@ -219,9 +225,14 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
 export async function loadWorkspaceCockpit(
   client,
   preferredDossierId = null,
-  { pendingAnalysis = 0, bankPending = 0, invoicePending = 0 } = {},
+  { pendingAnalysis = 0, bankPending = 0, invoicePending = 0, invoiceDocumentCount = 0 } = {},
 ) {
   const dossier = pickActiveDossier(client.dossiers, preferredDossierId);
   const workspace = dossier ? await loadDossierWorkspace(dossier.id) : null;
-  return buildCockpitState(client, dossier, workspace, { pendingAnalysis, bankPending, invoicePending });
+  return buildCockpitState(client, dossier, workspace, {
+    pendingAnalysis,
+    bankPending,
+    invoicePending,
+    invoiceDocumentCount,
+  });
 }
