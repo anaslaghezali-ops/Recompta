@@ -315,18 +315,24 @@ export function showWorkspaceToast({
   }, durationMs);
 }
 
-export function showAnalysisStartedToast({ fileCount = 0, dossierName = "" } = {}) {
+export function showExtractionStartedToast({
+  fileCount = 0,
+  dossierName = "",
+  label = "Extraction lancée",
+} = {}) {
   const prefix = dossierName ? `${dossierName} — ` : "";
   const countLabel = fileCount > 0
     ? `${fileCount} fichier${fileCount > 1 ? "s" : ""} en file d'attente`
     : "Traitement démarré";
   showWorkspaceToast({
-    title: "Analyse IA lancée",
+    title: label,
     message: `${prefix}${countLabel}. Suivez la progression sur cette page.`,
     variant: "info",
     durationMs: 10000,
   });
 }
+
+export const showAnalysisStartedToast = showExtractionStartedToast;
 
 export function workspacePageUrl(clientId, dossierId, { tab = null, view = null } = {}) {
   const params = new URLSearchParams();

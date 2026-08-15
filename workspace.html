@@ -119,29 +119,51 @@
               </div>
             </div>
 
-            <section class="ws-section ws-analysis-card" id="analysisCard" hidden>
-              <div class="ws-analysis-inner">
-                <div class="ws-analysis-copy">
-                  <h2><i data-lucide="sparkles"></i> Analyse IA</h2>
-                  <p id="analysisHint">Importez vos documents puis lancez l'extraction en arrière-plan. Vous serez averti à la fin.</p>
-                  <p class="ws-analysis-meta" id="analysisMeta"></p>
-                  <details class="ws-analysis-server" id="analysisServerConfig">
-                    <summary>URL serveur Codespace (port 8000)</summary>
-                    <label class="ws-analysis-server-field">
-                      <input id="analysisApiUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" autocomplete="off" />
-                      <span id="analysisServerStatus" class="ws-analysis-server-status"></span>
-                    </label>
-                  </details>
-                </div>
-                <div class="ws-analysis-actions">
-                  <button type="button" class="dash-btn dash-btn-primary" id="launchAnalysisBtn">
-                    <i data-lucide="play"></i> Lancer l'analyse IA
-                  </button>
-                  <button type="button" class="dash-btn" id="openReviewBtn" hidden>
-                    <i data-lucide="table-2"></i> Voir la revue
-                  </button>
-                </div>
+            <section class="ws-section ws-production-card" id="productionCard" hidden>
+              <div class="ws-production-grid">
+                <article class="ws-production-step" id="extractionStep">
+                  <div class="ws-production-step-head">
+                    <span class="ws-production-step-num">1</span>
+                    <h2><i data-lucide="file-input"></i> Extraction factures</h2>
+                  </div>
+                  <p id="extractionHint">Importez vos factures puis lancez l'extraction pour générer les lignes TVA.</p>
+                  <p class="ws-production-meta" id="extractionMeta"></p>
+                  <div class="ws-production-actions">
+                    <button type="button" class="dash-btn dash-btn-primary" id="launchExtractionBtn">
+                      <i data-lucide="play"></i> Lancer l'extraction
+                    </button>
+                    <button type="button" class="dash-btn" id="openReviewBtn" hidden>
+                      <i data-lucide="table-2"></i> Voir la revue
+                    </button>
+                  </div>
+                </article>
+
+                <article class="ws-production-step" id="bankMatchStep">
+                  <div class="ws-production-step-head">
+                    <span class="ws-production-step-num">2</span>
+                    <h2><i data-lucide="git-compare"></i> Rapprochement bancaire</h2>
+                  </div>
+                  <p id="bankMatchHint">Renseigne les dates de paiement et ajoute les frais bancaires à partir du relevé.</p>
+                  <p class="ws-production-meta" id="bankMatchMeta"></p>
+                  <div class="ws-production-actions">
+                    <button type="button" class="dash-btn" id="extractBankBtn" hidden>
+                      <i data-lucide="landmark"></i> Extraire le relevé
+                    </button>
+                    <button type="button" class="dash-btn dash-btn-primary" id="launchBankMatchBtn">
+                      <i data-lucide="git-compare"></i> Lancer le rapprochement
+                    </button>
+                  </div>
+                </article>
               </div>
+
+              <details class="ws-analysis-server" id="analysisServerConfig">
+                <summary>URL serveur Codespace (port 8000)</summary>
+                <label class="ws-analysis-server-field">
+                  <input id="analysisApiUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" autocomplete="off" />
+                  <span id="analysisServerStatus" class="ws-analysis-server-status"></span>
+                </label>
+              </details>
+
               <div class="ws-analysis-status" id="analysisStatus" hidden>
                 <div class="ws-analysis-status-head">
                   <span class="ws-analysis-status-badge" id="analysisStatusBadge">—</span>
@@ -151,7 +173,7 @@
                   <div class="ws-analysis-progress-fill" id="analysisProgressFill"></div>
                 </div>
                 <p class="ws-analysis-status-detail" id="analysisStatusDetail">—</p>
-                <ol class="ws-analysis-steps" id="analysisSteps" aria-label="Étapes de l'analyse">
+                <ol class="ws-analysis-steps" id="analysisSteps" aria-label="Étapes de l'extraction">
                   <li data-step="launch">Lancement</li>
                   <li data-step="queue">File d'attente</li>
                   <li data-step="process">Extraction IA</li>
@@ -246,7 +268,7 @@
             <div id="reviewEmptyState" class="ws-empty">
               <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
               <h3>Aucune ligne extraite</h3>
-              <p>Importez des factures puis lancez l'analyse IA depuis l'onglet Période active.</p>
+              <p>Importez des factures puis lancez l'extraction depuis l'onglet Période active.</p>
             </div>
             <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
               <table class="ws-review-table">
@@ -287,6 +309,34 @@
       </main>
     </div>
   </div>
+
+  <dialog id="bankMatchDialog" class="dash-modal review-dialog">
+    <form method="dialog" class="dash-modal-inner">
+      <h3 style="margin:0 0 0.5rem;">Rapprochement à confirmer</h3>
+      <p class="hint" style="margin:0 0 1rem;">Vérifiez le mouvement bancaire et choisissez la facture correspondante.</p>
+      <table class="bank-match-txn-table">
+        <tbody>
+          <tr><th>Date</th><td id="bankMatchTxnDate"></td></tr>
+          <tr><th>Montant</th><td id="bankMatchTxnAmount" class="bank-match-txn-amount"></td></tr>
+          <tr><th>Libellé</th><td id="bankMatchTxnLabel"></td></tr>
+        </tbody>
+      </table>
+      <h4 style="margin:0.75rem 0 0.35rem;font-size:0.85rem;">Factures proposées</h4>
+      <div id="bankMatchProposals"></div>
+      <section id="bankMatchInvoiceDetail" hidden style="margin-top:0.75rem;">
+        <h4 style="margin:0 0 0.35rem;font-size:0.85rem;">Détail</h4>
+        <ul id="bankMatchInvoiceList" style="margin:0;padding-left:1.1rem;font-size:0.82rem;"></ul>
+      </section>
+      <label id="bankMatchLearnWrap" class="imp-checkbox" style="margin-top:0.75rem;" hidden>
+        <input id="bankMatchLearnAlias" type="checkbox" checked />
+        Mémoriser ce libellé pour ce fournisseur
+      </label>
+      <div class="dash-form-actions" style="margin-top:1rem;">
+        <button type="submit" class="dash-btn">Ignorer</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="bankMatchConfirm">Valider</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="newPeriodDialog" class="dash-modal">
     <form method="dialog" id="newPeriodForm" class="dash-modal-inner dash-form">
@@ -365,13 +415,17 @@
       isAnalysisJob,
       launchDossierAnalysis,
       reconcileStaleImportJobs,
-      showAnalysisStartedToast,
+      showExtractionStartedToast,
       showWorkspaceToast,
       showImportCompletionToast,
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs17";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth } from "./api-client.js?v=api5";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace7";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace8";
+    import {
+      createWorkspaceBankMatch,
+      countLinesWithoutPaymentDate,
+    } from "./workspace-bank-match.js?v=bankws1";
     import { createWorkspaceReview } from "./workspace-review.js?v=review2";
     import {
       bindSidebarMobile,
@@ -422,6 +476,25 @@
     let analysisInFlight = false;
     let analysisLaunchQueued = 0;
     let serverHealthOk = null;
+    let bankMatchController = null;
+    let bankMatchInFlight = false;
+    let bankExtractInFlight = false;
+
+    function ensureBankMatchController() {
+      if (bankMatchController) return bankMatchController;
+      bankMatchController = createWorkspaceBankMatch({
+        getContext: () => ({
+          dossierId: selectedDossierId,
+          clientIce: client?.ice || "",
+        }),
+        onComplete: () => {
+          reloadCockpit(selectedDossierId).catch(() => {});
+          if (activeTab === "review") ensureReviewController()?.load();
+        },
+        showToast: showWorkspaceToast,
+      });
+      return bankMatchController;
+    }
 
     function resolvedApiUrl() {
       const typed = document.getElementById("analysisApiUrl")?.value?.trim().replace(/\/$/, "") || "";
@@ -512,7 +585,7 @@
       const percentEl = document.getElementById("analysisStatusPercent");
       const fill = document.getElementById("analysisProgressFill");
       const detail = document.getElementById("analysisStatusDetail");
-      const card = document.getElementById("analysisCard");
+      const card = document.getElementById("productionCard");
       if (!panel || !badge || !percentEl || !fill || !detail) return;
 
       const visible = launching || Boolean(job);
@@ -527,7 +600,7 @@
 
       if (launching && !job) {
         badge.className = "ws-analysis-status-badge is-launching";
-        badge.textContent = "Lancement de l'analyse…";
+        badge.textContent = "Lancement de l'extraction…";
         percentEl.textContent = "…";
         fill.classList.add("is-indeterminate");
         fill.style.width = "35%";
@@ -542,7 +615,7 @@
       badge.className = `ws-analysis-status-badge ${
         job.status === "queued" ? "is-queued" : job.status === "processing" ? "is-processing" : ""
       }`;
-      badge.textContent = analysis ? `Analyse IA — ${statusLabel}` : statusLabel;
+      badge.textContent = analysis ? `Extraction — ${statusLabel}` : statusLabel;
       percentEl.textContent = `${percent}%`;
       fill.classList.remove("is-indeterminate");
       fill.style.width = `${Math.max(percent, job.status === "queued" ? 8 : 0)}%`;
@@ -632,7 +705,7 @@
       document.getElementById("importBannerProgressFill").style.width = `${percent}%`;
       document.getElementById("importBannerPercent").textContent = `${percent}%`;
       const bannerBtn = document.getElementById("importBannerBtn");
-      if (bannerBtn) bannerBtn.textContent = analysis ? "Voir l'analyse" : "Détails";
+      if (bannerBtn) bannerBtn.textContent = analysis ? "Voir l'extraction" : "Détails";
       if (job.status === "queued") {
         const apiUrl = getApiUrl();
         if (apiUrl) ensureImportWorkerRunning(apiUrl, { limit: 3 }).catch(() => {});
@@ -654,15 +727,25 @@
     function openActiveImportPage() {
       if (!activeImportJob) return;
       setTab("cockpit");
-      document.getElementById("analysisCard")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById("productionCard")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
-    async function renderAnalysisCard() {
-      const card = document.getElementById("analysisCard");
-      const hint = document.getElementById("analysisHint");
-      const meta = document.getElementById("analysisMeta");
-      const launchBtn = document.getElementById("launchAnalysisBtn");
+    function runCockpitAction(action) {
+      if (action === "analysis") handleLaunchExtraction();
+      else if (action === "extract_bank") handleExtractBank();
+      else if (action === "bank_match") handleLaunchBankMatch();
+    }
+
+    async function renderProductionCard() {
+      const card = document.getElementById("productionCard");
+      const extractionHint = document.getElementById("extractionHint");
+      const extractionMeta = document.getElementById("extractionMeta");
+      const launchBtn = document.getElementById("launchExtractionBtn");
       const openReviewBtn = document.getElementById("openReviewBtn");
+      const bankMatchHint = document.getElementById("bankMatchHint");
+      const bankMatchMeta = document.getElementById("bankMatchMeta");
+      const extractBankBtn = document.getElementById("extractBankBtn");
+      const launchBankMatchBtn = document.getElementById("launchBankMatchBtn");
 
       if (!card || !cockpit?.hasPeriod) {
         card?.setAttribute("hidden", "");
@@ -671,54 +754,101 @@
 
       card.hidden = false;
       const hasLines = cockpit.lineCount > 0;
-      const isRunning = Boolean(activeImportJob) || analysisInFlight;
+      const hasBank = cockpit.bankCount > 0;
+      const isJobRunning = Boolean(activeImportJob) || analysisInFlight || bankExtractInFlight;
+      const missingPaymentDates = workspaceSnapshot
+        ? countLinesWithoutPaymentDate(workspaceSnapshot.lines || [])
+        : 0;
+
       openReviewBtn.hidden = !hasLines;
 
-      if (activeImportJob) {
-        const percent = jobProgressPercent(activeImportJob);
-        hint.textContent = isAnalysisJob(activeImportJob)
-          ? "L'analyse IA tourne en arrière-plan sur le serveur."
-          : "Traitement en cours sur le serveur.";
-        meta.textContent = `${JOB_STATUS_LABELS[activeImportJob.status] || "Analyse"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`;
+      if (activeImportJob || analysisInFlight || bankExtractInFlight) {
+        const percent = activeImportJob ? jobProgressPercent(activeImportJob) : 0;
+        const runningLabel = bankExtractInFlight && !activeImportJob
+          ? "Extraction du relevé en cours…"
+          : isAnalysisJob(activeImportJob)
+            ? "Extraction des factures en cours sur le serveur."
+            : activeImportJob
+              ? "Traitement en cours sur le serveur."
+              : "Préparation de l'extraction…";
+        extractionHint.textContent = runningLabel;
+        extractionMeta.textContent = activeImportJob
+          ? `${JOB_STATUS_LABELS[activeImportJob.status] || "Extraction"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`
+          : analysisLaunchQueued > 0
+            ? `${analysisLaunchQueued} fichier(s) en cours de mise en file.`
+            : "Vérification des documents à traiter.";
         launchBtn.disabled = true;
-        launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Analyse en cours…';
-        renderAnalysisStatusPanel({ job: activeImportJob });
-      } else if (analysisInFlight) {
-        hint.textContent = "Préparation de l'analyse sur le serveur…";
-        meta.textContent = analysisLaunchQueued > 0
-          ? `${analysisLaunchQueued} fichier(s) en cours de mise en file.`
-          : "Vérification des documents à analyser.";
-        launchBtn.disabled = true;
-        launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Lancement…';
-        renderAnalysisStatusPanel({ launching: true });
+        launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Extraction en cours…';
+        renderAnalysisStatusPanel({ launching: !activeImportJob, job: activeImportJob });
       } else {
         renderAnalysisStatusPanel();
-        if (pendingAnalysisCount > 0) {
-          hint.textContent = `${pendingAnalysisCount} document(s) prêt(s) à analyser.`;
-          meta.textContent = "Cliquez pour lancer l'extraction IA — vous pourrez suivre la progression ici.";
+        if (invoicePendingCount > 0) {
+          extractionHint.textContent = `${invoicePendingCount} facture(s) prête(s) à extraire.`;
+          extractionMeta.textContent = "Génère les lignes HT / TVA / TTC à partir des documents importés.";
           launchBtn.disabled = false;
-          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
         } else if (hasLines) {
-          hint.textContent = "Extraction terminée. Passez à la revue pour corriger et exporter.";
-          meta.textContent = cockpit.anomalyCount > 0
-            ? `${cockpit.anomalyCount} anomalie(s) à corriger.`
-            : "Aucune anomalie détectée.";
+          extractionHint.textContent = "Extraction terminée.";
+          extractionMeta.textContent = cockpit.anomalyCount > 0
+            ? `${cockpit.lineCount} ligne(s) · ${cockpit.anomalyCount} anomalie(s) à corriger en revue.`
+            : `${cockpit.lineCount} ligne(s) extraites — prêtes pour la revue.`;
           launchBtn.disabled = true;
-          launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
-        } else if (cockpit.invoiceDocumentCount > 0 || cockpit.bankCount > 0 || cockpit.bankPending > 0) {
-          hint.textContent = "Documents importés et analyse terminée.";
-          meta.textContent = "Passez à la revue ou importez d'autres pièces si besoin.";
-          launchBtn.disabled = true;
-          launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
+          launchBtn.innerHTML = '<i data-lucide="check"></i> Extraction à jour';
+        } else if (cockpit.invoiceDocumentCount > 0) {
+          extractionHint.textContent = "Factures importées — lancez l'extraction.";
+          extractionMeta.textContent = "Aucune ligne générée pour l'instant.";
+          launchBtn.disabled = false;
+          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
         } else {
-          hint.textContent = "Importez des factures ou relevés, puis lancez l'analyse ici.";
-          meta.textContent = "L'upload et l'analyse sont séparés : vous contrôlez quand démarrer.";
+          extractionHint.textContent = "Importez des factures achats pour commencer.";
+          extractionMeta.textContent = "L'import et l'extraction sont séparés : vous contrôlez quand démarrer.";
           launchBtn.disabled = true;
-          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
         }
       }
+
+      if (bankPendingCount > 0 && !hasBank) {
+        bankMatchHint.textContent = "Relevé importé — extrayez d'abord les mouvements bancaires.";
+        bankMatchMeta.textContent = "Étape requise avant le rapprochement des paiements.";
+        extractBankBtn.hidden = false;
+        extractBankBtn.disabled = isJobRunning;
+        launchBankMatchBtn.disabled = true;
+      } else if (!hasBank) {
+        bankMatchHint.textContent = "Importez le relevé bancaire pour renseigner les dates de paiement.";
+        bankMatchMeta.textContent = "Banque → import relevé, puis extraction du relevé ici.";
+        extractBankBtn.hidden = true;
+        launchBankMatchBtn.disabled = true;
+      } else if (!hasLines) {
+        bankMatchHint.textContent = `${cockpit.bankCount} mouvement(s) bancaires disponibles.`;
+        bankMatchMeta.textContent = "Extrayez d'abord les factures, puis lancez le rapprochement.";
+        extractBankBtn.hidden = true;
+        launchBankMatchBtn.disabled = true;
+      } else {
+        bankMatchHint.textContent = missingPaymentDates > 0
+          ? `${missingPaymentDates} ligne(s) sans date de paiement.`
+          : "Dates de paiement renseignées pour les lignes rapprochées.";
+        bankMatchMeta.textContent = `${cockpit.bankCount} mouvement(s) sur le relevé · frais bancaires ajoutés automatiquement.`;
+        extractBankBtn.hidden = true;
+        launchBankMatchBtn.disabled = bankMatchInFlight || isJobRunning;
+      }
+
+      if (bankMatchInFlight) {
+        launchBankMatchBtn.disabled = true;
+        launchBankMatchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Rapprochement…';
+      } else {
+        launchBankMatchBtn.innerHTML = '<i data-lucide="git-compare"></i> Lancer le rapprochement';
+      }
+
+      if (!bankExtractInFlight && !(bankPendingCount > 0 && !hasBank)) {
+        extractBankBtn.innerHTML = '<i data-lucide="landmark"></i> Extraire le relevé';
+      } else if (bankExtractInFlight) {
+        extractBankBtn.innerHTML = '<i data-lucide="loader-circle"></i> Extraction relevé…';
+      }
+
       initLucide();
     }
+
+    const renderAnalysisCard = renderProductionCard;
 
     async function refreshPendingAnalysis() {
       if (!selectedDossierId) {
@@ -746,8 +876,7 @@
       }
     }
 
-    async function handleLaunchAnalysis() {
-      if (!selectedDossierId || analysisInFlight || activeImportJob) return;
+    async function queueServerExtraction({ docType, emptyMessage }) {
       persistAnalysisApiSettings();
       const apiUrl = await refreshAnalysisServerStatus({ quiet: false });
       if (!apiUrl) {
@@ -757,64 +886,68 @@
           message: "Collez l'URL publique du Codespace (port 8000) dans le champ ci-dessous, puis relancez.",
           variant: "warn",
         });
-        return;
+        return 0;
       }
+
+      await refreshPendingAnalysis();
+      const pendingForType = docType === "bank" ? bankPendingCount : invoicePendingCount;
+      if (!pendingForType) {
+        await reloadCockpit(selectedDossierId);
+        showWorkspaceToast({
+          title: "Rien à extraire",
+          message: emptyMessage,
+          variant: "info",
+          durationMs: 6000,
+        });
+        return 0;
+      }
+
+      const result = await launchDossierAnalysis(apiUrl, selectedDossierId, {
+        docType,
+        clientIce: client?.ice || "",
+      });
+      const queuedJobs = result.queued_jobs || 0;
+      if (!queuedJobs) return 0;
+
+      analysisLaunchQueued = queuedJobs;
+      renderProductionCard();
+      showExtractionStartedToast({
+        fileCount: queuedJobs,
+        dossierName: client?.name || "",
+        label: docType === "bank" ? "Extraction du relevé lancée" : "Extraction lancée",
+      });
+
+      const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: 3 });
+      if (!workerResult.ok && !workerResult.transient) {
+        showWorkspaceToast({
+          title: "Extraction en file d'attente",
+          message: workerResult.message,
+          variant: "warn",
+        });
+      }
+
+      await waitForActiveImportJob();
+      if (!activeImportJob) startImportPolling();
+      return queuedJobs;
+    }
+
+    async function handleLaunchExtraction() {
+      if (!selectedDossierId || analysisInFlight || activeImportJob || bankExtractInFlight) return;
 
       analysisInFlight = true;
       analysisLaunchQueued = 0;
-      renderAnalysisCard();
+      renderProductionCard();
       let queuedJobs = 0;
       try {
-        await refreshPendingAnalysis();
-        const invoiceResult = pendingAnalysisCount > 0
-          ? await launchDossierAnalysis(apiUrl, selectedDossierId, {
-            docType: "invoice",
-            clientIce: client?.ice || "",
-          })
-          : { queued_jobs: 0 };
-        const bankPending = countPendingAnalysis(documentsCache, await loadDossierWorkspace(selectedDossierId)).bankPending;
-        let bankResult = { queued_jobs: 0 };
-        if (bankPending > 0) {
-          bankResult = await launchDossierAnalysis(apiUrl, selectedDossierId, {
-            docType: "bank",
-            clientIce: client?.ice || "",
-          });
-        }
-        queuedJobs = (invoiceResult.queued_jobs || 0) + (bankResult.queued_jobs || 0);
-        if (!queuedJobs) {
-          await reloadCockpit(selectedDossierId);
-          showWorkspaceToast({
-            title: "Rien à analyser",
-            message: "Tous les documents importés ont déjà été traités.",
-            variant: "info",
-            durationMs: 6000,
-          });
-          return;
-        }
-
-        analysisLaunchQueued = queuedJobs;
-        renderAnalysisCard();
-        showAnalysisStartedToast({
-          fileCount: queuedJobs,
-          dossierName: client?.name || "",
+        queuedJobs = await queueServerExtraction({
+          docType: "invoice",
+          emptyMessage: "Toutes les factures importées ont déjà été extraites.",
         });
-
-        const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: 3 });
-        if (!workerResult.ok && !workerResult.transient) {
-          showWorkspaceToast({
-            title: "Analyse en file d'attente",
-            message: workerResult.message,
-            variant: "warn",
-          });
-        }
-
-        await waitForActiveImportJob();
-        if (!activeImportJob) startImportPolling();
       } catch (error) {
         if (queuedJobs > 0) {
           showWorkspaceToast({
-            title: "Analyse lancée",
-            message: "La mise en file a réussi. Le serveur peut mettre quelques secondes à démarrer le traitement.",
+            title: "Extraction lancée",
+            message: "La mise en file a réussi. Le serveur peut mettre quelques secondes à démarrer.",
             variant: "info",
           });
           startImportPolling();
@@ -822,15 +955,57 @@
         }
         showWorkspaceToast({
           title: "Lancement impossible",
-          message: error.message || "Impossible de lancer l'analyse.",
+          message: error.message || "Impossible de lancer l'extraction.",
           variant: "warn",
         });
       } finally {
         analysisInFlight = false;
         analysisLaunchQueued = 0;
-        await renderAnalysisCard();
+        await renderProductionCard();
       }
     }
+
+    async function handleExtractBank() {
+      if (!selectedDossierId || analysisInFlight || activeImportJob || bankExtractInFlight) return;
+
+      bankExtractInFlight = true;
+      renderProductionCard();
+      try {
+        await queueServerExtraction({
+          docType: "bank",
+          emptyMessage: "Le relevé importé a déjà été extrait.",
+        });
+      } catch (error) {
+        showWorkspaceToast({
+          title: "Extraction relevé impossible",
+          message: error.message || "Impossible d'extraire le relevé.",
+          variant: "warn",
+        });
+      } finally {
+        bankExtractInFlight = false;
+        await reloadCockpit(selectedDossierId);
+        await renderProductionCard();
+      }
+    }
+
+    async function handleLaunchBankMatch() {
+      if (!selectedDossierId || bankMatchInFlight) return;
+      bankMatchInFlight = true;
+      renderProductionCard();
+      try {
+        if (bankPendingCount > 0 && !cockpit?.bankCount) {
+          await handleExtractBank();
+          await refreshPendingAnalysis();
+          workspaceSnapshot = await loadDossierWorkspace(selectedDossierId);
+        }
+        await ensureBankMatchController().run();
+      } finally {
+        bankMatchInFlight = false;
+        await renderProductionCard();
+      }
+    }
+
+    const handleLaunchAnalysis = handleLaunchExtraction;
 
     function startCompletionWatcher() {
       stopCompletionWatcher?.();
@@ -1213,7 +1388,15 @@
         const action = btn.dataset.action;
         btn.addEventListener("click", () => {
           if (action === "analysis") {
-            handleLaunchAnalysis();
+            runCockpitAction("analysis");
+            return;
+          }
+          if (action === "extract_bank") {
+            runCockpitAction("extract_bank");
+            return;
+          }
+          if (action === "bank_match") {
+            runCockpitAction("bank_match");
             return;
           }
           if (tab) {
@@ -1232,7 +1415,9 @@
         cta.classList.remove("is-muted");
         cta.onclick = (event) => {
           event.preventDefault();
-          if (cockpit.nextAction.action === "analysis") handleLaunchAnalysis();
+          if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
+          else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
+          else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         };
       } else if (cockpit.nextAction.href) {
@@ -1250,7 +1435,9 @@
 
       openProductionBtn.onclick = () => {
         if (cockpit.nextAction?.tab) {
-          if (cockpit.nextAction.action === "analysis") handleLaunchAnalysis();
+          if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
+          else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
+          else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         } else if (cockpit.nextAction?.href) {
           window.location.href = cockpit.nextAction.href;
@@ -1262,7 +1449,8 @@
       const quickActions = [
         { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
         { icon: "file-input", label: "Achats", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "sparkles", label: "Analyse IA", action: "analysis" },
+        { icon: "sparkles", label: "Extraction", action: "analysis" },
+        { icon: "git-compare", label: "Rapprochement", action: "bank_match" },
         { icon: "table-2", label: "Revue", action: "review" },
         { icon: "file-spreadsheet", label: "Export", action: "review" },
         { icon: "folder-open", label: "Documents", action: "documents" },
@@ -1285,7 +1473,9 @@
         } else if (action === "review") {
           btn.addEventListener("click", () => setTab("review"));
         } else if (action === "analysis") {
-          btn.addEventListener("click", () => handleLaunchAnalysis());
+          btn.addEventListener("click", () => runCockpitAction("analysis"));
+        } else if (action === "bank_match") {
+          btn.addEventListener("click", () => runCockpitAction("bank_match"));
         }
       });
 
@@ -1495,7 +1685,9 @@
     }
 
     document.getElementById("importBannerBtn")?.addEventListener("click", openActiveImportPage);
-    document.getElementById("launchAnalysisBtn")?.addEventListener("click", handleLaunchAnalysis);
+    document.getElementById("launchExtractionBtn")?.addEventListener("click", handleLaunchExtraction);
+    document.getElementById("extractBankBtn")?.addEventListener("click", handleExtractBank);
+    document.getElementById("launchBankMatchBtn")?.addEventListener("click", handleLaunchBankMatch);
     document.getElementById("openReviewBtn")?.addEventListener("click", () => setTab("review"));
 
     document.getElementById("docFilters")?.addEventListener("click", (event) => {

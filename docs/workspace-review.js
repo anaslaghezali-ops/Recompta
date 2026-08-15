@@ -318,7 +318,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       const data = await loadDossierWorkspace(dossierId);
       lines = [...(data?.lines || [])];
       render();
-      setStatus(lines.length ? `${lines.length} ligne(s) chargée(s)` : "Aucune ligne — lancez l'analyse IA", "muted");
+      setStatus(lines.length ? `${lines.length} ligne(s) chargée(s)` : "Aucune ligne — lancez l'extraction", "muted");
     } catch (error) {
       setStatus(error.message, "error");
     }
