@@ -12,7 +12,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio7";
+} from "./portfolio-client.js?v=portfolio8";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -112,7 +112,8 @@ export function buildPipelineSteps({
               : "Ajoutez vos factures",
       icon: "file-input",
       status: stepStatus(purchasesDone, purchasesCurrent),
-      tab: "documents",
+      tab: "review",
+      action: "add_invoices",
     },
     {
       key: "analysis",

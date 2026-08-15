@@ -914,7 +914,7 @@ export function createWorkspaceReview({
       if (showEmpty) {
         els.emptyState.querySelector("h3").textContent = "Aucune ligne extraite";
         els.emptyState.querySelector("p").textContent =
-          "Importez des factures puis lancez l'extraction depuis l'onglet Période active.";
+          "Ajoutez des factures ci-dessus, puis lancez l'extraction depuis l'onglet Période active.";
       } else if (anomaliesOnly && visibleRows === 0) {
         els.emptyState.hidden = false;
         els.emptyState.querySelector("h3").textContent = "Aucune anomalie bloquante";
