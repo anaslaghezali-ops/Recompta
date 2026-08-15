@@ -726,6 +726,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     const { dossierId, periodLabel } = ctx();
     if (!dossierId) return;
     try {
+      saver?.cancel?.();
       await markDossierExported(dossierId);
       await logDossierActivity(
         dossierId,

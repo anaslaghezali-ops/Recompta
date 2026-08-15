@@ -289,6 +289,16 @@ class SupabaseService:
         response.raise_for_status()
 
     async def touch_dossier_status(self, dossier_id: int, line_count: int) -> None:
+        response = await self.client.get(
+            f"{self.base}/rest/v1/client_dossiers",
+            params={"id": f"eq.{dossier_id}", "select": "status"},
+            headers=service_headers(),
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if rows and rows[0].get("status") == "exported":
+            return
+
         status = "in_review" if line_count > 0 else "draft"
         response = await self.client.patch(
             f"{self.base}/rest/v1/client_dossiers",

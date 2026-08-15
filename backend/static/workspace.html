@@ -1976,6 +1976,14 @@
     }
 
     async function reloadCockpit(preferredDossierId = null) {
+      if (clientId && cabinetId) {
+        const refreshed = await getClientWithDossiers(clientId, cabinetId);
+        if (refreshed) {
+          client = refreshed;
+          renderClientHeader();
+        }
+      }
+
       const dossierId = preferredDossierId || selectedDossierId || dossierParam;
       if (dossierId) {
         try {
