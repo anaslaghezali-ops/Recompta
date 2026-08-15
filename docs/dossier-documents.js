@@ -247,6 +247,11 @@ export function partitionDocumentsForDisplay(docs) {
   return { workingDocs, sourceArchives };
 }
 
+export function countInvoiceDocuments(documents) {
+  const { workingDocs } = partitionDocumentsForDisplay(documents);
+  return workingDocs.filter((doc) => doc.doc_type === "invoice").length;
+}
+
 export function documentSupplierGroup(doc) {
   if (doc?.doc_type === "bank") {
     return {

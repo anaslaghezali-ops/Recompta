@@ -75,6 +75,8 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
   const bank = workspace?.bank_transactions || [];
   const pendingAnalysis = workspace?.pendingAnalysis || 0;
   const bankPending = workspace?.bankPending || 0;
+  const invoicePending = workspace?.invoicePending || 0;
+  const invoiceDocumentCount = workspace?.invoiceDocumentCount || 0;
   const wsBase = clientId
     ? `workspace.html?client=${clientId}&dossier=${dossier.id}`
     : null;
@@ -99,6 +101,14 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
       label: "Lancer l'analyse IA",
       href: wsBase ? `${wsBase}&tab=cockpit` : null,
       action: "analysis",
+    };
+  }
+  if (lines.length === 0 && pendingAnalysis === 0 && (bank.length > 0 || invoiceDocumentCount > 0)) {
+    return {
+      label: invoiceDocumentCount > 0 ? "Vérifier la revue" : "Vérifier le relevé bancaire",
+      href: wsBase ? `${wsBase}&tab=review` : null,
+      action: "review",
+      tab: "review",
     };
   }
   if (lines.length === 0) {

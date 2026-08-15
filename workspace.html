@@ -346,7 +346,8 @@
       isDocumentAnalyzed,
       listDossierDocuments,
       partitionDocumentsForDisplay,
-    } from "./dossier-documents.js?v=doc7";
+      countInvoiceDocuments,
+    } from "./dossier-documents.js?v=doc8";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -362,7 +363,7 @@
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs17";
     import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js?v=api4";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace6";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace7";
     import { createWorkspaceReview } from "./workspace-review.js?v=review2";
     import {
       bindSidebarMobile,
@@ -408,6 +409,7 @@
     let pendingAnalysisCount = 0;
     let bankPendingCount = 0;
     let invoicePendingCount = 0;
+    let invoiceDocumentCount = 0;
     let reviewController = null;
     let analysisInFlight = false;
     let analysisLaunchQueued = 0;
@@ -661,6 +663,7 @@
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
         invoicePendingCount = 0;
+        invoiceDocumentCount = 0;
         return;
       }
       try {
@@ -672,10 +675,12 @@
         pendingAnalysisCount = pending.total;
         bankPendingCount = pending.bankPending;
         invoicePendingCount = pending.invoicePending;
+        invoiceDocumentCount = countInvoiceDocuments(documentsCache);
       } catch {
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
         invoicePendingCount = 0;
+        invoiceDocumentCount = 0;
       }
     }
 
@@ -946,7 +951,7 @@
       }
 
       if (cockpit?.dossier) {
-        hintEl.textContent = `Documents de ${cockpit.periodLabel} — factures et relevés stockés sur la plateforme`;
+        hintEl.textContent = `Documents de ${cockpit.periodLabel} — supprimez un fichier erroné avant l'analyse avec l'icône corbeille`;
       }
 
       listEl.innerHTML = `<div class="ws-docs-loading">Chargement des documents…</div>`;
@@ -954,6 +959,7 @@
 
       try {
         documentsCache = await listDossierDocuments(selectedDossierId);
+        workspaceSnapshot = await loadDossierWorkspace(selectedDossierId);
         renderDocumentsList();
       } catch {
         documentsCache = [];
@@ -1306,23 +1312,27 @@
           pendingAnalysisCount = pending.total;
           bankPendingCount = pending.bankPending;
           invoicePendingCount = pending.invoicePending;
+          invoiceDocumentCount = countInvoiceDocuments(documentsCache);
         } catch {
           documentsCache = [];
           pendingAnalysisCount = 0;
           bankPendingCount = 0;
           invoicePendingCount = 0;
+        invoiceDocumentCount = 0;
         }
       } else {
         documentsCache = [];
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
         invoicePendingCount = 0;
+        invoiceDocumentCount = 0;
       }
 
       cockpit = await loadWorkspaceCockpit(client, dossierId, {
         pendingAnalysis: pendingAnalysisCount,
         bankPending: bankPendingCount,
         invoicePending: invoicePendingCount,
+        invoiceDocumentCount,
       });
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
