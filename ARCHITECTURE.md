@@ -113,3 +113,59 @@ OPENAI_API_KEY=sk-...
 OPENAI_VISION_MODEL=gpt-5.4-mini
 OPENAI_VISION_MODEL_FALLBACK=gpt-5.6-terra
 ```
+
+## Référence comportementale : `production.html` (GOLDEN)
+
+> **Ne pas supprimer ni « simplifier » production.html tant que le workspace n'a pas
+> atteint la parité sur les cas réels.**
+
+`production.html` + `app.js` + `extract-client.js` est aujourd'hui la **spécification
+de facto** des résultats fiables. Le workspace (`import_job_worker.py`, cockpit)
+doit **converger vers ce comportement**, pas l'inverse.
+
+### Deux pipelines (même moteur Python, enveloppes différentes)
+
+| Étape | `production.html` | Workspace |
+|-------|-------------------|-----------|
+| ZIP | `expandUploadedFiles()` côté client | `iter_invoice_files()` côté worker |
+| Extraction | `POST /api/extract` → `extract_invoice()` | Worker → `extract_invoice()` |
+| Normalisation Python | `normalize_extraction_results()` | `normalize_extraction_results()` |
+| Normalisation JS | **`normalizeExtractionResults()` (2e passe)** | **Absente** |
+| Persistance | `state.lines` direct (pas de merge) | `_merge_workspace_lines()` + Supabase |
+| Déduplication | Aucune à l'import | `_work_item_already_processed()`, ZIP parent/enfants |
+
+### Où le workspace peut perdre des lignes (suspects prioritaires)
+
+1. **`_work_item_already_processed`** — skip silencieux avant extraction (`source_id` / basename)
+2. **`_merge_workspace_lines`** — dédup à la sauvegarde
+3. **`dossier_analysis`** — ZIP ignoré, enfants mal rattachés, file d'attente
+4. **Absence de la 2e passe JS** — écarts multi-TVA / ventilation vs production
+
+### Stratégie de convergence
+
+```
+production.html (résultat fiable)
+        ↓
+identifier les transformations exactes (Python + JS)
+        ↓
+porter en Python + tests de non-régression
+        ↓
+workspace appelle le même pipeline normalisé
+```
+
+### Debug workspace
+
+Activer les logs structurés par étape :
+
+```env
+EXTRACTION_PIPELINE_DEBUG=1
+```
+
+Le worker enregistre alors dans `dossier_activity.meta` : lignes après extract,
+après normalize, après merge, fichiers skippés.
+
+Comparer un PDF sur les deux chemins :
+
+```bash
+python backend/scripts/compare_extraction_paths.py chemin/vers/facture.pdf
+```
