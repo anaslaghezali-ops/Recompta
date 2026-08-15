@@ -2621,7 +2621,47 @@
   border-radius: 6px;
 }
 
-.ws-review-table tr.ws-review-dup { background: #fff7ed; }
+.ws-review-table input.confidence-warn,
+.ws-review-table select.confidence-warn {
+  background: #fff8e6;
+  border-color: #e0b44a;
+}
+
+.ws-review-table input.confidence-error,
+.ws-review-table select.confidence-error {
+  background: #fde8e8;
+  border-color: #cf222e;
+}
+
+.ws-review-table tr.ws-review-anomaly { background: #fffbeb; }
+.ws-review-table tr.ws-review-anomaly-error { background: #fef2f2; }
+
+.ws-review-issues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 11rem;
+}
+
+.ws-review-issue {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.ws-review-issue.warn {
+  background: var(--dash-warn-soft);
+  color: var(--dash-warn);
+}
+
+.ws-review-issue.error {
+  background: var(--dash-danger-soft);
+  color: var(--dash-danger);
+}
 
 .ws-review-delete { white-space: nowrap; }
 

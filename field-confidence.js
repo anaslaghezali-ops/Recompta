@@ -269,6 +269,15 @@ export function refreshLinesFieldConfidence(lines, options = {}) {
   return attachFieldConfidence(lines, options);
 }
 
+/** Champs en avertissement informatif — ne bloquent pas le bouton « Corriger les anomalies ». */
+export const SOFT_REVIEW_FIELDS = new Set(["date_paie", "if"]);
+
+export function isSoftConfidenceIssue(fieldKey, entry) {
+  if (!entry || entry.level === "ok") return false;
+  if (entry.level === "error") return false;
+  return SOFT_REVIEW_FIELDS.has(fieldKey);
+}
+
 /** Ligne à relire : doublon ou au moins un champ en warn/error (après calcul de confiance). */
 export function lineNeedsReview(line, { isDuplicate = false } = {}) {
   if (isDuplicate) return true;
@@ -278,13 +287,41 @@ export function lineNeedsReview(line, { isDuplicate = false } = {}) {
   );
 }
 
+/** Anomalie bloquante pour la revue (hors date paie / IF optionnels). */
+export function lineHasActionableAnomaly(line, { isDuplicate = false } = {}) {
+  if (isDuplicate) return true;
+  const conf = line.field_confidence || {};
+  for (const [field, entry] of Object.entries(conf)) {
+    if (entry?.level === "error") return true;
+    if (entry?.level === "warn" && !isSoftConfidenceIssue(field, entry)) return true;
+  }
+  return false;
+}
+
+export function lineIssueSummary(line, { isDuplicate = false } = {}) {
+  const items = [];
+  if (isDuplicate) {
+    items.push({ level: "warn", label: "Doublon", reason: "Doublon probable — confirmez ou supprimez" });
+  }
+  for (const [field, entry] of Object.entries(line.field_confidence || {})) {
+    if (!entry || entry.level === "ok") continue;
+    if (isSoftConfidenceIssue(field, entry)) continue;
+    items.push({
+      level: entry.level === "error" ? "error" : "warn",
+      label: FIELD_LABELS[field] || field,
+      reason: entry.reason || "",
+    });
+  }
+  return items;
+}
+
 /** Nombre de lignes à corriger — même règle que le filtre « Anomalies seulement » de la revue. */
 export function countLinesNeedingReview(lines, options = {}) {
   const { clientIce = "", duplicateIndexes = [] } = options;
   const duplicates = new Set(duplicateIndexes);
   refreshLinesFieldConfidence(lines, { clientIce, duplicateIndexes });
   return (lines || []).filter((line, index) =>
-    lineNeedsReview(line, { isDuplicate: duplicates.has(index) }),
+    lineHasActionableAnomaly(line, { isDuplicate: duplicates.has(index) }),
   ).length;
 }
 

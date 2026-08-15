@@ -9,7 +9,7 @@ import {
   normalizeBankAliasToken,
   saveBankAlias,
 } from "./bank-match-client.js";
-import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=api2";
+import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=api8";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
 import {
   JOB_STATUS_LABELS,

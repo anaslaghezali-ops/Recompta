@@ -10,6 +10,8 @@ import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
+  lineHasActionableAnomaly,
+  lineIssueSummary,
   lineNeedsReview,
   refreshLinesFieldConfidence,
 } from "./field-confidence.js";
@@ -171,18 +173,32 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     refreshConfidence();
     const duplicates = findDuplicateLineIndexes(lines);
     const duplicateSet = new Set(duplicates);
-    const linesNeedingReview = lines.filter((line, index) =>
-      lineNeedsReview(line, { isDuplicate: duplicateSet.has(index) }),
+    const actionableLines = lines.filter((line, index) =>
+      lineHasActionableAnomaly(line, { isDuplicate: duplicateSet.has(index) }),
     ).length;
-    const { errors, warns } = countConfidenceIssues(lines);
+    const softReminderLines = lines.filter((line, index) =>
+      lineNeedsReview(line, { isDuplicate: duplicateSet.has(index) })
+      && !lineHasActionableAnomaly(line, { isDuplicate: duplicateSet.has(index) }),
+    ).length;
+    const { errors } = countConfidenceIssues(lines);
 
     if (els.lineCount) els.lineCount.textContent = `${lines.length} ligne(s)`;
     if (els.anomalyBadge) {
-      els.anomalyBadge.hidden = linesNeedingReview === 0;
-      els.anomalyBadge.textContent = linesNeedingReview === 1
-        ? "1 ligne à relire"
-        : `${linesNeedingReview} lignes à relire`;
-      els.anomalyBadge.className = errors > 0 ? "ws-review-badge danger" : "ws-review-badge warn";
+      if (actionableLines > 0) {
+        els.anomalyBadge.hidden = false;
+        els.anomalyBadge.textContent = actionableLines === 1
+          ? "1 ligne à corriger"
+          : `${actionableLines} lignes à corriger`;
+        els.anomalyBadge.className = errors > 0 ? "ws-review-badge danger" : "ws-review-badge warn";
+      } else if (softReminderLines > 0) {
+        els.anomalyBadge.hidden = false;
+        els.anomalyBadge.textContent = softReminderLines === 1
+          ? "1 rappel (date paie / IF)"
+          : `${softReminderLines} rappels (dates paie / IF)`;
+        els.anomalyBadge.className = "ws-review-badge muted";
+      } else {
+        els.anomalyBadge.hidden = true;
+      }
     }
     if (els.duplicateBadge) {
       els.duplicateBadge.hidden = duplicates.length === 0;
@@ -190,8 +206,27 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     }
     if (els.removeDuplicatesBtn) els.removeDuplicatesBtn.hidden = duplicates.length === 0;
     if (els.exportBtn) els.exportBtn.disabled = lines.length === 0;
-    if (els.emptyState) els.emptyState.hidden = lines.length > 0;
-    if (els.tableWrap) els.tableWrap.hidden = lines.length === 0;
+  }
+
+  function renderIssueCell(line, isDuplicate) {
+    const td = document.createElement("td");
+    td.className = "ws-review-issues-cell";
+    const issues = lineIssueSummary(line, { isDuplicate });
+    if (!issues.length) {
+      td.textContent = "—";
+      return td;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "ws-review-issues";
+    issues.forEach((issue) => {
+      const chip = document.createElement("span");
+      chip.className = `ws-review-issue ${issue.level}`;
+      chip.textContent = issue.label;
+      chip.title = issue.reason;
+      wrap.appendChild(chip);
+    });
+    td.appendChild(wrap);
+    return td;
   }
 
   function renderTable() {
@@ -199,12 +234,22 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     refreshConfidence();
     els.tableBody.innerHTML = "";
     const duplicates = new Set(findDuplicateLineIndexes(lines));
+    let visibleRows = 0;
 
     lines.forEach((line, index) => {
-      if (anomaliesOnly && !lineNeedsReview(line, { isDuplicate: duplicates.has(index) })) return;
+      const isDuplicate = duplicates.has(index);
+      const hasActionable = lineHasActionableAnomaly(line, { isDuplicate });
+      if (anomaliesOnly && !hasActionable) return;
+      visibleRows += 1;
 
       const tr = document.createElement("tr");
-      if (duplicates.has(index)) tr.classList.add("ws-review-dup");
+      if (isDuplicate) tr.classList.add("ws-review-dup");
+      else if (hasActionable) tr.classList.add("ws-review-anomaly");
+      if (lineIssueSummary(line, { isDuplicate }).some((item) => item.level === "error")) {
+        tr.classList.add("ws-review-anomaly-error");
+      }
+
+      tr.appendChild(renderIssueCell(line, isDuplicate));
 
       const fields = [
         { key: "source_file", type: "text", readonly: true },
@@ -297,6 +342,22 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       tr.appendChild(actionTd);
       els.tableBody.appendChild(tr);
     });
+
+    if (els.emptyState) {
+      const showEmpty = lines.length === 0;
+      els.emptyState.hidden = !showEmpty;
+      if (showEmpty) {
+        els.emptyState.querySelector("h3").textContent = "Aucune ligne extraite";
+        els.emptyState.querySelector("p").textContent =
+          "Importez des factures puis lancez l'extraction depuis l'onglet Période active.";
+      } else if (anomaliesOnly && visibleRows === 0) {
+        els.emptyState.hidden = false;
+        els.emptyState.querySelector("h3").textContent = "Aucune anomalie bloquante";
+        els.emptyState.querySelector("p").textContent =
+          "Les champs en orange clair (date de paiement, IF) se complètent via le rapprochement bancaire ou à la demande.";
+      }
+    }
+    if (els.tableWrap) els.tableWrap.hidden = lines.length === 0 || (anomaliesOnly && visibleRows === 0);
   }
 
   function render() {

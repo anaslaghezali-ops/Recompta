@@ -46,7 +46,7 @@ import {
   getApiUrl,
   parseBankStatementViaServer,
   saveApiUrl,
-} from "./api-client.js";
+} from "./api-client.js?v=api8";
 import {
   getSession,
   getUserCabinetMembership,
