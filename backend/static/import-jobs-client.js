@@ -221,6 +221,9 @@ export async function abandonStaleImportJob(job) {
     .eq("id", job.id)
     .in("status", ["uploading", "queued", "processing"]);
 
+  if (!error) {
+    markImportJobSeen(job.id);
+  }
   return !error;
 }
 
@@ -278,6 +281,12 @@ function ensureImportToastContainer() {
   return container;
 }
 
+function isSilentStaleImportFailure(job) {
+  return job?.status === "failed"
+    && job?.error_summary === "Import interrompu ou expiré."
+    && (job?.processed_files || 0) === 0;
+}
+
 export function showWorkspaceToast({
   title,
   message,
@@ -287,6 +296,18 @@ export function showWorkspaceToast({
   durationMs = 12000,
 } = {}) {
   const container = ensureImportToastContainer();
+  if (variant === "error") {
+    for (const existing of container.querySelectorAll(".import-toast-error")) {
+      const existingTitle = existing.querySelector("strong")?.textContent?.trim();
+      const existingMessage = existing.querySelector("p")?.textContent?.trim();
+      if (existingTitle === (title || "").trim() && existingMessage === (message || "").trim()) {
+        return;
+      }
+    }
+    while (container.querySelectorAll(".import-toast-error").length >= 2) {
+      container.querySelector(".import-toast-error")?.remove();
+    }
+  }
   const toast = document.createElement("div");
   toast.className = `import-toast import-toast-${variant}`;
   toast.innerHTML = `
@@ -421,6 +442,7 @@ export function markImportJobSeen(jobId) {
 export function shouldNotifyImportCompletion(job) {
   if (!job || !["completed", "failed"].includes(job.status)) return false;
   if (readSeenJobIds().includes(String(job.id))) return false;
+  if (isSilentStaleImportFailure(job)) return false;
   if (job.options?.analysis_from_documents) return true;
   if ((job.total_files || 0) >= COMPLETION_NOTIFY_MIN_FILES) return true;
   if (job.doc_type === "bank") return true;
@@ -441,6 +463,11 @@ export async function requestImportNotificationPermission() {
 
 export function showImportCompletionToast(job, { dossierName = "", clientId = null } = {}) {
   if (!job) return;
+  const shouldNotify = shouldNotifyImportCompletion(job);
+  if (!shouldNotify) {
+    markImportJobSeen(job.id);
+    return;
+  }
   markImportJobSeen(job.id);
 
   const message = formatImportCompletionMessage(job);
@@ -462,7 +489,7 @@ export function showImportCompletionToast(job, { dossierName = "", clientId = nu
     linkLabel: analysis ? "Revue" : "Voir",
   });
 
-  if (shouldNotifyImportCompletion(job) && "Notification" in window && Notification.permission === "granted") {
+  if (shouldNotify && "Notification" in window && Notification.permission === "granted") {
     try {
       new Notification(title, {
         body: text,
@@ -493,10 +520,32 @@ export async function pollImportCompletions(dossierIds, onComplete, { sinceMinut
   if (error) throw error;
 
   const fresh = (data || []).filter((job) => !readSeenJobIds().includes(String(job.id)));
-  for (const job of fresh) {
-    onComplete?.(job);
+  const silentStale = fresh.filter(isSilentStaleImportFailure);
+  for (const job of silentStale) {
+    markImportJobSeen(job.id);
   }
-  return fresh;
+
+  const notify = fresh.filter((job) => shouldNotifyImportCompletion(job));
+  const failed = notify.filter((job) => job.status === "failed");
+  const completed = notify.filter((job) => job.status === "completed");
+
+  if (failed.length > 1) {
+    const sample = failed[0];
+    onComplete?.({
+      ...sample,
+      id: `failed-batch-${sample.dossier_id}-${Date.now()}`,
+      error_summary: `${failed.length} extraction(s) interrompue(s) ou expirée(s). Relancez l'analyse.`,
+      aggregated_failure_count: failed.length,
+    });
+    for (const job of failed) {
+      markImportJobSeen(job.id);
+    }
+  } else {
+    for (const job of [...failed, ...completed]) {
+      onComplete?.(job);
+    }
+  }
+  return notify;
 }
 
 export function startImportCompletionWatcher(

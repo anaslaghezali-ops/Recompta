@@ -427,7 +427,7 @@
       dismissHistoricImportJobs,
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs22";
+    } from "./import-jobs-client.js?v=jobs23";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace9";
     import {
@@ -904,6 +904,14 @@
         return 0;
       }
 
+      if (selectedDossierId) {
+        try {
+          await reconcileStaleImportJobs([selectedDossierId]);
+        } catch {
+          /* ignore cleanup errors */
+        }
+      }
+
       await refreshPendingAnalysis({ forceDocuments: true });
       const pendingForType = docType === "bank" ? bankPendingCount : invoicePendingCount;
       if (!pendingForType) {
@@ -992,12 +1000,12 @@
       return waitResult.completed ? queuedJobs : 0;
     }
 
-    async function notifyRecentImportOutcomes() {
+    async function notifyRecentImportOutcomes({ sinceIso = null } = {}) {
       if (!selectedDossierId) return;
       try {
         await pollImportCompletions([selectedDossierId], (job) => {
           showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
-        }, { sinceMinutes: 10 });
+        }, sinceIso ? { sinceIso } : { sinceMinutes: 2 });
       } catch {
         /* ignore transient polling errors */
       }
@@ -1010,6 +1018,7 @@
       analysisLaunchQueued = 0;
       renderProductionCard();
       let queuedJobs = 0;
+      const extractionStartedAt = new Date().toISOString();
       try {
         queuedJobs = await queueServerExtraction({
           docType: "invoice",
@@ -1036,7 +1045,7 @@
         analysisProgress = null;
         activeImportJob = null;
         stopImportPolling();
-        await notifyRecentImportOutcomes();
+        await notifyRecentImportOutcomes({ sinceIso: extractionStartedAt });
         await reloadCockpit(selectedDossierId);
         await refreshPendingAnalysis({ forceDocuments: true });
         await renderProductionCard();
