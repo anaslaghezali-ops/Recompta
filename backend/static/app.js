@@ -11,7 +11,7 @@ import {
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
-} from "./extract-client.js?v=dedupe2";
+} from "./extract-client.js?v=multitva1";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
@@ -913,7 +913,7 @@ async function runExtraction(expanded) {
     try {
       const health = await fetchServerHealth(apiUrl);
       if (health.ai_verified) {
-        els.extractionStatus.textContent = "Préparation des fichiers…";
+        els.extractionStatus.textContent = "Extraction IA en cours — les scans peuvent prendre 1 à 3 min par lot…";
         const serverFiles = expanded.map(
           (item) => new File([item.content], item.filename, { type: item.mime }),
         );
@@ -959,7 +959,7 @@ async function extractFiles() {
   extractionInProgress = true;
   setLoading(true);
   clearWarnings();
-  els.extractionStatus.textContent = "Extraction en cours…";
+  els.extractionStatus.textContent = "Extraction en cours — patientez, les scans IA sont lents…";
   els.extractionStatus.classList.remove("error", "success", "warn");
 
   const filesToProcess = [...state.files];
