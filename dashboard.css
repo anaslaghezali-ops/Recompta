@@ -1601,6 +1601,7 @@
 }
 .imp-engine-badge.is-ok { background: var(--dash-success-soft); color: var(--dash-success); }
 .imp-engine-badge.is-warn { background: var(--dash-warn-soft); color: var(--dash-warn); }
+.imp-engine-badge.is-pending { background: #f1f5f9; color: #64748b; }
 
 .imp-progress {
   margin-top: 0.75rem;
@@ -1987,6 +1988,7 @@
 
 .import-toast-success { border-left: 4px solid #10b981; }
 .import-toast-error { border-left: 4px solid #ef4444; }
+.import-toast-info { border-left: 4px solid #3b82f6; }
 
 .import-toast-body {
   flex: 1;
@@ -2148,6 +2150,22 @@
   margin-top: 0.1rem;
 }
 
+.ws-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.ws-doc-delete {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.ws-doc-delete:hover {
+  background: #fef2f2;
+}
+
 .ws-docs-empty {
   margin: 0;
   padding: 2rem 1rem;
@@ -2164,6 +2182,88 @@
   color: var(--dash-muted);
   font-size: 0.85rem;
 }
+
+.ws-docs-filter-empty {
+  margin: 0;
+  padding: 0.75rem 0.25rem;
+  color: var(--dash-muted);
+  font-size: 0.82rem;
+}
+
+.ws-doc-archives {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed #dbeafe;
+}
+
+.ws-doc-archives[hidden] { display: none !important; }
+
+.ws-doc-archives-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-doc-archives-toggle:hover { background: #f1f5f9; }
+.ws-doc-archives-toggle.is-open { border-color: #bfdbfe; background: #eff6ff; }
+
+.ws-doc-archives-toggle-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.ws-doc-archives-toggle-main .lucide { width: 16px; height: 16px; color: #64748b; }
+
+.ws-doc-archives-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ws-doc-archives-chevron {
+  width: 16px;
+  height: 16px;
+  color: #64748b;
+  transition: transform 0.2s ease;
+}
+
+.ws-doc-archives-toggle.is-open .ws-doc-archives-chevron {
+  transform: rotate(180deg);
+}
+
+.ws-doc-archives-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.76rem;
+  color: var(--dash-muted);
+}
+
+.ws-doc-archives-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.ws-doc-archives-list[hidden] { display: none !important; }
 
 @media (max-width: 900px) {
   .imp-grid { grid-template-columns: 1fr; }
@@ -2196,11 +2296,157 @@
 .ws-analysis-copy p { margin: 0; font-size: 0.84rem; color: var(--dash-muted); }
 .ws-analysis-meta { margin-top: 0.35rem !important; font-size: 0.78rem !important; }
 
+.ws-analysis-server {
+  margin-top: 0.65rem;
+  font-size: 0.78rem;
+  color: var(--dash-muted);
+}
+
+.ws-analysis-server summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.ws-analysis-server-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.ws-analysis-server-field input {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.ws-analysis-server-status {
+  font-size: 0.74rem;
+}
+
+.ws-analysis-server-status[data-tone="ok"] { color: #15803d; }
+.ws-analysis-server-status[data-tone="warn"] { color: #b45309; }
+.ws-analysis-server-status[data-tone="muted"] { color: var(--dash-muted); }
+
 .ws-analysis-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+
+.ws-analysis-status {
+  width: 100%;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #dbeafe;
+}
+
+.ws-analysis-status[hidden] { display: none !important; }
+
+.ws-analysis-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.ws-analysis-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.ws-analysis-status-badge.is-launching { color: #7c3aed; }
+.ws-analysis-status-badge.is-queued { color: #b45309; }
+.ws-analysis-status-badge.is-processing { color: #1d4ed8; }
+
+.ws-analysis-status-percent {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-analysis-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #dbeafe;
+  overflow: hidden;
+}
+
+.ws-analysis-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3b82f6, #6366f1);
+  transition: width 0.35s ease;
+}
+
+.ws-analysis-progress-fill.is-indeterminate {
+  width: 35% !important;
+  animation: ws-analysis-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes ws-analysis-indeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+.ws-analysis-status-detail {
+  margin: 0.45rem 0 0;
+  font-size: 0.76rem;
+  color: var(--dash-muted);
+}
+
+.ws-analysis-steps {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.ws-analysis-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.ws-analysis-steps li.is-active {
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-weight: 600;
+}
+
+.ws-analysis-steps li.is-done {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.ws-analysis-card.is-running {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12);
+}
+
+.ws-import-banner.is-analysis {
+  border-color: #c4b5fd;
+  background: linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%);
+}
+
+.ws-import-banner.is-analysis i { color: #7c3aed; }
+.ws-import-banner.is-analysis .ws-import-banner-text strong { color: #5b21b6; }
 
 /* Workspace — revue */
 .ws-review-panel { padding-top: 0.25rem; }

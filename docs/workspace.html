@@ -125,6 +125,13 @@
                   <h2><i data-lucide="sparkles"></i> Analyse IA</h2>
                   <p id="analysisHint">Importez vos documents puis lancez l'extraction en arrière-plan. Vous serez averti à la fin.</p>
                   <p class="ws-analysis-meta" id="analysisMeta"></p>
+                  <details class="ws-analysis-server" id="analysisServerConfig">
+                    <summary>URL serveur Codespace (port 8000)</summary>
+                    <label class="ws-analysis-server-field">
+                      <input id="analysisApiUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" autocomplete="off" />
+                      <span id="analysisServerStatus" class="ws-analysis-server-status"></span>
+                    </label>
+                  </details>
                 </div>
                 <div class="ws-analysis-actions">
                   <button type="button" class="dash-btn dash-btn-primary" id="launchAnalysisBtn">
@@ -359,10 +366,11 @@
       launchDossierAnalysis,
       reconcileStaleImportJobs,
       showAnalysisStartedToast,
+      showWorkspaceToast,
       showImportCompletionToast,
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs17";
-    import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js?v=api4";
+    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth } from "./api-client.js?v=api5";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace7";
     import { createWorkspaceReview } from "./workspace-review.js?v=review2";
     import {
@@ -413,6 +421,55 @@
     let reviewController = null;
     let analysisInFlight = false;
     let analysisLaunchQueued = 0;
+    let serverHealthOk = null;
+
+    function resolvedApiUrl() {
+      const typed = document.getElementById("analysisApiUrl")?.value?.trim().replace(/\/$/, "") || "";
+      return typed || getApiUrl();
+    }
+
+    function loadAnalysisApiSettings() {
+      const input = document.getElementById("analysisApiUrl");
+      if (!input) return;
+      input.value = getApiUrl() || "";
+      const details = document.getElementById("analysisServerConfig");
+      if (details && !input.value) details.open = true;
+    }
+
+    function persistAnalysisApiSettings() {
+      const input = document.getElementById("analysisApiUrl");
+      if (!input) return;
+      saveApiUrl(input.value);
+    }
+
+    async function refreshAnalysisServerStatus({ quiet = true } = {}) {
+      const statusEl = document.getElementById("analysisServerStatus");
+      const apiUrl = resolvedApiUrl();
+      if (!statusEl) return apiUrl;
+      if (!apiUrl) {
+        serverHealthOk = false;
+        statusEl.textContent = "URL requise pour l'analyse IA";
+        statusEl.dataset.tone = "warn";
+        return "";
+      }
+      if (!quiet) {
+        statusEl.textContent = "Vérification…";
+        statusEl.dataset.tone = "muted";
+      }
+      try {
+        const health = await fetchServerHealth(apiUrl);
+        serverHealthOk = true;
+        statusEl.textContent = health.ai_verified ? "Serveur connecté — IA active" : "Serveur connecté";
+        statusEl.dataset.tone = "ok";
+      } catch (error) {
+        serverHealthOk = false;
+        statusEl.textContent = quiet
+          ? "Connexion en attente — réessayez dans quelques secondes"
+          : (error.message || "Serveur injoignable");
+        statusEl.dataset.tone = "warn";
+      }
+      return apiUrl;
+    }
 
     function renderAnalysisSteps({ launching = false, job = null } = {}) {
       const stepsEl = document.getElementById("analysisSteps");
@@ -648,6 +705,11 @@
             : "Aucune anomalie détectée.";
           launchBtn.disabled = true;
           launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
+        } else if (cockpit.invoiceDocumentCount > 0 || cockpit.bankCount > 0 || cockpit.bankPending > 0) {
+          hint.textContent = "Documents importés et analyse terminée.";
+          meta.textContent = "Passez à la revue ou importez d'autres pièces si besoin.";
+          launchBtn.disabled = true;
+          launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
         } else {
           hint.textContent = "Importez des factures ou relevés, puis lancez l'analyse ici.";
           meta.textContent = "L'upload et l'analyse sont séparés : vous contrôlez quand démarrer.";
@@ -686,15 +748,22 @@
 
     async function handleLaunchAnalysis() {
       if (!selectedDossierId || analysisInFlight || activeImportJob) return;
-      const apiUrl = getApiUrl();
+      persistAnalysisApiSettings();
+      const apiUrl = await refreshAnalysisServerStatus({ quiet: false });
       if (!apiUrl) {
-        alert("Configurez l'URL du Codespace (port 8000) dans les paramètres d'import.");
+        document.getElementById("analysisServerConfig")?.setAttribute("open", "");
+        showWorkspaceToast({
+          title: "URL serveur manquante",
+          message: "Collez l'URL publique du Codespace (port 8000) dans le champ ci-dessous, puis relancez.",
+          variant: "warn",
+        });
         return;
       }
 
       analysisInFlight = true;
       analysisLaunchQueued = 0;
       renderAnalysisCard();
+      let queuedJobs = 0;
       try {
         await refreshPendingAnalysis();
         const invoiceResult = pendingAnalysisCount > 0
@@ -711,24 +780,51 @@
             clientIce: client?.ice || "",
           });
         }
-        const totalQueued = (invoiceResult.queued_jobs || 0) + (bankResult.queued_jobs || 0);
-        if (!totalQueued) {
-          alert(invoiceResult.message || "Aucun document en attente d'analyse.");
-        } else {
-          analysisLaunchQueued = totalQueued;
-          renderAnalysisCard();
-          showAnalysisStartedToast({
-            fileCount: totalQueued,
-            dossierName: client?.name || "",
+        queuedJobs = (invoiceResult.queued_jobs || 0) + (bankResult.queued_jobs || 0);
+        if (!queuedJobs) {
+          await reloadCockpit(selectedDossierId);
+          showWorkspaceToast({
+            title: "Rien à analyser",
+            message: "Tous les documents importés ont déjà été traités.",
+            variant: "info",
+            durationMs: 6000,
           });
-          await ensureImportWorkerRunning(apiUrl, { limit: 3 });
-          await waitForActiveImportJob();
-          if (!activeImportJob) {
-            startImportPolling();
-          }
+          return;
         }
+
+        analysisLaunchQueued = queuedJobs;
+        renderAnalysisCard();
+        showAnalysisStartedToast({
+          fileCount: queuedJobs,
+          dossierName: client?.name || "",
+        });
+
+        const workerResult = await ensureImportWorkerRunning(apiUrl, { limit: 3 });
+        if (!workerResult.ok && !workerResult.transient) {
+          showWorkspaceToast({
+            title: "Analyse en file d'attente",
+            message: workerResult.message,
+            variant: "warn",
+          });
+        }
+
+        await waitForActiveImportJob();
+        if (!activeImportJob) startImportPolling();
       } catch (error) {
-        alert(error.message || "Impossible de lancer l'analyse.");
+        if (queuedJobs > 0) {
+          showWorkspaceToast({
+            title: "Analyse lancée",
+            message: "La mise en file a réussi. Le serveur peut mettre quelques secondes à démarrer le traitement.",
+            variant: "info",
+          });
+          startImportPolling();
+          return;
+        }
+        showWorkspaceToast({
+          title: "Lancement impossible",
+          message: error.message || "Impossible de lancer l'analyse.",
+          variant: "warn",
+        });
       } finally {
         analysisInFlight = false;
         analysisLaunchQueued = 0;
@@ -1384,6 +1480,12 @@
           });
 
           renderClientHeader();
+          loadAnalysisApiSettings();
+          refreshAnalysisServerStatus().catch(() => {});
+          document.getElementById("analysisApiUrl")?.addEventListener("change", () => {
+            persistAnalysisApiSettings();
+            refreshAnalysisServerStatus().catch(() => {});
+          });
           await reloadCockpit(dossierParam);
           if (tabParam) setTab(tabParam, { view: viewParam });
           startCompletionWatcher();
