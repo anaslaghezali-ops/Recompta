@@ -2705,6 +2705,17 @@
   color: var(--dash-danger);
 }
 
+.ws-review-issue.ok {
+  background: var(--dash-success-soft, #ecfdf5);
+  color: var(--dash-success, #059669);
+}
+
+.ws-review-validate.is-verified {
+  background: var(--dash-success-soft, #ecfdf5);
+  border-color: #86efac;
+  color: var(--dash-success, #059669);
+}
+
 .ws-review-delete { white-space: nowrap; }
 
 .ws-export-review-list {
