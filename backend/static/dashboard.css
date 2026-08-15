@@ -2150,6 +2150,22 @@
   margin-top: 0.1rem;
 }
 
+.ws-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.ws-doc-delete {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.ws-doc-delete:hover {
+  background: #fef2f2;
+}
+
 .ws-docs-empty {
   margin: 0;
   padding: 2rem 1rem;

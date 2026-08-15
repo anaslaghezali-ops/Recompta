@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=analysis2" />
+  <link rel="stylesheet" href="dashboard.css?v=docs-delete1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -341,10 +341,12 @@
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
       downloadDossierDocument,
+      deleteDossierDocument,
       groupDocumentsBySupplier,
+      isDocumentAnalyzed,
       listDossierDocuments,
       partitionDocumentsForDisplay,
-    } from "./dossier-documents.js?v=doc6";
+    } from "./dossier-documents.js?v=doc7";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -399,7 +401,7 @@
     let hadActiveImport = false;
     let stopCompletionWatcher = null;
     let activeImportJob = null;
-    let documentsCache = [];
+    let workspaceSnapshot = null;
     let documentFilter = "all";
     let archivesExpanded = false;
     let pendingAnalysisCount = 0;
@@ -754,7 +756,7 @@
       importPollTimer = null;
     }
 
-    function renderDocumentRow(doc) {
+    function renderDocumentRow(doc, { analyzed = false } = {}) {
       const icon = DOC_TYPE_ICONS[doc.doc_type] || "file";
       const typeLabel = DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type;
       const dateLabel = new Date(doc.created_at).toLocaleString("fr-FR", {
@@ -768,27 +770,79 @@
       const extraMeta = doc.extractedCount
         ? ` · ${doc.extractedCount} pièce(s) extraite(s)`
         : "";
+      const deleteLabel = analyzed ? "Supprimer (lignes conservées)" : "Supprimer";
       return `
         <div class="ws-doc-row" data-doc-id="${doc.id}">
           <span class="ws-doc-icon"><i data-lucide="${icon}"></i></span>
           <div class="ws-doc-meta">
             <strong title="${escapeHtml(doc.original_filename)}">${escapeHtml(displayName)}</strong>
-            <span>${escapeHtml(typeLabel)}${extraMeta} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
+            <span>${escapeHtml(typeLabel)}${extraMeta}${analyzed ? " · Analysé" : ""} · ${formatFileSize(doc.size_bytes || 0)} · ${escapeHtml(dateLabel)}</span>
           </div>
-          <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}">
-            <i data-lucide="download"></i> Télécharger
-          </button>
+          <div class="ws-doc-actions">
+            <button type="button" class="dash-btn dash-btn-sm" data-download-doc="${doc.id}" title="Télécharger">
+              <i data-lucide="download"></i>
+            </button>
+            <button type="button" class="dash-btn dash-btn-sm ws-doc-delete" data-delete-doc="${doc.id}" title="${escapeHtml(deleteLabel)}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
         </div>
       `;
     }
 
+    function getDocumentAnalysisState() {
+      return workspaceSnapshot;
+    }
+
+    async function handleDeleteDocument(doc) {
+      if (!doc) return;
+      let workspace = getDocumentAnalysisState();
+      if (!workspace && selectedDossierId) {
+        workspace = await loadDossierWorkspace(selectedDossierId);
+      }
+      const analyzed = isDocumentAnalyzed(doc, workspace);
+      const name = doc.displayName || doc.original_filename || "ce document";
+      const message = analyzed
+        ? `« ${name} » a déjà été analysé. Le fichier sera retiré mais les lignes extraites resteront dans la revue. Continuer ?`
+        : `Supprimer « ${name} » ? Cette action est irréversible.`;
+      if (!window.confirm(message)) return;
+
+      try {
+        await deleteDossierDocument(doc);
+        documentsCache = documentsCache.filter((row) => row.id !== doc.id);
+        await reloadCockpit(selectedDossierId);
+        if (activeTab === "documents") renderDocumentsList();
+      } catch (error) {
+        alert(error.message || "Impossible de supprimer ce document.");
+      }
+    }
+
+    function bindDocumentActions(rootEl) {
+      bindDocumentDownloads(rootEl);
+      rootEl?.querySelectorAll("[data-delete-doc]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const doc = documentsCache.find((row) => String(row.id) === btn.dataset.deleteDoc);
+          if (!doc) return;
+          btn.disabled = true;
+          try {
+            await handleDeleteDocument(doc);
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
     function renderDocumentGroups(docs) {
       const groups = groupDocumentsBySupplier(docs);
+      const workspace = getDocumentAnalysisState();
       return groups.map((group) => {
         const countLabel = group.docs.length > 1
           ? `${group.docs.length} documents`
           : "1 document";
-        const rows = group.docs.map((doc) => renderDocumentRow(doc)).join("");
+        const rows = group.docs.map((doc) => renderDocumentRow(doc, {
+          analyzed: isDocumentAnalyzed(doc, workspace),
+        })).join("");
         const groupIcon = group.kind === "bank" ? "landmark"
           : group.kind === "archive" ? "archive"
             : "building-2";
@@ -868,14 +922,14 @@
         archivesList.innerHTML = sourceArchives.map((doc) => renderDocumentRow({
           ...doc,
           doc_type: "archive",
-        })).join("");
-        bindDocumentDownloads(archivesList);
+        }, { analyzed: isDocumentAnalyzed(doc, getDocumentAnalysisState()) })).join("");
+        bindDocumentActions(archivesList);
       } else {
         archivesSection.hidden = true;
         archivesList.innerHTML = "";
       }
 
-      bindDocumentDownloads(listEl);
+      bindDocumentActions(listEl);
       initLucide();
     }
 
@@ -1246,8 +1300,8 @@
       if (dossierId) {
         try {
           documentsCache = await listDossierDocuments(dossierId);
-          const workspace = await loadDossierWorkspace(dossierId);
-          const pending = countPendingAnalysis(documentsCache, workspace);
+          workspaceSnapshot = await loadDossierWorkspace(dossierId);
+          const pending = countPendingAnalysis(documentsCache, workspaceSnapshot);
           pendingAnalysisCount = pending.total;
           bankPendingCount = pending.bankPending;
           invoicePendingCount = pending.invoicePending;
