@@ -799,10 +799,6 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
         openLinePreview(index);
       });
       actionTd.appendChild(viewBtn);
-      tr.appendChild(actionTd);
-
-      const validateTd = document.createElement("td");
-      validateTd.className = "row-actions ws-review-validate-cell";
 
       const hasReviewFlag = lineNeedsReview(line, { isDuplicate })
         || isLineReviewVerified(line);
@@ -820,14 +816,9 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
           event.stopPropagation();
           toggleLineValidation(index);
         });
-        validateTd.appendChild(validateBtn);
-      } else {
-        validateTd.textContent = "—";
+        actionTd.appendChild(validateBtn);
       }
-      tr.appendChild(validateTd);
 
-      const deleteTd = document.createElement("td");
-      deleteTd.className = "row-actions";
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "dash-btn dash-btn-sm ws-review-delete";
@@ -836,8 +827,8 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
         event.stopPropagation();
         deleteLineAt(index);
       });
-      deleteTd.appendChild(deleteBtn);
-      tr.appendChild(deleteTd);
+      actionTd.appendChild(deleteBtn);
+      tr.appendChild(actionTd);
       els.tableBody.appendChild(tr);
     });
 
