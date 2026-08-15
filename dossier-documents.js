@@ -166,6 +166,49 @@ export async function uploadDossierDocumentFromBlob({
   return uploadDossierDocument({ dossierId, file, docType, sourceId });
 }
 
+export function isZipDocument(docOrFilename) {
+  const name = typeof docOrFilename === "object"
+    ? docOrFilename?.original_filename
+    : docOrFilename;
+  const base = String(name || "").replace(/\\/g, "/").split("/").pop() || "";
+  return /\.zip$/i.test(base);
+}
+
+function zipArchiveStem(filename) {
+  const base = String(filename || "").replace(/\\/g, "/").split("/").pop() || "";
+  return base.replace(/\.zip$/i, "");
+}
+
+export function getZipChildDocuments(zipDoc, docs) {
+  if (!zipDoc || !isZipDocument(zipDoc)) return [];
+  const stemLower = zipArchiveStem(zipDoc.original_filename).toLowerCase();
+  const stemPrefix = stemLower.split("-")[0].trim();
+
+  return (docs || []).filter((doc) => {
+    if (!doc || doc.id === zipDoc.id) return false;
+    if (isZipDocument(doc)) return false;
+    const path = String(doc.original_filename || "").replace(/\\/g, "/");
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 2) return false;
+    const folderLower = parts[0].toLowerCase();
+    return stemLower.startsWith(folderLower) || folderLower === stemPrefix;
+  });
+}
+
+export function isInvoiceDocumentProcessed(doc, processedKeys) {
+  const sid = doc?.source_id ? `sid:${doc.source_id}` : null;
+  const keys = documentIdentityKeys(doc?.original_filename || "");
+  return (sid && processedKeys.has(sid))
+    || [...keys].some((key) => processedKeys.has(key));
+}
+
+export function shouldSkipZipForAnalysis(doc, documents, processedKeys) {
+  if (!isZipDocument(doc)) return false;
+  const children = getZipChildDocuments(doc, documents);
+  if (!children.length) return false;
+  return children.some((child) => isInvoiceDocumentProcessed(child, processedKeys));
+}
+
 export function documentDisplayName(docOrFilename, { withSize = false } = {}) {
   const doc = typeof docOrFilename === "object" ? docOrFilename : null;
   const filename = doc?.original_filename || docOrFilename || "";
