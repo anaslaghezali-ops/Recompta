@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=review1" />
+  <link rel="stylesheet" href="dashboard.css?v=analysis1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -134,6 +134,22 @@
                     <i data-lucide="table-2"></i> Voir la revue
                   </button>
                 </div>
+              </div>
+              <div class="ws-analysis-status" id="analysisStatus" hidden>
+                <div class="ws-analysis-status-head">
+                  <span class="ws-analysis-status-badge" id="analysisStatusBadge">—</span>
+                  <span class="ws-analysis-status-percent" id="analysisStatusPercent">0%</span>
+                </div>
+                <div class="ws-analysis-progress-track" aria-hidden="true">
+                  <div class="ws-analysis-progress-fill" id="analysisProgressFill"></div>
+                </div>
+                <p class="ws-analysis-status-detail" id="analysisStatusDetail">—</p>
+                <ol class="ws-analysis-steps" id="analysisSteps" aria-label="Étapes de l'analyse">
+                  <li data-step="launch">Lancement</li>
+                  <li data-step="queue">File d'attente</li>
+                  <li data-step="process">Extraction IA</li>
+                  <li data-step="review">Revue</li>
+                </ol>
               </div>
             </section>
 
@@ -323,11 +339,13 @@
       jobProgressPercent,
       JOB_STATUS_LABELS,
       countPendingAnalysis,
+      isAnalysisJob,
       launchDossierAnalysis,
       reconcileStaleImportJobs,
+      showAnalysisStartedToast,
       showImportCompletionToast,
       startImportCompletionWatcher,
-    } from "./import-jobs-client.js?v=jobs14";
+    } from "./import-jobs-client.js?v=jobs15";
     import { ensureImportWorkerRunning, getApiUrl } from "./api-client.js?v=api3";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace4";
     import { createWorkspaceReview } from "./workspace-review.js?v=review2";
@@ -373,6 +391,95 @@
     let pendingAnalysisCount = 0;
     let reviewController = null;
     let analysisInFlight = false;
+    let analysisLaunchQueued = 0;
+
+    function renderAnalysisSteps({ launching = false, job = null } = {}) {
+      const stepsEl = document.getElementById("analysisSteps");
+      if (!stepsEl) return;
+
+      const status = launching && !job ? "launching" : (job?.status || "");
+      const processed = job?.processed_files || 0;
+      const total = job?.total_files || 0;
+      const done = total > 0 && processed >= total && status === "completed";
+
+      const activeStep = launching && !job
+        ? "launch"
+        : status === "uploading" || status === "queued"
+          ? "queue"
+          : status === "processing"
+            ? "process"
+            : done
+              ? "review"
+              : status
+                ? "process"
+                : "";
+
+      for (const item of stepsEl.querySelectorAll("li")) {
+        const step = item.dataset.step;
+        item.classList.remove("is-active", "is-done");
+        const order = ["launch", "queue", "process", "review"];
+        const activeIndex = order.indexOf(activeStep);
+        const stepIndex = order.indexOf(step);
+        if (stepIndex < activeIndex || (done && step === "review")) {
+          item.classList.add("is-done");
+        } else if (step === activeStep) {
+          item.classList.add("is-active");
+        }
+      }
+    }
+
+    function renderAnalysisStatusPanel({ launching = false, job = null } = {}) {
+      const panel = document.getElementById("analysisStatus");
+      const badge = document.getElementById("analysisStatusBadge");
+      const percentEl = document.getElementById("analysisStatusPercent");
+      const fill = document.getElementById("analysisProgressFill");
+      const detail = document.getElementById("analysisStatusDetail");
+      const card = document.getElementById("analysisCard");
+      if (!panel || !badge || !percentEl || !fill || !detail) return;
+
+      const visible = launching || Boolean(job);
+      panel.hidden = !visible;
+      card?.classList.toggle("is-running", visible);
+
+      if (!visible) {
+        fill.classList.remove("is-indeterminate");
+        fill.style.width = "0%";
+        return;
+      }
+
+      if (launching && !job) {
+        badge.className = "ws-analysis-status-badge is-launching";
+        badge.textContent = "Lancement de l'analyse…";
+        percentEl.textContent = "…";
+        fill.classList.add("is-indeterminate");
+        fill.style.width = "35%";
+        detail.textContent = "Connexion au serveur et mise en file des documents.";
+        renderAnalysisSteps({ launching: true });
+        return;
+      }
+
+      const percent = jobProgressPercent(job);
+      const statusLabel = JOB_STATUS_LABELS[job.status] || "Analyse";
+      const analysis = isAnalysisJob(job);
+      badge.className = `ws-analysis-status-badge ${
+        job.status === "queued" ? "is-queued" : job.status === "processing" ? "is-processing" : ""
+      }`;
+      badge.textContent = analysis ? `Analyse IA — ${statusLabel}` : statusLabel;
+      percentEl.textContent = `${percent}%`;
+      fill.classList.remove("is-indeterminate");
+      fill.style.width = `${Math.max(percent, job.status === "queued" ? 8 : 0)}%`;
+      detail.textContent = formatActiveImportLabel(job);
+      renderAnalysisSteps({ job });
+    }
+
+    function renderImportBannerTitle(job) {
+      const percent = jobProgressPercent(job);
+      const status = JOB_STATUS_LABELS[job.status] || "Traitement en cours";
+      if (isAnalysisJob(job)) {
+        return `Analyse IA — ${status} · ${percent}%`;
+      }
+      return `${status} — ${percent}%`;
+    }
 
     function getReviewContext() {
       if (!cockpit?.dossier || !client) return null;
@@ -420,24 +527,34 @@
 
       if (!job) {
         activeImportJob = null;
+        analysisLaunchQueued = 0;
         if (hadActiveImport) {
           hadActiveImport = false;
           await reloadCockpit(selectedDossierId);
         }
         banner.hidden = true;
+        banner.classList.remove("is-analysis");
         stopImportPolling();
+        renderAnalysisStatusPanel();
         return;
       }
 
       hadActiveImport = true;
       activeImportJob = job;
+      const analysis = isAnalysisJob(job);
       banner.hidden = false;
+      banner.classList.toggle("is-analysis", analysis);
+      const bannerIcon = banner.querySelector("i");
+      if (bannerIcon) {
+        bannerIcon.setAttribute("data-lucide", analysis ? "sparkles" : "loader-circle");
+      }
       const percent = jobProgressPercent(job);
-      document.getElementById("importBannerTitle").textContent =
-        `${JOB_STATUS_LABELS[job.status] || "Import en cours"} — ${percent}%`;
+      document.getElementById("importBannerTitle").textContent = renderImportBannerTitle(job);
       document.getElementById("importBannerText").textContent = formatActiveImportLabel(job);
       document.getElementById("importBannerProgressFill").style.width = `${percent}%`;
       document.getElementById("importBannerPercent").textContent = `${percent}%`;
+      const bannerBtn = document.getElementById("importBannerBtn");
+      if (bannerBtn) bannerBtn.textContent = analysis ? "Voir l'analyse" : "Détails";
       if (job.status === "queued") {
         const apiUrl = getApiUrl();
         if (apiUrl) ensureImportWorkerRunning(apiUrl, { limit: 3 }).catch(() => {});
@@ -445,6 +562,15 @@
       startImportPolling();
       renderAnalysisCard().catch(() => {});
       initLucide();
+    }
+
+    async function waitForActiveImportJob({ attempts = 8, delayMs = 750 } = {}) {
+      for (let i = 0; i < attempts; i += 1) {
+        await renderImportBanner();
+        if (activeImportJob) return true;
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+      return Boolean(activeImportJob);
     }
 
     function openActiveImportPage() {
@@ -467,32 +593,46 @@
 
       card.hidden = false;
       const hasLines = cockpit.lineCount > 0;
-      const isRunning = Boolean(activeImportJob);
+      const isRunning = Boolean(activeImportJob) || analysisInFlight;
       openReviewBtn.hidden = !hasLines;
 
-      if (isRunning) {
+      if (activeImportJob) {
         const percent = jobProgressPercent(activeImportJob);
-        hint.textContent = `${JOB_STATUS_LABELS[activeImportJob.status] || "Analyse"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`;
-        meta.textContent = "Traitement en arrière-plan — vous pouvez quitter cette page.";
+        hint.textContent = isAnalysisJob(activeImportJob)
+          ? "L'analyse IA tourne en arrière-plan sur le serveur."
+          : "Traitement en cours sur le serveur.";
+        meta.textContent = `${JOB_STATUS_LABELS[activeImportJob.status] || "Analyse"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`;
         launchBtn.disabled = true;
         launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Analyse en cours…';
-      } else if (pendingAnalysisCount > 0) {
-        hint.textContent = `${pendingAnalysisCount} document(s) prêt(s) à analyser.`;
-        meta.textContent = "L'extraction IA démarre sur le serveur — notification à la fin.";
-        launchBtn.disabled = analysisInFlight;
-        launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
-      } else if (hasLines) {
-        hint.textContent = "Extraction terminée. Passez à la revue pour corriger et exporter.";
-        meta.textContent = cockpit.anomalyCount > 0
-          ? `${cockpit.anomalyCount} anomalie(s) à corriger.`
-          : "Aucune anomalie détectée.";
+        renderAnalysisStatusPanel({ job: activeImportJob });
+      } else if (analysisInFlight) {
+        hint.textContent = "Préparation de l'analyse sur le serveur…";
+        meta.textContent = analysisLaunchQueued > 0
+          ? `${analysisLaunchQueued} fichier(s) en cours de mise en file.`
+          : "Vérification des documents à analyser.";
         launchBtn.disabled = true;
-        launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
+        launchBtn.innerHTML = '<i data-lucide="loader-circle"></i> Lancement…';
+        renderAnalysisStatusPanel({ launching: true });
       } else {
-        hint.textContent = "Importez des factures ou relevés, puis lancez l'analyse ici.";
-        meta.textContent = "L'upload et l'analyse sont séparés : vous contrôlez quand démarrer.";
-        launchBtn.disabled = true;
-        launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+        renderAnalysisStatusPanel();
+        if (pendingAnalysisCount > 0) {
+          hint.textContent = `${pendingAnalysisCount} document(s) prêt(s) à analyser.`;
+          meta.textContent = "Cliquez pour lancer l'extraction IA — vous pourrez suivre la progression ici.";
+          launchBtn.disabled = false;
+          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+        } else if (hasLines) {
+          hint.textContent = "Extraction terminée. Passez à la revue pour corriger et exporter.";
+          meta.textContent = cockpit.anomalyCount > 0
+            ? `${cockpit.anomalyCount} anomalie(s) à corriger.`
+            : "Aucune anomalie détectée.";
+          launchBtn.disabled = true;
+          launchBtn.innerHTML = '<i data-lucide="check"></i> Analyse à jour';
+        } else {
+          hint.textContent = "Importez des factures ou relevés, puis lancez l'analyse ici.";
+          meta.textContent = "L'upload et l'analyse sont séparés : vous contrôlez quand démarrer.";
+          launchBtn.disabled = true;
+          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'analyse IA';
+        }
       }
       initLucide();
     }
@@ -522,6 +662,7 @@
       }
 
       analysisInFlight = true;
+      analysisLaunchQueued = 0;
       renderAnalysisCard();
       try {
         await refreshPendingAnalysis();
@@ -543,13 +684,23 @@
         if (!totalQueued) {
           alert(invoiceResult.message || "Aucun document en attente d'analyse.");
         } else {
+          analysisLaunchQueued = totalQueued;
+          renderAnalysisCard();
+          showAnalysisStartedToast({
+            fileCount: totalQueued,
+            dossierName: client?.name || "",
+          });
           await ensureImportWorkerRunning(apiUrl, { limit: 3 });
-          await renderImportBanner();
+          await waitForActiveImportJob();
+          if (!activeImportJob) {
+            startImportPolling();
+          }
         }
       } catch (error) {
         alert(error.message || "Impossible de lancer l'analyse.");
       } finally {
         analysisInFlight = false;
+        analysisLaunchQueued = 0;
         await renderAnalysisCard();
       }
     }
