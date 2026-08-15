@@ -291,7 +291,15 @@
                     <tr>
                       <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
                       <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
-                      <th>Date fact.</th><th>Date paie</th><th></th>
+                      <th>Date fact.</th><th>Date paie</th>
+                      <th class="ws-review-actions-col"></th>
+                      <th class="ws-review-validate-head">
+                        <span>Valider</span>
+                        <button type="button" id="reviewValidateAllBtn" class="dash-btn dash-btn-sm ws-review-validate-all" title="Valider toutes les lignes en une fois">
+                          Tout valider
+                        </button>
+                      </th>
+                      <th class="ws-review-actions-col"></th>
                     </tr>
                   </thead>
                   <tbody id="reviewTableBody"></tbody>
@@ -299,8 +307,6 @@
               </div>
             </div>
           </section>
-        </div>
-
         </div>
 
         <div id="reviewDetailOverlay" class="ws-review-detail" hidden>
@@ -543,7 +549,7 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review9";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review10";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
     import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload1";
     import {
