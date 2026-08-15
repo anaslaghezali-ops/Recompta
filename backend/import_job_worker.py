@@ -26,6 +26,56 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def pipeline_debug_enabled() -> bool:
+    return os.getenv("EXTRACTION_PIPELINE_DEBUG", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _summarize_result_lines(result: ExtractionResult) -> list[dict[str, Any]]:
+    return [
+        {
+            "fact_num": line.fact_num,
+            "taux": line.taux,
+            "m_ht": line.m_ht,
+            "tva": line.tva,
+            "m_ttc": line.m_ttc,
+        }
+        for line in (result.lines or [])
+    ]
+
+
+def _build_pipeline_debug_report(
+    *,
+    work_items: list[dict[str, Any]],
+    skipped_items: int,
+    raw_results: list[ExtractionResult],
+    normalized: list[ExtractionResult],
+    new_lines: list[dict[str, Any]],
+    merged_lines: list[dict[str, Any]],
+    current_line_count: int,
+) -> dict[str, Any]:
+    by_source: dict[str, dict[str, Any]] = {}
+    for raw, norm in zip(raw_results, normalized):
+        key = str(raw.source_id or raw.filename)
+        by_source[key] = {
+            "filename": raw.filename,
+            "source_id": raw.source_id,
+            "engine": raw.engine,
+            "after_extract": len(raw.lines or []),
+            "after_normalize": len(norm.lines or []),
+            "extract_lines": _summarize_result_lines(raw),
+            "normalized_lines": _summarize_result_lines(norm),
+            "warnings": list(norm.warnings or [])[:5],
+        }
+    return {
+        "skipped_work_items": skipped_items,
+        "work_items": len(work_items),
+        "new_lines_before_merge": len(new_lines),
+        "lines_before_merge": current_line_count,
+        "lines_after_merge": len(merged_lines),
+        "files": by_source,
+    }
+
+
 def invoice_line_to_workspace_dict(
     line: InvoiceLine,
     *,
@@ -503,16 +553,27 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 merged_lines = _merge_workspace_lines(current_lines, new_lines)
                 await db.save_workspace(dossier_id, lines=merged_lines)
                 await db.touch_dossier_status(dossier_id, len(merged_lines))
+            activity_meta: dict[str, Any] = {
+                "job_id": job_id,
+                "new_lines": len(new_lines),
+                "failed_files": failed,
+                "files": file_summaries,
+            }
+            if pipeline_debug_enabled():
+                activity_meta["pipeline_debug"] = _build_pipeline_debug_report(
+                    work_items=work_items,
+                    skipped_items=skipped_items,
+                    raw_results=extraction_results,
+                    normalized=normalized,
+                    new_lines=new_lines,
+                    merged_lines=merged_lines,
+                    current_line_count=len(current_lines),
+                )
             await db.log_activity(
                 dossier_id,
                 "import_job",
                 f"Import terminé — {len(new_lines)} ligne(s) extraite(s)",
-                {
-                    "job_id": job_id,
-                    "new_lines": len(new_lines),
-                    "failed_files": failed,
-                    "files": file_summaries,
-                },
+                activity_meta,
             )
     finally:
         deactivate_client_ice_exclusions(token)
