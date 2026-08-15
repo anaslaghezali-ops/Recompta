@@ -2493,6 +2493,11 @@
   padding: 0.9rem 1rem;
 }
 
+.ws-production-step.is-running {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
 .ws-production-step-head {
   display: flex;
   align-items: center;

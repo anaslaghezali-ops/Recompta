@@ -781,6 +781,10 @@
       return apiUrl;
     }
 
+    function isBankImportJob(job) {
+      return job?.doc_type === "bank";
+    }
+
     function renderAnalysisSteps({ launching = false, job = null } = {}) {
       const stepsEl = document.getElementById("analysisSteps");
       if (!stepsEl) return;
@@ -825,9 +829,8 @@
       const card = document.getElementById("productionCard");
       if (!panel || !badge || !percentEl || !fill || !detail) return;
 
-      const visible = launching || Boolean(job);
+      const visible = (launching || Boolean(job)) && !isBankImportJob(job);
       panel.hidden = !visible;
-      card?.classList.toggle("is-running", visible);
 
       if (!visible) {
         fill.classList.remove("is-indeterminate");
@@ -863,6 +866,9 @@
     function renderImportBannerTitle(job) {
       const percent = jobProgressPercent(job);
       const status = JOB_STATUS_LABELS[job.status] || "Traitement en cours";
+      if (isBankImportJob(job)) {
+        return `Relevé bancaire — ${status} · ${percent}%`;
+      }
       if (isAnalysisJob(job)) {
         return `Analyse IA — ${status} · ${percent}%`;
       }
@@ -1186,10 +1192,18 @@
       card.classList.toggle("is-readonly", isReadOnly);
       const hasLines = cockpit.lineCount > 0;
       const hasBank = cockpit.bankCount > 0;
-      const isJobRunning = Boolean(activeImportJob) || analysisInFlight || bankExtractInFlight;
+      const bankJobActive = bankExtractInFlight || (activeImportJob && isBankImportJob(activeImportJob));
+      const invoiceJobActive = !bankJobActive && (analysisInFlight || Boolean(activeImportJob));
+      const isJobRunning = bankJobActive || invoiceJobActive;
       const missingPaymentDates = workspaceSnapshot
         ? countLinesWithoutPaymentDate(workspaceSnapshot.lines || [])
         : 0;
+
+      const extractionStep = document.getElementById("extractionStep");
+      const bankMatchStep = document.getElementById("bankMatchStep");
+      extractionStep?.classList.toggle("is-running", invoiceJobActive);
+      bankMatchStep?.classList.toggle("is-running", bankJobActive);
+      card.classList.toggle("is-running", isJobRunning);
 
       openReviewBtn.hidden = !hasLines;
       if (addInvoicesBtn) {
@@ -1201,15 +1215,13 @@
         launchBankMatchBtn.disabled = true;
       }
 
-      if (activeImportJob || analysisInFlight || bankExtractInFlight) {
+      if (invoiceJobActive) {
         const percent = activeImportJob ? jobProgressPercent(activeImportJob) : 0;
         const progressNote = analysisProgress?.total
           ? `${analysisProgress.processed}/${analysisProgress.total} facture(s) analysée(s)`
           : null;
-        const runningLabel = bankExtractInFlight && !activeImportJob
-          ? "Extraction du relevé en cours…"
-          : progressNote
-            ? `Extraction en cours — ${progressNote}`
+        const runningLabel = progressNote
+          ? `Extraction en cours — ${progressNote}`
           : isAnalysisJob(activeImportJob)
             ? "Extraction des factures en cours sur le serveur."
             : activeImportJob
@@ -1251,7 +1263,22 @@
         }
       }
 
-      if (bankPendingCount > 0 && !hasBank) {
+      if (bankJobActive) {
+        const percent = activeImportJob ? jobProgressPercent(activeImportJob) : 0;
+        const progressNote = analysisProgress?.total
+          ? `${analysisProgress.processed}/${analysisProgress.total} relevé(s) analysé(s)`
+          : null;
+        bankMatchHint.textContent = progressNote
+          ? `Extraction du relevé en cours — ${progressNote}`
+          : "Extraction du relevé bancaire en cours…";
+        bankMatchMeta.textContent = activeImportJob
+          ? `${JOB_STATUS_LABELS[activeImportJob.status] || "Extraction"} — ${percent}% · ${formatActiveImportLabel(activeImportJob)}`
+          : "Connexion au serveur et mise en file du relevé.";
+        extractBankBtn.hidden = false;
+        extractBankBtn.disabled = true;
+        extractBankBtn.innerHTML = '<i data-lucide="loader-circle"></i> Extraction relevé…';
+        launchBankMatchBtn.disabled = true;
+      } else if (bankPendingCount > 0 && !hasBank) {
         bankMatchHint.textContent = "Relevé importé — extrayez d'abord les mouvements bancaires.";
         bankMatchMeta.textContent = "Étape requise avant le rapprochement des paiements.";
         extractBankBtn.hidden = false;
@@ -1283,9 +1310,9 @@
         launchBankMatchBtn.innerHTML = '<i data-lucide="git-compare"></i> Lancer le rapprochement';
       }
 
-      if (!bankExtractInFlight && !(bankPendingCount > 0 && !hasBank)) {
+      if (!bankJobActive && !bankExtractInFlight && !(bankPendingCount > 0 && !hasBank)) {
         extractBankBtn.innerHTML = '<i data-lucide="landmark"></i> Extraire le relevé';
-      } else if (bankExtractInFlight) {
+      } else if (bankJobActive || bankExtractInFlight) {
         extractBankBtn.innerHTML = '<i data-lucide="loader-circle"></i> Extraction relevé…';
       }
 
