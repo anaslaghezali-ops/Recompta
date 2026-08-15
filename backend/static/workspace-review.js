@@ -6,15 +6,18 @@ import {
   countSupplierFieldTargets,
   fieldValuesMatch,
   findDuplicateLineIndexes,
-} from "./extract-client.js?v=dedupe2";
+} from "./extract-client.js?v=dedupe3";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
+  isLineReviewVerified,
   lineHasActionableAnomaly,
   lineIssueSummary,
   lineNeedsReview,
   refreshLinesFieldConfidence,
+  unverifyReviewLine,
+  verifyReviewLine,
 } from "./field-confidence.js";
 import {
   createDebouncedSaver,
@@ -81,6 +84,7 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
   }
 
   function markFieldVerified(line, fieldKey) {
+    unverifyReviewLine(line);
     if (!line.user_verified_fields) line.user_verified_fields = [];
     if (!line.user_verified_fields.includes(fieldKey)) {
       line.user_verified_fields.push(fieldKey);
@@ -181,6 +185,22 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
     lines.splice(index, 1);
     render();
     scheduleSave("delete_line", "Ligne supprimée");
+  }
+
+  function toggleLineValidation(index) {
+    const line = lines[index];
+    if (!line) return;
+    const duplicates = new Set(findDuplicateLineIndexes(lines));
+    const isDuplicate = duplicates.has(index);
+    if (isLineReviewVerified(line)) {
+      unverifyReviewLine(line);
+      setStatus("Validation de la ligne annulée", "muted");
+    } else {
+      verifyReviewLine(line, { isDuplicate });
+      setStatus("Ligne validée — elle n'apparaît plus dans les anomalies", "success");
+    }
+    render();
+    scheduleSave("verify_line", isLineReviewVerified(line) ? "Ligne validée" : "Validation annulée");
   }
 
   function removeDuplicates() {
@@ -366,6 +386,24 @@ export function createWorkspaceReview({ mountEl, getContext, onStateChange }) {
       });
 
       const actionTd = document.createElement("td");
+      actionTd.className = "row-actions";
+
+      const hasReviewFlag = lineNeedsReview(line, { isDuplicate })
+        || isLineReviewVerified(line);
+      if (hasReviewFlag) {
+        const validateBtn = document.createElement("button");
+        validateBtn.type = "button";
+        validateBtn.className = "dash-btn dash-btn-sm ws-review-validate";
+        const verified = isLineReviewVerified(line);
+        validateBtn.textContent = verified ? "Validée" : "Valider";
+        validateBtn.title = verified
+          ? "Ligne validée — recliquez pour annuler"
+          : "Confirmer que cette ligne est correcte";
+        validateBtn.classList.toggle("is-verified", verified);
+        validateBtn.addEventListener("click", () => toggleLineValidation(index));
+        actionTd.appendChild(validateBtn);
+      }
+
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "dash-btn dash-btn-sm ws-review-delete";

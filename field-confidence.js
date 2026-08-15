@@ -24,6 +24,30 @@ export function confidenceClass(level) {
   return "confidence-ok";
 }
 
+/** Marqueur persistant : la ligne a été validée manuellement en revue. */
+export const LINE_REVIEW_VERIFIED = "__line_review__";
+
+export function isLineReviewVerified(line) {
+  return Array.isArray(line?.user_verified_fields)
+    && line.user_verified_fields.includes(LINE_REVIEW_VERIFIED);
+}
+
+export function verifyReviewLine(line, { isDuplicate = false } = {}) {
+  if (!line.user_verified_fields) line.user_verified_fields = [];
+  if (!line.user_verified_fields.includes(LINE_REVIEW_VERIFIED)) {
+    line.user_verified_fields.push(LINE_REVIEW_VERIFIED);
+  }
+  if (isDuplicate) line.duplicate_dismissed = true;
+}
+
+export function unverifyReviewLine(line) {
+  if (!line.user_verified_fields) return;
+  line.user_verified_fields = line.user_verified_fields.filter(
+    (field) => field !== LINE_REVIEW_VERIFIED,
+  );
+  line.duplicate_dismissed = false;
+}
+
 function entry(level, reason) {
   return { level, reason };
 }
@@ -289,7 +313,8 @@ export function lineNeedsReview(line, { isDuplicate = false } = {}) {
 
 /** Anomalie bloquante pour la revue (hors date paie / IF optionnels). */
 export function lineHasActionableAnomaly(line, { isDuplicate = false } = {}) {
-  if (isDuplicate) return true;
+  if (isLineReviewVerified(line)) return false;
+  if (isDuplicate && !line.duplicate_dismissed) return true;
   const conf = line.field_confidence || {};
   for (const [field, entry] of Object.entries(conf)) {
     if (entry?.level === "error") return true;
@@ -299,8 +324,11 @@ export function lineHasActionableAnomaly(line, { isDuplicate = false } = {}) {
 }
 
 export function lineIssueSummary(line, { isDuplicate = false } = {}) {
+  if (isLineReviewVerified(line)) {
+    return [{ level: "ok", label: "Validée", reason: "Ligne validée manuellement" }];
+  }
   const items = [];
-  if (isDuplicate) {
+  if (isDuplicate && !line.duplicate_dismissed) {
     items.push({ level: "warn", label: "Doublon", reason: "Doublon probable — confirmez ou supprimez" });
   }
   for (const [field, entry] of Object.entries(line.field_confidence || {})) {
@@ -349,7 +377,9 @@ export function collectFieldConfidenceIssues(lines, options = {}) {
     else if (fact) label = `Facture ${fact}`;
     else if (supplier) label = `${label} (${supplier})`;
 
-    if (duplicateSet.has(index)) {
+    if (isLineReviewVerified(line)) return;
+
+    if (duplicateSet.has(index) && !line.duplicate_dismissed) {
       issues.push({
         level: "warn",
         rank: 1,
