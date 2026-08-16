@@ -2347,6 +2347,25 @@
   padding: 0.15rem 0.15rem 0.35rem;
 }
 
+.ws-doc-group-header > div:not(.ws-doc-group-actions) {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-doc-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ws-doc-group-header .ws-doc-delete {
+  font-size: 0.72rem;
+  padding: 0.28rem 0.55rem;
+  white-space: nowrap;
+}
+
 .ws-doc-group-icon {
   width: 32px;
   height: 32px;
