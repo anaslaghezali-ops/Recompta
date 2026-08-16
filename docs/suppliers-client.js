@@ -1,5 +1,5 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
-import { supplierNameKey } from "./extract-client.js?v=textvat1";
+import { supplierNameKey } from "./extract-client.js?v=zipname1";
 import { formatMonthLabel, getClientWithDossiers } from "./dossiers-client.js?v=dash2";
 
 function pickCanonicalName(names) {
