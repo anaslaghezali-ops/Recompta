@@ -139,15 +139,6 @@ export function createWorkspaceInvoiceUpload({
       }
     }
     renderFileQueue(zone);
-    if (zone.queueEl && zone.pendingFiles.length) {
-      zone.queueEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      showToast?.({
-        title: `${zone.pendingFiles.length} fichier(s) sélectionné(s)`,
-        message: "Choisissez « Mettre en attente » ou « Extraction immédiate ».",
-        variant: "info",
-        durationMs: 7000,
-      });
-    }
     return true;
   }
 
@@ -200,14 +191,30 @@ export function createWorkspaceInvoiceUpload({
         if (!canImportNow()) notifyBlockedImport();
         return;
       }
-      addFilesToQueue(inputEl, event.dataTransfer?.files);
+      const dropped = [...(event.dataTransfer?.files || [])];
+      if (!dropped.length) return;
+      addFilesToQueue(inputEl, dropped);
+      runQueue(zone).catch((error) => {
+        showToast?.({
+          title: "Import impossible",
+          message: error?.message || "Impossible d'importer les fichiers sélectionnés.",
+          variant: "error",
+        });
+      });
     });
 
     inputEl.addEventListener("change", () => {
-      const files = inputEl.files;
+      const files = [...(inputEl.files || [])];
       inputEl.value = "";
-      if (!files?.length) return;
+      if (!files.length) return;
       addFilesToQueue(inputEl, files);
+      runQueue(zone).catch((error) => {
+        showToast?.({
+          title: "Import impossible",
+          message: error?.message || "Impossible d'importer les fichiers sélectionnés.",
+          variant: "error",
+        });
+      });
     });
 
     queueBtn?.addEventListener("click", (event) => {
