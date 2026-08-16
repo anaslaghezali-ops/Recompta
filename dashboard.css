@@ -2231,6 +2231,12 @@
   margin-bottom: 0;
 }
 
+.ws-review-import-panel .imp-queue-hint {
+  margin: 0.65rem 0 0;
+  font-size: 0.8rem;
+  color: var(--dash-muted);
+}
+
 .ws-import-queue[hidden],
 .ws-import-actions[hidden],
 .ws-review-import-panel[hidden],
