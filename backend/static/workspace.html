@@ -259,7 +259,12 @@
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                 <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
                 <h3>Ajouter des factures</h3>
-                <p>Glissez-déposez vos PDF, images ou ZIP — l'envoi démarre tout de suite, puis lancez l'extraction en arrière-plan.</p>
+                <p>Glissez-déposez vos PDF, images ou ZIP — l'envoi démarre tout de suite.</p>
+              </div>
+              <div class="imp-actions ws-import-actions">
+                <button type="button" class="dash-btn dash-btn-primary" id="documentsLaunchExtractBtn">
+                  <i data-lucide="play"></i> Lancer l'extraction
+                </button>
               </div>
             </div>
             <div id="documentsList" class="ws-docs-list"></div>
@@ -310,7 +315,12 @@
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                 <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
                 <h3>Ajouter des factures</h3>
-                <p>Glissez-déposez vos PDF, images ou ZIP — l'envoi démarre tout de suite. Un bouton lancera l'extraction en arrière-plan.</p>
+                <p>Glissez-déposez vos PDF, images ou ZIP — l'envoi démarre tout de suite.</p>
+              </div>
+              <div class="imp-actions ws-import-actions">
+                <button type="button" class="dash-btn dash-btn-primary" id="reviewLaunchExtractBtn">
+                  <i data-lucide="play"></i> Lancer l'extraction
+                </button>
               </div>
             </div>
             <p id="reviewImportReadonly" class="ws-review-import-readonly hint" hidden>
@@ -322,7 +332,7 @@
             <div id="reviewEmptyState" class="ws-empty">
               <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
               <h3>Aucune ligne extraite</h3>
-              <p>Ajoutez des factures ci-dessus, puis lancez l'extraction depuis l'onglet Période active.</p>
+              <p>Ajoutez des factures ci-dessus, puis cliquez sur Lancer l'extraction.</p>
             </div>
             <div id="reviewLayout" class="review-layout" hidden>
               <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
@@ -613,7 +623,7 @@
     } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review14";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload8";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload9";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -723,15 +733,28 @@
       if (isReadOnly) {
         meta.hidden = false;
         meta.textContent = "Période déclarée — consultation seule, import désactivé.";
+        ["reviewLaunchExtractBtn", "documentsLaunchExtractBtn"].forEach((id) => {
+          const btn = document.getElementById(id);
+          if (btn) btn.disabled = true;
+        });
         return;
       }
       const pending = invoicePendingCount || 0;
       const docs = invoiceDocumentCount || 0;
+      const extractBtns = [
+        document.getElementById("reviewLaunchExtractBtn"),
+        document.getElementById("documentsLaunchExtractBtn"),
+      ];
+      extractBtns.forEach((btn) => {
+        if (!btn) return;
+        btn.disabled = pending === 0;
+        btn.hidden = false;
+      });
       if (pending > 0 || docs > 0) {
         meta.hidden = false;
         meta.textContent = pending > 0
-          ? `${pending} document(s) en attente d'extraction — lancez l'extraction depuis Période active.`
-          : `${docs} document(s) importé(s) — lancez l'extraction quand vous êtes prêt.`;
+          ? `${pending} document(s) en attente d'extraction — cliquez sur Lancer l'extraction.`
+          : `${docs} document(s) importé(s) — cliquez sur Lancer l'extraction quand vous êtes prêt.`;
         return;
       }
       meta.hidden = true;
@@ -2565,6 +2588,8 @@
 
     document.getElementById("importBannerBtn")?.addEventListener("click", openActiveImportPage);
     document.getElementById("launchExtractionBtn")?.addEventListener("click", handleLaunchExtraction);
+    document.getElementById("reviewLaunchExtractBtn")?.addEventListener("click", handleLaunchExtraction);
+    document.getElementById("documentsLaunchExtractBtn")?.addEventListener("click", handleLaunchExtraction);
     document.getElementById("addInvoicesBtn")?.addEventListener("click", () => openInvoiceUpload());
     document.getElementById("extractBankBtn")?.addEventListener("click", handleExtractBank);
     document.getElementById("launchBankMatchBtn")?.addEventListener("click", handleLaunchBankMatch);

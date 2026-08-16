@@ -171,8 +171,9 @@ export function createWorkspaceInvoiceUpload({
 
     const stored = uploaded + reused;
     const invoiceCount = expanded || stored;
+    const errorDetail = failures[0]?.message ? ` ${failures[0].message}` : "";
     const summary = failures.length
-      ? `${invoiceCount} document(s) reçu(s), ${failures.length} erreur(s).`
+      ? `${invoiceCount} document(s) reçu(s), ${failures.length} erreur(s).${errorDetail}`
       : expanded
         ? `${expanded} facture(s) importée(s) depuis ${stored} archive(s).`
         : reused && !uploaded
