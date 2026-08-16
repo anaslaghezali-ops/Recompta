@@ -25,10 +25,10 @@ MOROCCAN_DATE_PATTERNS = [
 _LABEL_NUM = r"(?:N\s*[°ºo]?\.?|Num[ée]ro)?"
 ICE_PATTERN = re.compile(rf"\bI\.?C\.?E\.?\s*{_LABEL_NUM}\s*[:\s]*(\d{{15}})\b", re.I)
 IF_PATTERN = re.compile(
-    rf"\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*{_LABEL_NUM}\s*[:\s-]*([0-9A-Za-z]+)",
+    rf"\b(?:Identifiant\s+fiscal|I\.?F\.?|1F)\s*{_LABEL_NUM}\s*[:\s.-]*([0-9A-Za-z]+)",
     re.I,
 )
-IF_FOOTER_PATTERN = re.compile(r"\bF\s+(\d{6,9})\b")
+IF_FOOTER_PATTERN = re.compile(r"\bF(?:\s*[:.]\s*|\s+)(\d{6,9})\b")
 # Identifiants légaux marocains à ne jamais confondre avec l'IF.
 OTHER_LEGAL_IDS_PATTERNS = (
     re.compile(r"\b(?:R\.?\s?C\.?|Registre\s+de\s+commerce)\s*[:\s.]*(\d{3,10})\b", re.I),
@@ -453,13 +453,24 @@ def _extract_supplier_ice(text: str) -> str:
     return ""
 
 
+def _clean_supplier_if(value: str) -> str:
+    cleaned = (value or "").strip()
+    digits = re.sub(r"\D", "", cleaned)
+    # Un ICE (15 chiffres) n'est jamais un IF.
+    if not cleaned or len(digits) == 15:
+        return ""
+    return cleaned
+
+
 def _extract_supplier_if(text: str) -> str:
     if_match = IF_PATTERN.search(text)
     if if_match:
-        return if_match.group(1).strip()
+        cleaned = _clean_supplier_if(if_match.group(1))
+        if cleaned:
+            return cleaned
     footer = IF_FOOTER_PATTERN.search(text)
     if footer:
-        return footer.group(1).strip()
+        return _clean_supplier_if(footer.group(1))
     return ""
 
 
@@ -954,7 +965,9 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
 ## Champs
 
 - ICE fournisseur = 15 chiffres (pied de page légal, PAS l'ICE client en en-tête)
-- IF = Identifiant Fiscal, 6 à 9 chiffres, noté « IF », « I.F. » ou « IF: ».
+- IF = Identifiant Fiscal, 6 à 9 chiffres, noté « IF », « I.F », « I.F. » ou « IF: »
+  (le point après F est optionnel). Souvent collé dans une ligne légale :
+  « R.C. :…-Patente : …-I.F : 40240688-ICE : … ».
   NE JAMAIS y mettre le R.C. (registre de commerce), la PATENTE, le CNSS,
   le capital social ni l'ICE : ce sont des numéros différents.
   Un scan peut couper le libellé (« ...PATENTE:35891529I. » puis « F 14427958 »

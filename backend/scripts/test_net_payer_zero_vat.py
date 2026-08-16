@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from invoice_extractor import (
     _extract_amounts,
     _extract_invoice_number,
+    _extract_supplier_if,
     _heuristic_extract,
     _needs_ai_upgrade,
 )
@@ -92,11 +93,22 @@ def test_second_probun_invoice() -> None:
     assert not _needs_ai_upgrade(result)
 
 
+def test_if_accepts_optional_dot_after_f() -> None:
+    assert _extract_supplier_if("I.F : 40240688") == "40240688"
+    assert _extract_supplier_if("I.F. : 40240688") == "40240688"
+    assert _extract_supplier_if("IF : 40240688") == "40240688"
+    assert _extract_supplier_if("I.F:40240688") == "40240688"
+    assert _extract_supplier_if(PROBUN_10_07) == "40240688"
+    result = _heuristic_extract("FACTURE AICHOUM 10072026.pdf", PROBUN_10_07)
+    assert result.lines[0].if_fournisseur == "40240688"
+
+
 def main() -> int:
     test_net_a_payer_is_ttc()
     test_zero_vat_is_not_an_upgrade()
     test_alphanumeric_invoice_number()
     test_second_probun_invoice()
+    test_if_accepts_optional_dot_after_f()
     print("OK test_net_payer_zero_vat")
     return 0
 
