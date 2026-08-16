@@ -40,7 +40,10 @@ const IF_PATTERN =
   /\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*(?:N\s*[°ºo]?\.?|Num[ée]ro)?\s*[:\s-]*([0-9A-Za-z]+)/i;
 const IF_FOOTER_PATTERN = /\bF\s+(\d{6,9})\b/;
 const INVOICE_NUM_PATTERN =
-  /(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N[°o\.]?|:)?\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i;
+  /(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N\s*[°ºo]\.?|Num[ée]ro)?\s*[:\s]*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i;
+const FACT_NUM_STOPWORDS = new Set([
+  "numero", "numéro", "date", "client", "facture", "avoir", "total", "designation", "désignation",
+]);
 const SUPPLIER_SKIP = /^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)/i;
 const AMOUNT_LINE = /^\d[\d., ]+$/;
 
@@ -279,7 +282,7 @@ function extractAmounts(text) {
     ],
     ttc: [
       /Total\s+T\.?T\.?C\.?\s*[:\s]*\n?\s*(-?[\d .,\u00a0]+)\s*(?:DH|MAD)?/i,
-      /Net\s+[àa]\s+payer\s*[:\s]+(-?[\d .,\u00a0]+)/i,
+      /(?:Montant\s+)?Net\s+[àa]\s+payer\s*[:\s]*(-?[\d .,\u00a0]+)/i,
       /Montant\s+total\s*[:\s]+(-?[\d .,\u00a0]+)/i,
     ],
     tva: [
@@ -304,9 +307,30 @@ function extractAmounts(text) {
   let ht = found.ht ?? null;
   let ttc = found.ttc ?? null;
   let tva = found.tva ?? null;
+  ({ ht, tva, ttc } = completeZeroVatAmounts(text, ht, tva, ttc));
   if (ht === null && ttc !== null && tva !== null) ht = Math.round((ttc - tva) * 100) / 100;
   if (tva === null && ht !== null && ttc !== null) tva = Math.round((ttc - ht) * 100) / 100;
   if (ttc === null && ht !== null && tva !== null) ttc = Math.round((ht + tva) * 100) / 100;
+  return { ht, tva, ttc };
+}
+
+function vatPercentMentions(text) {
+  const found = new Set();
+  const re = /(?<![\d])(0|10|20)\s*%/gi;
+  for (const match of String(text || "").matchAll(re)) found.add(Number(match[1]));
+  return found;
+}
+
+function completeZeroVatAmounts(text, ht, tva, ttc) {
+  if (ttc === null || Math.abs(ttc) < 0.01) return { ht, tva, ttc };
+  const rates = vatPercentMentions(text);
+  const zeroOnly = rates.size === 1 && rates.has(0);
+  const tvaIsZero = tva !== null && Math.abs(tva) < 0.05;
+  const htMatchesTtc = ht !== null && Math.abs(Math.abs(ht) - Math.abs(ttc)) <= 0.05;
+  if (zeroOnly || tvaIsZero || htMatchesTtc) {
+    if (tva === null) tva = 0;
+    if (ht === null && Math.abs(tva) < 0.05) ht = ttc;
+  }
   return { ht, tva, ttc };
 }
 
@@ -893,18 +917,29 @@ function reconcileSupplierIf(result) {
   return result;
 }
 
+function looksLikeDocumentNumber(value) {
+  const token = String(value || "").trim();
+  if (token.length < 3) return false;
+  const letters = token.replace(/[^A-Za-zÀ-ÿ]/g, "").toLowerCase();
+  if (FACT_NUM_STOPWORDS.has(letters)) return false;
+  if (/\d/.test(token)) return true;
+  return token.includes(" ") || token.includes("/") || token.includes("-");
+}
+
 function extractInvoiceNumber(text, filename) {
   const patterns = [
     INVOICE_NUM_PATTERN,
     /(?:Facture|FACTURE)\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i,
     /AVOIR\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i,
-    /FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)/i,
+    /(?:FACTURE|AVOIR)\s+(?:N\s*[°ºo]\.?|Num[ée]ro)\s*[:\s]*(.+?)(?:\n|$)/i,
+    /^(?:N\s*[°ºo]\.?|Num[ée]ro)\s*[:\s]+([A-Za-z0-9][A-Za-z0-9/_.-]+)/im,
     /\b([A-Z]{1,3}\d{2,}[-/]\d{3,})\b/,
+    /\b((?:FAC)\d{2,}[-/]\d{2,})\b/i,
     /\b(V\d{5,})\b/,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match) return match[1].trim();
+    if (match && looksLikeDocumentNumber(match[1])) return match[1].trim();
   }
   const base = basename(parseSourceFilename(filename).filename);
   const dot = base.lastIndexOf(".");

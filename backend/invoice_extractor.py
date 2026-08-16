@@ -37,10 +37,29 @@ OTHER_LEGAL_IDS_PATTERNS = (
     re.compile(r"\bCAPITAL[^\n]*?(\d[\d .,]{4,})", re.I),
 )
 AMOUNT_PATTERN = re.compile(r"(\d{1,3}(?:[ \u00a0.,]\d{3})*(?:[.,]\d{2})?)")
+# N° / Numéro = libellé, pas le début du numéro. « N » seul avalait « NUMERO ».
+_DOC_NUM_LABEL = r"(?:N\s*[°ºo]\.?|Num[ée]ro)"
 INVOICE_NUM_PATTERN = re.compile(
-    r"(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N[°o\.]?|:)?\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})",
+    rf"(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:{_DOC_NUM_LABEL})?\s*[:\s]*"
+    rf"([A-Za-z0-9][A-Za-z0-9/_.-]{{2,}})",
     re.I,
 )
+NET_A_PAYER_PATTERN = re.compile(
+    r"(?:Montant\s+)?Net\s+[àa]\s+payer\s*[:\s]*([-\d .,\u00a0]+)",
+    re.I,
+)
+VAT_PERCENT_PATTERN = re.compile(r"(?<![\d])(0|10|20)\s*%", re.I)
+_FACT_NUM_STOPWORDS = {
+    "numero",
+    "numéro",
+    "date",
+    "client",
+    "facture",
+    "avoir",
+    "total",
+    "designation",
+    "désignation",
+}
 SUPPLIER_SKIP = re.compile(r"^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)", re.I)
 AMOUNT_LINE = re.compile(r"^\d[\d., ]+$")
 
@@ -264,6 +283,15 @@ def _extract_amounts(text: str) -> tuple[float | None, float | None, float | Non
     ttc = found.get("ttc")
     tva = found.get("tva")
 
+    if ttc is None:
+        net = NET_A_PAYER_PATTERN.search(text)
+        if net:
+            amount = _parse_amount(net.group(1))
+            if amount is not None:
+                ttc = amount
+
+    ht, tva, ttc = _complete_zero_vat_amounts(text, ht, tva, ttc)
+
     if ht is None and ttc is not None and tva is not None:
         ht = round(ttc - tva, 2)
     if tva is None and ht is not None and ttc is not None:
@@ -272,6 +300,33 @@ def _extract_amounts(text: str) -> tuple[float | None, float | None, float | Non
         ttc = round(ht + tva, 2)
 
     ht, tva, ttc = (v if v is None else abs(v) for v in (ht, tva, ttc))
+    return ht, tva, ttc
+
+
+def _vat_percent_mentions(text: str) -> set[int]:
+    return {int(match.group(1)) for match in VAT_PERCENT_PATTERN.finditer(text or "")}
+
+
+def _complete_zero_vat_amounts(
+    text: str,
+    ht: float | None,
+    tva: float | None,
+    ttc: float | None,
+) -> tuple[float | None, float | None, float | None]:
+    """TVA 0 % est un taux légal : HT = TTC, pas une anomalie."""
+    if ttc is None or abs(ttc) < 0.01:
+        return ht, tva, ttc
+
+    rates = _vat_percent_mentions(text)
+    zero_only = rates == {0}
+    tva_is_zero = tva is not None and abs(tva) < 0.05
+    ht_matches_ttc = ht is not None and abs(abs(ht) - abs(ttc)) <= 0.05
+
+    if zero_only or tva_is_zero or ht_matches_ttc:
+        if tva is None:
+            tva = 0.0
+        if ht is None and abs(tva) < 0.05:
+            ht = ttc
     return ht, tva, ttc
 
 
@@ -444,9 +499,13 @@ def _extract_invoice_number(text: str, filename: str) -> str:
 
     for pattern in (
         re.compile(r"(?:Facture|FACTURE)\s*:\s*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})", re.I),
-        re.compile(r"FACTURE\s+N[°o\.]?\s*(.+?)(?:\n|$)", re.I),
-        # Codes pièce usuels : FV264554, V081505, FR26-003076, MA-FVR26...
-        re.compile(r"\b((?:F[VR]|BR|AV|V)\s?\d{2}[-/]?\d{3,}|[A-Z]{1,3}-?\d{4,})\b"),
+        re.compile(
+            rf"(?:FACTURE|AVOIR)\s+{_DOC_NUM_LABEL}\s*[:\s]*(.+?)(?:\n|$)",
+            re.I,
+        ),
+        re.compile(rf"^{_DOC_NUM_LABEL}\s*[:\s]+([A-Za-z0-9][A-Za-z0-9/_.-]+)", re.I | re.M),
+        # Codes pièce usuels : FV264554, V081505, FR26-003076, MA-FVR26, FAC0111/2026
+        re.compile(r"\b((?:F[VR]|BR|AV|V|FAC)\s?\d{2}[-/]?\d{3,}|[A-Z]{1,3}-?\d{4,})\b"),
     ):
         match = pattern.search(text)
         if (
@@ -454,7 +513,10 @@ def _extract_invoice_number(text: str, filename: str) -> str:
             and _looks_like_document_number(match.group(1))
             and not _is_reference_mention(text, match.start())
         ):
-            return match.group(1).strip().replace(" ", "")
+            number = match.group(1).strip()
+            if any(ch.isdigit() for ch in number):
+                number = number.replace(" ", "")
+            return number
     return Path(filename).stem
 
 
@@ -595,9 +657,17 @@ def _is_reference_mention(text: str, match_start: int) -> bool:
 
 
 def _looks_like_document_number(value: str) -> bool:
-    """« Facture Vente N° FV264554 » : « Vente » n'est pas un numéro."""
+    """Lettres + chiffres sont courants (FAC0111/2026). Un mot isolé sans chiffre n'en est pas un."""
     token = value.strip()
-    return len(token) >= 3 and any(ch.isdigit() for ch in token)
+    if len(token) < 3:
+        return False
+    letters = re.sub(r"[^A-Za-zÀ-ÿ]", "", token).lower()
+    if letters in _FACT_NUM_STOPWORDS:
+        return False
+    if any(ch.isdigit() for ch in token):
+        return True
+    # Ex. « RELEVE BANCAIRE » : libellé après N°, pas « Vente » dans « Facture Vente N° ».
+    return " " in token or "/" in token or "-" in token
 
 
 def document_number_matches(text: str) -> list[re.Match]:
