@@ -259,16 +259,7 @@
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                 <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
                 <h3>Ajouter des factures</h3>
-                <p>Glissez-déposez vos PDF, images ou ZIP — les archives sont décompressées automatiquement.</p>
-              </div>
-              <div class="imp-file-queue ws-import-queue" id="documentsImportQueue" hidden></div>
-              <div class="imp-actions ws-import-actions" id="documentsImportActions">
-                <button type="button" class="dash-btn dash-btn-secondary" id="documentsQueueBtn" disabled>
-                  <i data-lucide="clock"></i> Mettre en attente
-                </button>
-                <button type="button" class="dash-btn dash-btn-primary" id="documentsExtractBtn" disabled>
-                  <i data-lucide="sparkles"></i> Extraction immédiate
-                </button>
+                <p>Glissez-déposez vos PDF, images ou ZIP — l'envoi démarre tout de suite, puis lancez l'extraction en arrière-plan.</p>
               </div>
             </div>
             <div id="documentsList" class="ws-docs-list"></div>
@@ -319,18 +310,8 @@
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                 <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
                 <h3>Ajouter des factures</h3>
-                <p>Déposez vos PDF, images ou ZIP, puis cliquez sur Mettre en attente ou Extraction immédiate.</p>
+                <p>Glissez-déposez vos PDF, images ou ZIP — l'envoi démarre tout de suite. Un bouton lancera l'extraction en arrière-plan.</p>
               </div>
-              <div class="imp-file-queue ws-import-queue" id="reviewImportQueue" hidden></div>
-              <div class="imp-actions ws-import-actions" id="reviewImportActions">
-                <button type="button" class="dash-btn dash-btn-secondary" id="reviewQueueBtn" disabled>
-                  <i data-lucide="clock"></i> Mettre en attente
-                </button>
-                <button type="button" class="dash-btn dash-btn-primary" id="reviewExtractBtn" disabled>
-                  <i data-lucide="sparkles"></i> Extraction immédiate
-                </button>
-              </div>
-              <p class="imp-queue-hint">Les fichiers restent en file jusqu'à ce que vous choisissiez une action.</p>
             </div>
             <p id="reviewImportReadonly" class="ws-review-import-readonly hint" hidden>
               Période déclarée — consultation seule. Rouvrez la période ou passez sur une période en cours pour importer.
@@ -632,7 +613,7 @@
     } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review14";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload7";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload8";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -712,16 +693,10 @@
       controller.bindDropzone({
         dropzoneEl: document.getElementById("documentsUploadZone"),
         inputEl: document.getElementById("documentsInvoiceInput"),
-        queueEl: document.getElementById("documentsImportQueue"),
-        queueBtn: document.getElementById("documentsQueueBtn"),
-        extractBtn: document.getElementById("documentsExtractBtn"),
       });
       controller.bindDropzone({
         dropzoneEl: document.getElementById("reviewUploadZone"),
         inputEl: document.getElementById("reviewInvoiceInput"),
-        queueEl: document.getElementById("reviewImportQueue"),
-        queueBtn: document.getElementById("reviewQueueBtn"),
-        extractBtn: document.getElementById("reviewExtractBtn"),
       });
       const cockpitInput = document.getElementById("cockpitInvoiceInput");
       cockpitInput?.addEventListener("change", async () => {
@@ -729,7 +704,9 @@
         cockpitInput.value = "";
         if (!files.length) return;
         await goToReviewImport({ scrollToUpload: true, openPicker: false });
-        controller.addFilesToQueue(document.getElementById("reviewInvoiceInput"), files);
+        await controller.uploadFiles(files, {
+          dropzoneEl: document.getElementById("reviewUploadZone"),
+        });
       });
     }
 
@@ -744,7 +721,6 @@
       if (documentsPanel) documentsPanel.hidden = isReadOnly;
       if (readonly) readonly.hidden = !isReadOnly;
       if (isReadOnly) {
-        invoiceUploadController?.clearAllQueues?.();
         meta.hidden = false;
         meta.textContent = "Période déclarée — consultation seule, import désactivé.";
         return;
