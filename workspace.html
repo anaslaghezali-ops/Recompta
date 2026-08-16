@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=review-detail3" />
+  <link rel="stylesheet" href="dashboard.css?v=delete-folder1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -564,14 +564,16 @@
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
+      collectDocumentsForDeletion,
       downloadDossierDocument,
-      deleteDossierDocument,
+      deleteDossierDocuments,
       groupDocumentsBySupplier,
       isDocumentAnalyzed,
+      isZipDocument,
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc11";
+    } from "./dossier-documents.js?v=doc13";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -918,6 +920,8 @@
     }
 
     let reloadCockpitPromise = null;
+    let reloadCockpitGeneration = 0;
+    let documentsRenderGeneration = 0;
     let refreshingCockpitMetadata = false;
 
     async function refreshCockpitMetadata() {
@@ -1676,26 +1680,80 @@
       return workspaceSnapshot;
     }
 
-    async function handleDeleteDocument(doc) {
-      if (!doc) return;
-      let workspace = getDocumentAnalysisState();
-      if (!workspace && selectedDossierId) {
-        workspace = await loadDossierWorkspace(selectedDossierId);
+    function buildDeleteConfirmMessage(docs, { title = null, kind = "files" } = {}) {
+      const workspace = getDocumentAnalysisState();
+      const analyzedCount = (docs || []).filter((doc) => isDocumentAnalyzed(doc, workspace)).length;
+      const extra = analyzedCount
+        ? `\n\n${analyzedCount > 1 ? "Certaines pièces ont" : "Cette pièce a"} déjà été analysée. Les lignes extraites resteront dans la revue.`
+        : "";
+      const irreversible = " Cette action est irréversible.";
+
+      if (kind === "folder" && title) {
+        return `Supprimer le dossier « ${title} » et ses ${docs.length} fichier(s) ?${irreversible}${extra}`;
       }
-      const analyzed = isDocumentAnalyzed(doc, workspace);
-      const name = doc.displayName || doc.original_filename || "ce document";
-      const message = analyzed
-        ? `« ${name} » a déjà été analysé. Le fichier sera retiré mais les lignes extraites resteront dans la revue. Continuer ?`
-        : `Supprimer « ${name} » ? Cette action est irréversible.`;
+      if (kind === "archive" && title) {
+        const invoices = docs.filter((doc) => !isZipDocument(doc)).length;
+        if (invoices) {
+          return `Supprimer l'archive « ${title} » et ses ${invoices} facture(s) extraite(s) ?${irreversible}${extra}`;
+        }
+        return `Supprimer l'archive « ${title} » ?${irreversible}${extra}`;
+      }
+      if (docs.length === 1) {
+        const name = docs[0].displayName || docs[0].original_filename || "ce document";
+        if (analyzedCount) {
+          return `« ${name} » a déjà été analysé. Le fichier sera retiré mais les lignes extraites resteront dans la revue. Continuer ?`;
+        }
+        return `Supprimer « ${name} » ?${irreversible}`;
+      }
+      return `Supprimer ${docs.length} fichiers ?${irreversible}${extra}`;
+    }
+
+    async function applyDocumentDeletion(docs) {
+      documentsRenderGeneration += 1;
+      reloadCockpitGeneration += 1;
+      await deleteDossierDocuments(docs);
+      const ids = new Set(docs.map((doc) => doc.id));
+      documentsCache = (documentsCache || []).filter((row) => !ids.has(row.id));
+      renderDocumentsList();
+      if (selectedDossierId) await reloadCockpit(selectedDossierId, { force: true });
+    }
+
+    async function handleDeleteDocument(doc, btn) {
+      if (!doc || btn?.disabled) return;
+      const toDelete = [doc];
+      if (!window.confirm(buildDeleteConfirmMessage(toDelete))) return;
+
+      if (btn) btn.disabled = true;
+      try {
+        await applyDocumentDeletion(toDelete);
+      } catch (error) {
+        if (btn) btn.disabled = false;
+        alert(error.message || "Impossible de supprimer ce document.");
+      }
+    }
+
+    async function handleDeleteDocumentGroup(groupKey, btn) {
+      if (!groupKey || btn?.disabled) return;
+      const { workingDocs } = partitionDocumentsForDisplay(documentsCache);
+      const group = groupDocumentsBySupplier(workingDocs).find((row) => row.key === groupKey);
+      if (!group?.docs.length) return;
+
+      const toDelete = collectDocumentsForDeletion(group.docs, documentsCache, {
+        includeEmptyParentZips: true,
+        includeZipChildren: group.kind === "archive",
+      });
+      const message = buildDeleteConfirmMessage(toDelete, {
+        title: group.label,
+        kind: group.kind === "archive" ? "archive" : "folder",
+      });
       if (!window.confirm(message)) return;
 
+      if (btn) btn.disabled = true;
       try {
-        await deleteDossierDocument(doc);
-        documentsCache = documentsCache.filter((row) => row.id !== doc.id);
-        await reloadCockpit(selectedDossierId);
-        if (activeTab === "documents") renderDocumentsList();
+        await applyDocumentDeletion(toDelete);
       } catch (error) {
-        alert(error.message || "Impossible de supprimer ce document.");
+        if (btn) btn.disabled = false;
+        alert(error.message || "Impossible de supprimer ce dossier.");
       }
     }
 
@@ -1705,12 +1763,12 @@
         btn.addEventListener("click", async () => {
           const doc = documentsCache.find((row) => String(row.id) === btn.dataset.deleteDoc);
           if (!doc) return;
-          btn.disabled = true;
-          try {
-            await handleDeleteDocument(doc);
-          } finally {
-            btn.disabled = false;
-          }
+          await handleDeleteDocument(doc, btn);
+        });
+      });
+      rootEl?.querySelectorAll("[data-delete-group]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await handleDeleteDocumentGroup(btn.dataset.deleteGroup, btn);
         });
       });
     }
@@ -1728,6 +1786,18 @@
         const groupIcon = group.kind === "bank" ? "landmark"
           : group.kind === "archive" ? "archive"
             : "building-2";
+        const showGroupDelete = group.docs.length >= 2 || group.kind === "archive";
+        const groupDeleteLabel = group.kind === "archive"
+          ? "Supprimer l'archive"
+          : "Supprimer le dossier";
+        const groupActions = showGroupDelete
+          ? `<div class="ws-doc-group-actions">
+              <button type="button" class="dash-btn dash-btn-sm ws-doc-delete" data-delete-group="${escapeHtml(group.key)}" title="${escapeHtml(groupDeleteLabel)}">
+                <i data-lucide="folder-x"></i>
+                ${escapeHtml(groupDeleteLabel)}
+              </button>
+            </div>`
+          : "";
         return `
           <section class="ws-doc-group" data-group="${escapeHtml(group.key)}">
             <header class="ws-doc-group-header">
@@ -1736,6 +1806,7 @@
                 <h3>${escapeHtml(group.label)}</h3>
                 <p>${countLabel}</p>
               </div>
+              ${groupActions}
             </header>
             <div class="ws-doc-group-list">${rows}</div>
           </section>
@@ -1819,6 +1890,7 @@
       const listEl = document.getElementById("documentsList");
       const emptyEl = document.getElementById("documentsEmpty");
       const hintEl = document.getElementById("documentsPeriodHint");
+      const generation = ++documentsRenderGeneration;
 
       if (!selectedDossierId) {
         documentsCache = [];
@@ -1832,17 +1904,21 @@
       if (cockpit?.dossier) {
         hintEl.textContent = isReadOnly
           ? `Documents de ${cockpit.periodLabel} — consultation seule (période déclarée)`
-          : `Documents de ${cockpit.periodLabel} — supprimez un fichier erroné avant l'analyse avec l'icône corbeille`;
+          : `Documents de ${cockpit.periodLabel} — supprimez un fichier ou tout un dossier avec l'icône corbeille`;
       }
 
       listEl.innerHTML = `<div class="ws-docs-loading">Chargement des documents…</div>`;
       emptyEl.hidden = true;
 
       try {
-        documentsCache = await listDossierDocuments(selectedDossierId);
-        workspaceSnapshot = await loadDossierWorkspace(selectedDossierId);
+        const docs = await listDossierDocuments(selectedDossierId);
+        const workspace = await loadDossierWorkspace(selectedDossierId);
+        if (generation !== documentsRenderGeneration) return;
+        documentsCache = docs;
+        workspaceSnapshot = workspace;
         renderDocumentsList();
       } catch {
+        if (generation !== documentsRenderGeneration) return;
         documentsCache = [];
         listEl.innerHTML = "";
         emptyEl.hidden = false;
@@ -2366,17 +2442,21 @@
         : `<li><div style="color:var(--dash-muted);">Aucune activité — commencez la production TVA.</div></li>`;
     }
 
-    async function reloadCockpit(preferredDossierId = null) {
-      if (reloadCockpitPromise) return reloadCockpitPromise;
-      reloadCockpitPromise = reloadCockpitInner(preferredDossierId).finally(() => {
-        reloadCockpitPromise = null;
+    async function reloadCockpit(preferredDossierId = null, { force = false } = {}) {
+      if (reloadCockpitPromise && !force) return reloadCockpitPromise;
+      const generation = ++reloadCockpitGeneration;
+      reloadCockpitPromise = reloadCockpitInner(preferredDossierId, generation).finally(() => {
+        if (reloadCockpitGeneration === generation) reloadCockpitPromise = null;
       });
       return reloadCockpitPromise;
     }
 
-    async function reloadCockpitInner(preferredDossierId = null) {
+    async function reloadCockpitInner(preferredDossierId = null, generation = 0) {
+      const stillCurrent = () => generation === reloadCockpitGeneration;
+
       if (clientId && cabinetId) {
         const refreshed = await getClientWithDossiers(clientId, cabinetId);
+        if (!stillCurrent()) return;
         if (refreshed) {
           client = refreshed;
           renderClientHeader();
@@ -2386,14 +2466,18 @@
       const dossierId = preferredDossierId || selectedDossierId || dossierParam;
       if (dossierId) {
         try {
-          documentsCache = await listDossierDocuments(dossierId);
-          workspaceSnapshot = await loadDossierWorkspace(dossierId);
+          const docs = await listDossierDocuments(dossierId);
+          const workspace = await loadDossierWorkspace(dossierId);
+          if (!stillCurrent()) return;
+          documentsCache = docs;
+          workspaceSnapshot = workspace;
           const pending = countPendingAnalysis(documentsCache, workspaceSnapshot);
           pendingAnalysisCount = pending.total;
           bankPendingCount = pending.bankPending;
           invoicePendingCount = pending.invoicePending;
           invoiceDocumentCount = countInvoiceDocuments(documentsCache);
         } catch {
+          if (!stillCurrent()) return;
           documentsCache = [];
           pendingAnalysisCount = 0;
           bankPendingCount = 0;
@@ -2414,9 +2498,11 @@
         invoicePending: invoicePendingCount,
         invoiceDocumentCount,
       });
+      if (!stillCurrent()) return;
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
       await renderTimeline();
+      if (!stillCurrent()) return;
       const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
       if (dossierIds.length) {
         try {
@@ -2425,9 +2511,21 @@
           /* ignore cleanup errors */
         }
       }
+      if (!stillCurrent()) return;
       await renderImportBanner();
+      if (!stillCurrent()) return;
       await renderAnalysisCard();
-      if (activeTab === "documents") await renderDocuments();
+      if (!stillCurrent()) return;
+      if (activeTab === "documents") {
+        const hintEl = document.getElementById("documentsPeriodHint");
+        const isReadOnly = cockpit?.statusKey === "exported";
+        if (hintEl && cockpit?.dossier) {
+          hintEl.textContent = isReadOnly
+            ? `Documents de ${cockpit.periodLabel} — consultation seule (période déclarée)`
+            : `Documents de ${cockpit.periodLabel} — supprimez un fichier ou tout un dossier avec l'icône corbeille`;
+        }
+        renderDocumentsList();
+      }
       if (activeTab === "review") ensureReviewController()?.load();
     }
 
