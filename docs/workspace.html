@@ -160,8 +160,6 @@
                     <button type="button" class="dash-btn" id="addInvoicesBtn">
                       <i data-lucide="plus"></i> Ajouter des factures
                     </button>
-                    <input type="file" id="cockpitInvoiceInput" hidden multiple
-                      accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                     <button type="button" class="dash-btn" id="openReviewBtn" hidden>
                       <i data-lucide="table-2"></i> Voir la revue
                     </button>
@@ -248,27 +246,12 @@
                 <p id="documentsPeriodHint">Factures et relevés stockés pour cette période TVA</p>
               </div>
               <div class="ws-docs-filters" id="docFilters" role="tablist" aria-label="Filtrer les documents">
+                <a class="dash-btn dash-btn-sm" id="documentsImportLink" href="#">
+                  <i data-lucide="upload"></i> Importer des factures
+                </a>
                 <button type="button" class="active" data-filter="all">Tous</button>
                 <button type="button" data-filter="invoice">Factures</button>
                 <button type="button" data-filter="bank">Relevés</button>
-              </div>
-            </div>
-            <div id="documentsImportPanel" class="ws-review-import-panel">
-              <div class="imp-dropzone ws-docs-upload" id="documentsUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
-                <input type="file" id="documentsInvoiceInput" class="ws-import-file-input" multiple
-                  accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
-                <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
-                <h3>Ajouter des factures</h3>
-                <p>Glissez-déposez vos PDF, images ou ZIP — les archives sont décompressées automatiquement.</p>
-              </div>
-              <div class="imp-file-queue ws-import-queue" id="documentsImportQueue" hidden></div>
-              <div class="imp-actions ws-import-actions" id="documentsImportActions">
-                <button type="button" class="dash-btn dash-btn-secondary" id="documentsQueueBtn" disabled>
-                  <i data-lucide="clock"></i> Mettre en attente
-                </button>
-                <button type="button" class="dash-btn dash-btn-primary" id="documentsExtractBtn" disabled>
-                  <i data-lucide="sparkles"></i> Extraction immédiate
-                </button>
               </div>
             </div>
             <div id="documentsList" class="ws-docs-list"></div>
@@ -302,6 +285,9 @@
               </div>
             </div>
             <div class="ws-review-toolbar">
+              <a class="dash-btn dash-btn-sm" id="reviewImportLink" href="#">
+                <i data-lucide="upload"></i> Importer des factures
+              </a>
               <button type="button" class="dash-btn dash-btn-sm" id="reviewAnomaliesToggle">
                 <i data-lucide="filter"></i> Anomalies seulement
               </button>
@@ -313,35 +299,15 @@
               </button>
               <span id="reviewDeclaredBadge" class="ws-review-badge success" hidden>Période déclarée</span>
             </div>
-            <div id="reviewImportPanel" class="ws-review-import-panel">
-              <div class="imp-dropzone ws-docs-upload ws-review-upload" id="reviewUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
-                <input type="file" id="reviewInvoiceInput" class="ws-import-file-input" multiple
-                  accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
-                <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
-                <h3>Ajouter des factures</h3>
-                <p>Déposez vos PDF, images ou ZIP, puis cliquez sur Mettre en attente ou Extraction immédiate.</p>
-              </div>
-              <div class="imp-file-queue ws-import-queue" id="reviewImportQueue" hidden></div>
-              <div class="imp-actions ws-import-actions" id="reviewImportActions">
-                <button type="button" class="dash-btn dash-btn-secondary" id="reviewQueueBtn" disabled>
-                  <i data-lucide="clock"></i> Mettre en attente
-                </button>
-                <button type="button" class="dash-btn dash-btn-primary" id="reviewExtractBtn" disabled>
-                  <i data-lucide="sparkles"></i> Extraction immédiate
-                </button>
-              </div>
-              <p class="imp-queue-hint">Les fichiers restent en file jusqu'à ce que vous choisissiez une action.</p>
-            </div>
             <p id="reviewImportReadonly" class="ws-review-import-readonly hint" hidden>
               Période déclarée — consultation seule. Rouvrez la période ou passez sur une période en cours pour importer.
             </p>
-            <p id="reviewImportMeta" class="ws-review-import-meta hint" hidden></p>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
             <p class="hint ws-review-preview-hint">Cliquez <strong>Ouvrir</strong> ou une ligne pour afficher la facture en grand avec tous les champs à vérifier.</p>
             <div id="reviewEmptyState" class="ws-empty">
               <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
               <h3>Aucune ligne extraite</h3>
-              <p>Ajoutez des factures ci-dessus, puis cliquez sur Mettre en attente ou Extraction immédiate.</p>
+              <p>Importez des factures depuis la page d'import achats, puis lancez l'extraction depuis l'onglet Période active.</p>
             </div>
             <div id="reviewLayout" class="review-layout" hidden>
               <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
@@ -623,16 +589,16 @@
       dismissHistoricImportJobs,
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
+      importJobPageUrl,
     } from "./import-jobs-client.js?v=jobs26";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace11";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace12";
     import {
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review14";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload10";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -686,111 +652,42 @@
     let bankMatchController = null;
     let bankMatchInFlight = false;
     let bankExtractInFlight = false;
-    let invoiceUploadController = null;
     let suppliersController = null;
     let workspaceSessionStartedAt = new Date().toISOString();
 
-    function ensureInvoiceUploadController() {
-      if (invoiceUploadController) return invoiceUploadController;
-      invoiceUploadController = createWorkspaceInvoiceUpload({
-        getDossierId: () => selectedDossierId,
-        getCanImport: () => cockpit?.statusKey !== "exported",
-        showToast: showWorkspaceToast,
-        onRequestExtraction: () => handleLaunchExtraction(),
-        onUploaded: async ({ invoiceCount = 0 } = {}) => {
-          await refreshPendingAnalysis({ forceDocuments: true });
-          await refreshCockpitMetadata();
-          updateReviewImportMeta();
-          if (activeTab === "documents") renderDocumentsList();
-        },
-      });
-      return invoiceUploadController;
+    function invoiceImportPageUrl(dossierId = selectedDossierId) {
+      const id = dossierId || selectedDossierId;
+      return id ? `import-achats.html?dossier=${id}` : "dossiers.html";
     }
 
-    function initInvoiceUploadBindings() {
-      const controller = ensureInvoiceUploadController();
-      controller.bindDropzone({
-        dropzoneEl: document.getElementById("documentsUploadZone"),
-        inputEl: document.getElementById("documentsInvoiceInput"),
-        queueEl: document.getElementById("documentsImportQueue"),
-        queueBtn: document.getElementById("documentsQueueBtn"),
-        extractBtn: document.getElementById("documentsExtractBtn"),
-      });
-      controller.bindDropzone({
-        dropzoneEl: document.getElementById("reviewUploadZone"),
-        inputEl: document.getElementById("reviewInvoiceInput"),
-        queueEl: document.getElementById("reviewImportQueue"),
-        queueBtn: document.getElementById("reviewQueueBtn"),
-        extractBtn: document.getElementById("reviewExtractBtn"),
-      });
-      const cockpitInput = document.getElementById("cockpitInvoiceInput");
-      cockpitInput?.addEventListener("change", async () => {
-        const files = [...(cockpitInput.files || [])];
-        cockpitInput.value = "";
-        if (!files.length) return;
-        await goToReviewImport({ scrollToUpload: true, openPicker: false });
-        controller.addFilesToQueue(document.getElementById("reviewInvoiceInput"), files);
-      });
-    }
-
-    function updateReviewImportMeta() {
-      const meta = document.getElementById("reviewImportMeta");
-      const panel = document.getElementById("reviewImportPanel");
-      const documentsPanel = document.getElementById("documentsImportPanel");
-      const readonly = document.getElementById("reviewImportReadonly");
-      if (!meta) return;
-      const isReadOnly = cockpit?.statusKey === "exported";
-      if (panel) panel.hidden = isReadOnly;
-      if (documentsPanel) documentsPanel.hidden = isReadOnly;
-      if (readonly) readonly.hidden = !isReadOnly;
-      if (isReadOnly) {
-        invoiceUploadController?.clearAllQueues?.();
-        meta.hidden = false;
-        meta.textContent = "Période déclarée — consultation seule, import désactivé.";
-        return;
-      }
-      const pending = invoicePendingCount || 0;
-      const docs = invoiceDocumentCount || 0;
-      if (pending > 0 || docs > 0) {
-        meta.hidden = false;
-        meta.textContent = pending > 0
-          ? `${pending} document(s) en attente d'extraction — lancez l'extraction depuis Période active.`
-          : `${docs} document(s) importé(s) — lancez l'extraction quand vous êtes prêt.`;
-        return;
-      }
-      meta.hidden = true;
-      meta.textContent = "";
-    }
-
-    function goToReviewImport({ scrollToUpload = true, openPicker = false } = {}) {
-      const isReadOnly = cockpit?.statusKey === "exported";
-      if (isReadOnly) {
+    function openInvoiceImportPage(dossierId = selectedDossierId) {
+      if (cockpit?.statusKey === "exported") {
         showWorkspaceToast({
           title: "Période clôturée",
-          message: "Vous pouvez consulter la revue, mais pas importer sur une période déclarée.",
+          message: "Cette période est déclarée. Repassez sur une période en cours pour importer des factures.",
           variant: "warn",
           actionLabel: getOpenPeriods().length ? "Périodes en cours" : null,
           onAction: getOpenPeriods().length ? () => goToOpenPeriod() : null,
         });
+        return;
       }
-      setTab("review").then(async () => {
-        updateReviewImportMeta();
-        if (!scrollToUpload && !openPicker) return;
-        const zone = document.getElementById("reviewUploadZone");
-        zone?.scrollIntoView({ behavior: "smooth", block: "center" });
-        zone?.classList.add("is-highlighted");
-        window.setTimeout(() => zone?.classList.remove("is-highlighted"), 1800);
-        if (openPicker && !isReadOnly) {
-          await new Promise((resolve) => {
-            window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
-          });
-          ensureInvoiceUploadController().openFilePicker(document.getElementById("reviewInvoiceInput"));
-        }
-      });
+      const url = invoiceImportPageUrl(dossierId);
+      if (url === "dossiers.html") return;
+      window.location.href = url;
     }
 
-    function openInvoiceUpload() {
-      goToReviewImport({ openPicker: true });
+    function updateImportLinks() {
+      const isReadOnly = cockpit?.statusKey === "exported";
+      const url = invoiceImportPageUrl();
+      const reviewReadonly = document.getElementById("reviewImportReadonly");
+      if (reviewReadonly) reviewReadonly.hidden = !isReadOnly;
+      ["documentsImportLink", "reviewImportLink"].forEach((id) => {
+        const link = document.getElementById(id);
+        if (!link) return;
+        link.href = url;
+        link.classList.toggle("is-disabled", isReadOnly);
+        link.setAttribute("aria-disabled", isReadOnly ? "true" : "false");
+      });
     }
 
     function ensureBankMatchController() {
@@ -1052,7 +949,7 @@
         });
         if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
         renderCockpitKpisOnly();
-        updateReviewImportMeta();
+        updateImportLinks();
       } finally {
         refreshingCockpitMetadata = false;
       }
@@ -1248,6 +1145,16 @@
 
     function openActiveImportPage() {
       if (!activeImportJob) return;
+      if (isAnalysisJob(activeImportJob)) {
+        setTab("cockpit");
+        document.getElementById("productionCard")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      const url = importJobPageUrl(activeImportJob, selectedDossierId, clientId);
+      if (url && !url.startsWith("workspace.html")) {
+        window.location.href = url;
+        return;
+      }
       setTab("cockpit");
       document.getElementById("productionCard")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
@@ -1266,7 +1173,8 @@
       if (action === "analysis") handleLaunchExtraction();
       else if (action === "extract_bank") handleExtractBank();
       else if (action === "bank_match") handleLaunchBankMatch();
-      else if (action === "add_invoices" || action === "documents") goToReviewImport();
+      else if (action === "add_invoices" || action === "purchases") openInvoiceImportPage();
+      else if (action === "documents") setTab("documents");
     }
 
     async function renderProductionCard() {
@@ -1306,7 +1214,7 @@
 
       openReviewBtn.hidden = !hasLines;
       if (addInvoicesBtn) {
-        addInvoicesBtn.disabled = isReadOnly || isJobRunning || invoiceUploadController?.isUploading?.();
+        addInvoicesBtn.disabled = isReadOnly || isJobRunning;
       }
       if (isReadOnly) {
         launchBtn.disabled = true;
@@ -1918,12 +1826,8 @@
         return;
       }
 
-      const uploadZone = document.getElementById("documentsUploadZone");
       const isReadOnly = cockpit?.statusKey === "exported";
-      if (uploadZone) {
-        uploadZone.classList.toggle("is-readonly", isReadOnly);
-        uploadZone.setAttribute("aria-disabled", isReadOnly ? "true" : "false");
-      }
+      updateImportLinks();
 
       if (cockpit?.dossier) {
         hintEl.textContent = isReadOnly
@@ -1952,7 +1856,7 @@
         window.location.href = href;
         return;
       }
-      if (dossierId) openInvoiceUpload();
+      if (dossierId) openInvoiceImportPage(dossierId);
     }
 
     async function setTab(tab, { view = null } = {}) {
@@ -1975,7 +1879,7 @@
       if (tab === "review") {
         const review = ensureReviewController();
         await review?.load();
-        updateReviewImportMeta();
+        updateImportLinks();
         if (view === "anomalies") review?.setAnomaliesOnly(true);
       }
       if (tab === "suppliers") {
@@ -2231,10 +2135,6 @@
             runCockpitAction("bank_match");
             return;
           }
-          if (action === "add_invoices" || action === "documents") {
-            goToReviewImport();
-            return;
-          }
           if (tab) {
             setTab(tab, { view: view || null });
             return;
@@ -2272,7 +2172,8 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
-          else if (cockpit.nextAction.action === "add_invoices" || cockpit.nextAction.action === "documents") goToReviewImport();
+          else if (cockpit.nextAction.action === "purchases" || cockpit.nextAction.action === "add_invoices") openInvoiceImportPage();
+          else if (cockpit.nextAction.action === "documents") setTab("documents");
           else if (cockpit.nextAction.action === "declare") openDeclarePeriod();
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         };
@@ -2304,7 +2205,8 @@
           if (cockpit.nextAction.action === "analysis") runCockpitAction("analysis");
           else if (cockpit.nextAction.action === "extract_bank") runCockpitAction("extract_bank");
           else if (cockpit.nextAction.action === "bank_match") runCockpitAction("bank_match");
-          else if (cockpit.nextAction.action === "add_invoices" || cockpit.nextAction.action === "documents") goToReviewImport();
+          else if (cockpit.nextAction.action === "purchases" || cockpit.nextAction.action === "add_invoices") openInvoiceImportPage();
+          else if (cockpit.nextAction.action === "documents") setTab("documents");
           else if (cockpit.nextAction.action === "declare") openDeclarePeriod();
           else setTab(cockpit.nextAction.tab, { view: cockpit.nextAction.view || null });
         } else if (cockpit.nextAction?.href) {
@@ -2316,7 +2218,7 @@
 
       const quickActions = [
         { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-input", label: "Factures", action: "add_invoices" },
+        { icon: "file-input", label: "Factures", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
         { icon: "sparkles", label: "Extraction", action: "analysis" },
         { icon: "git-compare", label: "Rapprochement", action: "bank_match" },
         { icon: "table-2", label: "Revue", action: "review" },
@@ -2344,11 +2246,10 @@
           btn.addEventListener("click", () => runCockpitAction("analysis"));
         } else if (action === "bank_match") {
           btn.addEventListener("click", () => runCockpitAction("bank_match"));
-        } else if (action === "add_invoices") {
-          btn.addEventListener("click", () => goToReviewImport());
         }
       });
 
+      updateImportLinks();
       renderPeriodSelector();
       updateCockpitTabLabel();
       renderAnalysisCard();
@@ -2564,7 +2465,6 @@
 
           renderClientHeader();
           loadAnalysisApiSettings();
-          initInvoiceUploadBindings();
           refreshAnalysisServerStatus().catch(() => {});
           document.getElementById("analysisApiUrl")?.addEventListener("change", () => {
             persistAnalysisApiSettings();
@@ -2589,7 +2489,15 @@
 
     document.getElementById("importBannerBtn")?.addEventListener("click", openActiveImportPage);
     document.getElementById("launchExtractionBtn")?.addEventListener("click", handleLaunchExtraction);
-    document.getElementById("addInvoicesBtn")?.addEventListener("click", () => openInvoiceUpload());
+    document.getElementById("addInvoicesBtn")?.addEventListener("click", () => openInvoiceImportPage());
+    ["documentsImportLink", "reviewImportLink"].forEach((id) => {
+      document.getElementById(id)?.addEventListener("click", (event) => {
+        if (cockpit?.statusKey === "exported") {
+          event.preventDefault();
+          openInvoiceImportPage();
+        }
+      });
+    });
     document.getElementById("extractBankBtn")?.addEventListener("click", handleExtractBank);
     document.getElementById("launchBankMatchBtn")?.addEventListener("click", handleLaunchBankMatch);
     document.getElementById("openReviewBtn")?.addEventListener("click", () => setTab("review"));
