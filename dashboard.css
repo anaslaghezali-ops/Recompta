@@ -292,6 +292,17 @@
 
 .dash-btn-primary:hover { background: var(--dash-accent-hover); }
 
+.dash-btn-secondary {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: var(--dash-text);
+}
+
+.dash-btn-secondary:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
 .dash-btn-ghost {
   border-color: transparent;
   background: transparent;
@@ -2175,12 +2186,44 @@
   margin-top: 0.75rem;
 }
 
+.ws-review-import-panel {
+  border: 1px solid var(--dash-border);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+}
+
+.ws-review-import-panel .ws-review-upload,
+.ws-review-import-panel .ws-docs-upload {
+  margin-bottom: 0;
+}
+
+.ws-review-import-readonly {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--dash-border);
+}
+
 .ws-review-import-meta {
   margin: 0.25rem 0 0.75rem;
 }
 
 .ws-import-actions {
-  margin-bottom: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.ws-import-queue[hidden],
+.ws-import-actions[hidden],
+.ws-review-import-panel[hidden],
+.ws-review-import-readonly[hidden] {
+  display: none !important;
 }
 
 .ws-docs-upload.is-readonly {

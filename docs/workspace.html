@@ -253,21 +253,23 @@
                 <button type="button" data-filter="bank">Relevés</button>
               </div>
             </div>
-            <div class="imp-dropzone ws-docs-upload" id="documentsUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
-              <input type="file" id="documentsInvoiceInput" hidden multiple
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
-              <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
-              <h3>Ajouter des factures</h3>
-              <p>Glissez-déposez vos PDF, images ou ZIP — les archives sont décompressées automatiquement.</p>
-            </div>
-            <div class="imp-file-queue ws-import-queue" id="documentsImportQueue" hidden></div>
-            <div class="imp-actions ws-import-actions" id="documentsImportActions" hidden>
-              <button type="button" class="dash-btn" id="documentsQueueBtn">
-                <i data-lucide="clock"></i> Mettre en attente
-              </button>
-              <button type="button" class="dash-btn dash-btn-primary" id="documentsExtractBtn">
-                <i data-lucide="sparkles"></i> Extraction immédiate
-              </button>
+            <div id="documentsImportPanel" class="ws-review-import-panel">
+              <div class="imp-dropzone ws-docs-upload" id="documentsUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
+                <input type="file" id="documentsInvoiceInput" hidden multiple
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
+                <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
+                <h3>Ajouter des factures</h3>
+                <p>Glissez-déposez vos PDF, images ou ZIP — les archives sont décompressées automatiquement.</p>
+              </div>
+              <div class="imp-file-queue ws-import-queue" id="documentsImportQueue" hidden></div>
+              <div class="imp-actions ws-import-actions" id="documentsImportActions" hidden>
+                <button type="button" class="dash-btn dash-btn-secondary" id="documentsQueueBtn">
+                  <i data-lucide="clock"></i> Mettre en attente
+                </button>
+                <button type="button" class="dash-btn dash-btn-primary" id="documentsExtractBtn">
+                  <i data-lucide="sparkles"></i> Extraction immédiate
+                </button>
+              </div>
             </div>
             <div id="documentsList" class="ws-docs-list"></div>
             <section class="ws-doc-archives" id="documentArchivesSection" hidden>
@@ -311,22 +313,27 @@
               </button>
               <span id="reviewDeclaredBadge" class="ws-review-badge success" hidden>Période déclarée</span>
             </div>
-            <div class="imp-dropzone ws-docs-upload ws-review-upload" id="reviewUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
-              <input type="file" id="reviewInvoiceInput" hidden multiple
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
-              <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
-              <h3>Ajouter des factures</h3>
-              <p>Glissez-déposez vos PDF, images ou ZIP, puis choisissez de les mettre en attente ou de lancer l'extraction.</p>
+            <div id="reviewImportPanel" class="ws-review-import-panel">
+              <div class="imp-dropzone ws-docs-upload ws-review-upload" id="reviewUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
+                <input type="file" id="reviewInvoiceInput" hidden multiple
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
+                <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
+                <h3>Ajouter des factures</h3>
+                <p>Glissez-déposez vos PDF, images ou ZIP, puis choisissez de les mettre en attente ou de lancer l'extraction.</p>
+              </div>
+              <div class="imp-file-queue ws-import-queue" id="reviewImportQueue" hidden></div>
+              <div class="imp-actions ws-import-actions" id="reviewImportActions" hidden>
+                <button type="button" class="dash-btn dash-btn-secondary" id="reviewQueueBtn">
+                  <i data-lucide="clock"></i> Mettre en attente
+                </button>
+                <button type="button" class="dash-btn dash-btn-primary" id="reviewExtractBtn">
+                  <i data-lucide="sparkles"></i> Extraction immédiate
+                </button>
+              </div>
             </div>
-            <div class="imp-file-queue ws-import-queue" id="reviewImportQueue" hidden></div>
-            <div class="imp-actions ws-import-actions" id="reviewImportActions" hidden>
-              <button type="button" class="dash-btn" id="reviewQueueBtn">
-                <i data-lucide="clock"></i> Mettre en attente
-              </button>
-              <button type="button" class="dash-btn dash-btn-primary" id="reviewExtractBtn">
-                <i data-lucide="sparkles"></i> Extraction immédiate
-              </button>
-            </div>
+            <p id="reviewImportReadonly" class="ws-review-import-readonly hint" hidden>
+              Période déclarée — consultation seule. Rouvrez la période ou passez sur une période en cours pour importer.
+            </p>
             <p id="reviewImportMeta" class="ws-review-import-meta hint" hidden></p>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
             <p class="hint ws-review-preview-hint">Cliquez <strong>Ouvrir</strong> ou une ligne pour afficher la facture en grand avec tous les champs à vérifier.</p>
@@ -624,7 +631,7 @@
     } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review13";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload3";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload4";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -686,6 +693,7 @@
       if (invoiceUploadController) return invoiceUploadController;
       invoiceUploadController = createWorkspaceInvoiceUpload({
         getDossierId: () => selectedDossierId,
+        getCanImport: () => cockpit?.statusKey !== "exported",
         showToast: showWorkspaceToast,
         onRequestExtraction: () => handleLaunchExtraction(),
         onUploaded: async ({ invoiceCount = 0 } = {}) => {
@@ -728,24 +736,22 @@
 
     function updateReviewImportMeta() {
       const meta = document.getElementById("reviewImportMeta");
-      const zone = document.getElementById("reviewUploadZone");
-      const actions = document.getElementById("reviewImportActions");
-      const queue = document.getElementById("reviewImportQueue");
-      if (!meta || !zone) return;
+      const panel = document.getElementById("reviewImportPanel");
+      const documentsPanel = document.getElementById("documentsImportPanel");
+      const readonly = document.getElementById("reviewImportReadonly");
+      if (!meta) return;
       const isReadOnly = cockpit?.statusKey === "exported";
-      zone.classList.toggle("is-readonly", isReadOnly);
-      zone.setAttribute("aria-disabled", isReadOnly ? "true" : "false");
+      if (panel) panel.hidden = isReadOnly;
+      if (documentsPanel) documentsPanel.hidden = isReadOnly;
+      if (readonly) readonly.hidden = !isReadOnly;
       if (isReadOnly) {
-        actions?.setAttribute("hidden", "");
-        queue?.setAttribute("hidden", "");
-      }
-      const pending = invoicePendingCount || 0;
-      const docs = invoiceDocumentCount || 0;
-      if (isReadOnly) {
+        invoiceUploadController?.clearAllQueues?.();
         meta.hidden = false;
         meta.textContent = "Période déclarée — consultation seule, import désactivé.";
         return;
       }
+      const pending = invoicePendingCount || 0;
+      const docs = invoiceDocumentCount || 0;
       if (pending > 0 || docs > 0) {
         meta.hidden = false;
         meta.textContent = pending > 0
