@@ -260,6 +260,15 @@
               <h3>Ajouter des factures</h3>
               <p>Glissez-déposez vos PDF, images ou ZIP — les archives sont décompressées automatiquement.</p>
             </div>
+            <div class="imp-file-queue ws-import-queue" id="documentsImportQueue" hidden></div>
+            <div class="imp-actions ws-import-actions" id="documentsImportActions" hidden>
+              <button type="button" class="dash-btn" id="documentsQueueBtn">
+                <i data-lucide="clock"></i> Mettre en attente
+              </button>
+              <button type="button" class="dash-btn dash-btn-primary" id="documentsExtractBtn">
+                <i data-lucide="sparkles"></i> Extraction immédiate
+              </button>
+            </div>
             <div id="documentsList" class="ws-docs-list"></div>
             <section class="ws-doc-archives" id="documentArchivesSection" hidden>
               <button type="button" class="ws-doc-archives-toggle" id="documentArchivesToggle" aria-expanded="false">
@@ -307,7 +316,16 @@
                 accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
               <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
               <h3>Ajouter des factures</h3>
-              <p>Glissez-déposez vos PDF, images ou ZIP — puis lancez l'extraction depuis l'onglet Période active.</p>
+              <p>Glissez-déposez vos PDF, images ou ZIP, puis choisissez de les mettre en attente ou de lancer l'extraction.</p>
+            </div>
+            <div class="imp-file-queue ws-import-queue" id="reviewImportQueue" hidden></div>
+            <div class="imp-actions ws-import-actions" id="reviewImportActions" hidden>
+              <button type="button" class="dash-btn" id="reviewQueueBtn">
+                <i data-lucide="clock"></i> Mettre en attente
+              </button>
+              <button type="button" class="dash-btn dash-btn-primary" id="reviewExtractBtn">
+                <i data-lucide="sparkles"></i> Extraction immédiate
+              </button>
             </div>
             <p id="reviewImportMeta" class="ws-review-import-meta hint" hidden></p>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
@@ -604,9 +622,9 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review12";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review13";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload2";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload3";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -685,30 +703,42 @@
       controller.bindDropzone({
         dropzoneEl: document.getElementById("documentsUploadZone"),
         inputEl: document.getElementById("documentsInvoiceInput"),
+        queueEl: document.getElementById("documentsImportQueue"),
+        actionsEl: document.getElementById("documentsImportActions"),
+        queueBtn: document.getElementById("documentsQueueBtn"),
+        extractBtn: document.getElementById("documentsExtractBtn"),
       });
       controller.bindDropzone({
         dropzoneEl: document.getElementById("reviewUploadZone"),
         inputEl: document.getElementById("reviewInvoiceInput"),
+        queueEl: document.getElementById("reviewImportQueue"),
+        actionsEl: document.getElementById("reviewImportActions"),
+        queueBtn: document.getElementById("reviewQueueBtn"),
+        extractBtn: document.getElementById("reviewExtractBtn"),
       });
       const cockpitInput = document.getElementById("cockpitInvoiceInput");
       cockpitInput?.addEventListener("change", async () => {
         const files = cockpitInput.files;
         cockpitInput.value = "";
         if (!files?.length) return;
-        await setTab("review");
-        updateReviewImportMeta();
-        const zone = document.getElementById("reviewUploadZone");
-        await controller.uploadFiles(files, { dropzoneEl: zone });
+        await goToReviewImport({ scrollToUpload: true, openPicker: false });
+        controller.addFilesToQueue(document.getElementById("reviewInvoiceInput"), files);
       });
     }
 
     function updateReviewImportMeta() {
       const meta = document.getElementById("reviewImportMeta");
       const zone = document.getElementById("reviewUploadZone");
+      const actions = document.getElementById("reviewImportActions");
+      const queue = document.getElementById("reviewImportQueue");
       if (!meta || !zone) return;
       const isReadOnly = cockpit?.statusKey === "exported";
       zone.classList.toggle("is-readonly", isReadOnly);
       zone.setAttribute("aria-disabled", isReadOnly ? "true" : "false");
+      if (isReadOnly) {
+        actions?.setAttribute("hidden", "");
+        queue?.setAttribute("hidden", "");
+      }
       const pending = invoicePendingCount || 0;
       const docs = invoiceDocumentCount || 0;
       if (isReadOnly) {
@@ -728,7 +758,8 @@
     }
 
     function goToReviewImport({ scrollToUpload = true, openPicker = false } = {}) {
-      if (cockpit?.statusKey === "exported") {
+      const isReadOnly = cockpit?.statusKey === "exported";
+      if (isReadOnly) {
         showWorkspaceToast({
           title: "Période clôturée",
           message: "Vous pouvez consulter la revue, mais pas importer sur une période déclarée.",
@@ -737,14 +768,17 @@
           onAction: getOpenPeriods().length ? () => goToOpenPeriod() : null,
         });
       }
-      setTab("review").then(() => {
+      setTab("review").then(async () => {
         updateReviewImportMeta();
-        if (!scrollToUpload) return;
+        if (!scrollToUpload && !openPicker) return;
         const zone = document.getElementById("reviewUploadZone");
         zone?.scrollIntoView({ behavior: "smooth", block: "center" });
         zone?.classList.add("is-highlighted");
         window.setTimeout(() => zone?.classList.remove("is-highlighted"), 1800);
-        if (openPicker && cockpit?.statusKey !== "exported") {
+        if (openPicker && !isReadOnly) {
+          await new Promise((resolve) => {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+          });
           ensureInvoiceUploadController().openFilePicker(document.getElementById("reviewInvoiceInput"));
         }
       });

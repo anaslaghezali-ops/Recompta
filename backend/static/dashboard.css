@@ -2179,6 +2179,10 @@
   margin: 0.25rem 0 0.75rem;
 }
 
+.ws-import-actions {
+  margin-bottom: 0.75rem;
+}
+
 .ws-docs-upload.is-readonly {
   pointer-events: none;
   opacity: 0.72;
