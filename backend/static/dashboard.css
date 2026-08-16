@@ -1644,6 +1644,7 @@
 }
 
 .imp-dropzone {
+  position: relative;
   border: 2px dashed var(--dash-border-strong);
   border-radius: var(--dash-radius-lg);
   background: var(--dash-surface-2);
@@ -1684,6 +1685,17 @@
 }
 
 .imp-dropzone input { display: none; }
+
+.imp-dropzone input.ws-import-file-input {
+  display: block !important;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
 
 .imp-file-queue {
   display: grid;

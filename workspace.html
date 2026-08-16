@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=review-detail2" />
+  <link rel="stylesheet" href="dashboard.css?v=review-detail3" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -255,7 +255,7 @@
             </div>
             <div id="documentsImportPanel" class="ws-review-import-panel">
               <div class="imp-dropzone ws-docs-upload" id="documentsUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
-                <input type="file" id="documentsInvoiceInput" hidden multiple
+                <input type="file" id="documentsInvoiceInput" class="ws-import-file-input" multiple
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                 <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
                 <h3>Ajouter des factures</h3>
@@ -315,7 +315,7 @@
             </div>
             <div id="reviewImportPanel" class="ws-review-import-panel">
               <div class="imp-dropzone ws-docs-upload ws-review-upload" id="reviewUploadZone" tabindex="0" role="button" aria-label="Ajouter des factures">
-                <input type="file" id="reviewInvoiceInput" hidden multiple
+                <input type="file" id="reviewInvoiceInput" class="ws-import-file-input" multiple
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip" />
                 <div class="imp-dropzone-icon"><i data-lucide="upload"></i></div>
                 <h3>Ajouter des factures</h3>
@@ -631,7 +631,7 @@
     } from "./workspace-bank-match.js?v=bankws2";
     import { createWorkspaceReview } from "./workspace-review.js?v=review14";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload5";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload6";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -726,11 +726,14 @@
       });
       const cockpitInput = document.getElementById("cockpitInvoiceInput");
       cockpitInput?.addEventListener("change", async () => {
-        const files = cockpitInput.files;
+        const files = [...(cockpitInput.files || [])];
         cockpitInput.value = "";
-        if (!files?.length) return;
+        if (!files.length) return;
         await goToReviewImport({ scrollToUpload: true, openPicker: false });
-        controller.addFilesToQueue(document.getElementById("reviewInvoiceInput"), files);
+        await controller.uploadFiles(files, {
+          dropzoneEl: document.getElementById("reviewUploadZone"),
+          notify: true,
+        });
       });
     }
 
