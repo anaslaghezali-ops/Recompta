@@ -4,6 +4,10 @@ import { formatFileSize } from "./import-dossier.js?v=imp1";
 
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip";
 
+function copyFiles(fileList) {
+  return [...(fileList || [])].filter(Boolean);
+}
+
 export function createWorkspaceInvoiceUpload({
   getDossierId,
   getCanImport = () => true,
@@ -64,41 +68,33 @@ export function createWorkspaceInvoiceUpload({
 
   function renderFileQueue(zone) {
     const { queueEl, queueBtn, extractBtn, pendingFiles = [] } = zone;
-    if (!queueEl) return;
-
     const hasFiles = pendingFiles.length > 0;
-    queueEl.hidden = !hasFiles;
-    if (zone.actionsEl) zone.actionsEl.hidden = !hasFiles;
+    const disabled = uploading || !hasFiles || !canImportNow();
 
-    if (!hasFiles) {
-      queueEl.innerHTML = "";
-      if (queueBtn) queueBtn.disabled = true;
-      if (extractBtn) extractBtn.disabled = true;
-      return;
+    if (queueEl) {
+      queueEl.hidden = !hasFiles;
+      queueEl.innerHTML = hasFiles
+        ? pendingFiles.map((file, index) => `
+            <div class="imp-file-row">
+              <span class="imp-file-icon">${file.name.toLowerCase().endsWith(".zip") ? "🗜️" : "📄"}</span>
+              <div class="imp-file-meta">
+                <strong>${escapeHtml(file.name)}</strong>
+                <span>${formatFileSize(file.size)}</span>
+              </div>
+              <button type="button" class="dash-btn dash-btn-ghost dash-btn-sm" data-remove-file="${index}" aria-label="Retirer">✕</button>
+            </div>
+          `).join("")
+        : "";
+      queueEl.querySelectorAll("[data-remove-file]").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          zone.pendingFiles.splice(Number(btn.dataset.removeFile), 1);
+          renderFileQueue(zone);
+        });
+      });
     }
 
-    queueEl.innerHTML = pendingFiles.map((file, index) => `
-      <div class="imp-file-row">
-        <span class="imp-file-icon">${file.name.toLowerCase().endsWith(".zip") ? "🗜️" : "📄"}</span>
-        <div class="imp-file-meta">
-          <strong>${escapeHtml(file.name)}</strong>
-          <span>${formatFileSize(file.size)}</span>
-        </div>
-        <button type="button" class="dash-btn dash-btn-ghost dash-btn-sm" data-remove-file="${index}" aria-label="Retirer">✕</button>
-      </div>
-    `).join("");
-
-    queueEl.querySelectorAll("[data-remove-file]").forEach((btn) => {
-      btn.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const removeIndex = Number(btn.dataset.removeFile);
-        zone.pendingFiles.splice(removeIndex, 1);
-        renderFileQueue(zone);
-      });
-    });
-
-    const disabled = uploading || !canImportNow();
     if (queueBtn) queueBtn.disabled = disabled;
     if (extractBtn) extractBtn.disabled = disabled;
     initLucide();
@@ -121,7 +117,7 @@ export function createWorkspaceInvoiceUpload({
     }
 
     const dossierId = getDossierId();
-    const files = [...(fileList || [])].filter(Boolean);
+    const files = copyFiles(fileList);
     if (!files.length) return false;
 
     if (!dossierId) {
@@ -146,7 +142,6 @@ export function createWorkspaceInvoiceUpload({
     dropzoneEl,
     inputEl,
     queueEl = null,
-    actionsEl = null,
     queueBtn = null,
     extractBtn = null,
   }) {
@@ -156,7 +151,6 @@ export function createWorkspaceInvoiceUpload({
       dropzoneEl,
       inputEl,
       queueEl,
-      actionsEl,
       queueBtn,
       extractBtn,
       pendingFiles: [],
@@ -167,11 +161,11 @@ export function createWorkspaceInvoiceUpload({
     inputEl.multiple = true;
 
     dropzoneEl.addEventListener("click", (event) => {
+      if (event.target.closest("button, a, input")) return;
       if (uploading || !canImportNow()) {
         if (!canImportNow()) notifyBlockedImport();
         return;
       }
-      if (event.target.closest("button, a, input")) return;
       inputEl.click();
     });
 
@@ -191,30 +185,14 @@ export function createWorkspaceInvoiceUpload({
         if (!canImportNow()) notifyBlockedImport();
         return;
       }
-      const dropped = [...(event.dataTransfer?.files || [])];
-      if (!dropped.length) return;
-      addFilesToQueue(inputEl, dropped);
-      runQueue(zone).catch((error) => {
-        showToast?.({
-          title: "Import impossible",
-          message: error?.message || "Impossible d'importer les fichiers sélectionnés.",
-          variant: "error",
-        });
-      });
+      addFilesToQueue(inputEl, copyFiles(event.dataTransfer?.files));
     });
 
     inputEl.addEventListener("change", () => {
-      const files = [...(inputEl.files || [])];
+      const files = copyFiles(inputEl.files);
       inputEl.value = "";
       if (!files.length) return;
       addFilesToQueue(inputEl, files);
-      runQueue(zone).catch((error) => {
-        showToast?.({
-          title: "Import impossible",
-          message: error?.message || "Impossible d'importer les fichiers sélectionnés.",
-          variant: "error",
-        });
-      });
     });
 
     queueBtn?.addEventListener("click", (event) => {
@@ -255,7 +233,7 @@ export function createWorkspaceInvoiceUpload({
 
   async function uploadFiles(fileList, { dropzoneEl = null, notify = true } = {}) {
     const dossierId = getDossierId();
-    const files = [...(fileList || [])].filter(Boolean);
+    const files = copyFiles(fileList);
     if (!files.length || uploading) {
       return { uploaded: 0, reused: 0, expanded: 0, failures: [], invoiceCount: 0 };
     }
@@ -319,13 +297,12 @@ export function createWorkspaceInvoiceUpload({
           : `${uploaded} facture(s) importée(s).`;
 
     if (notify && showToast) {
-      const variant = failures.length ? "warn" : stored ? "success" : "info";
       showToast({
         title: failures.length ? "Import partiel" : stored ? "Factures importées" : "Aucun nouveau fichier",
         message: stored
           ? `${summary} Lancez l'extraction depuis Période active quand vous êtes prêt.`
           : summary,
-        variant,
+        variant: failures.length ? "warn" : stored ? "success" : "info",
       });
     }
 
