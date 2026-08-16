@@ -61,6 +61,10 @@ _FACT_NUM_STOPWORDS = {
     "désignation",
 }
 SUPPLIER_SKIP = re.compile(r"^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)", re.I)
+SUPPLIER_NOT_NAME = re.compile(
+    r"\b(mille|million|milliard|dirhams?|dhs|somme de|arr[eê]t[eé]e?)\b",
+    re.I,
+)
 AMOUNT_LINE = re.compile(r"^\d[\d., ]+$")
 
 
@@ -410,6 +414,8 @@ def _extract_supplier_name(text: str) -> str:
     for line in text.splitlines():
         candidate = line.strip()
         if not candidate or len(candidate) < 3 or SUPPLIER_SKIP.match(candidate):
+            continue
+        if SUPPLIER_NOT_NAME.search(candidate):
             continue
         if "AICHOUM" in candidate.upper():
             continue

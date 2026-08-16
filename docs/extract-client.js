@@ -45,6 +45,7 @@ const FACT_NUM_STOPWORDS = new Set([
   "numero", "numéro", "date", "client", "facture", "avoir", "total", "designation", "désignation",
 ]);
 const SUPPLIER_SKIP = /^(ICE|IF|FACTURE|Date|Désignation|HT|TVA|TTC|TOTAL|Facture de test)/i;
+const SUPPLIER_NOT_NAME = /\b(mille|million|milliard|dirhams?|dhs|somme de|arr[eê]t[eé]e?)\b/i;
 const AMOUNT_LINE = /^\d[\d., ]+$/;
 
 let ocrWorkerPromise = null;
@@ -366,17 +367,63 @@ function folderKey(filename) {
   return parts.length > 1 ? parts[0].toLowerCase().trim() : "";
 }
 
-const FOLDER_SUPPLIERS = {};
+const GENERIC_FOLDERS = new Set([".", "..", "unknown", "factures", "invoices", "scans", "documents", "pdf"]);
+const DRIVE_EXPORT_STEM = /^(.+)-(\d{8}T\d{6}Z)(?:-\d+)+(?:_[a-z0-9]+)?$/i;
+const PERIOD_FOLDER = /\b(janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre|trimestre|semestre)\b/i;
 
-function supplierHintFromPath(filename) {
-  const key = folderKey(filename);
-  if (!key || [".", "..", "unknown", "factures", "invoices"].includes(key)) return null;
-  const label = key
+function stripDriveExportStem(segment) {
+  const match = String(segment || "").trim().match(DRIVE_EXPORT_STEM);
+  if (!match) return null;
+  const name = String(match[1] || "").trim();
+  return name || null;
+}
+
+function isPeriodFolder(key) {
+  const text = String(key || "").trim();
+  if (!text) return true;
+  if (/^[\d\s._/-]+$/.test(text)) return true;
+  return PERIOD_FOLDER.test(text);
+}
+
+function folderLabel(key) {
+  return String(key || "")
     .split(/[\s_-]+/)
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
-  return label ? { lib_frss: label } : null;
+}
+
+function isNoisyFolderLabel(label) {
+  const text = String(label || "").trim();
+  if (!text) return true;
+  const digits = [...text].filter((ch) => /\d/.test(ch)).length;
+  return digits > Math.max(3, text.length / 4);
+}
+
+function supplierFolderSegment(filename) {
+  const parts = String(filename || "").replace(/\\/g, "/").split("/").filter((part) => part && part !== ".");
+  if (parts.length <= 1) return "";
+  let fallback = "";
+  for (const part of parts.slice(0, -1)) {
+    const stripped = stripDriveExportStem(part);
+    const lowered = part.toLowerCase().trim();
+    if (GENERIC_FOLDERS.has(lowered) || (stripped && GENERIC_FOLDERS.has(stripped.toLowerCase()))) continue;
+    if (stripped) {
+      if (!fallback && !isPeriodFolder(stripped.toLowerCase())) fallback = stripped;
+      continue;
+    }
+    if (isPeriodFolder(lowered)) continue;
+    return part;
+  }
+  return fallback;
+}
+
+function supplierHintFromPath(filename) {
+  const key = supplierFolderSegment(filename);
+  if (!key) return null;
+  const label = folderLabel(key);
+  if (!label || isNoisyFolderLabel(label)) return null;
+  return { lib_frss: label };
 }
 
 function normalizeIceDigits(value) {
@@ -421,9 +468,9 @@ function pickBestIce(candidates) {
 function applySupplierPathHints(filename, line) {
   const hint = supplierHintFromPath(filename);
   if (!hint) return;
-  if (hint.lib_frss) line.lib_frss = hint.lib_frss;
-  if (hint.ice) line.ice_frs = hint.ice;
-  if (hint.if) line.if = hint.if;
+  if (hint.lib_frss && !String(line.lib_frss || "").trim()) line.lib_frss = hint.lib_frss;
+  if (hint.ice && !String(line.ice_frs || "").trim()) line.ice_frs = hint.ice;
+  if (hint.if && !String(line.if || "").trim()) line.if = hint.if;
 }
 
 function isHtFormulaOnTtcAmount(mHt, tva, taux) {
@@ -803,7 +850,7 @@ export function normalizeExtractionResults(results) {
       line.designation = normalizeDesignation(line.designation);
       // Renseignée uniquement par le rapprochement bancaire.
       line.date_paie = "";
-      if (pathHint?.lib_frss) {
+      if (pathHint?.lib_frss && !String(line.lib_frss || "").trim()) {
         line.lib_frss = pathHint.lib_frss;
         line.supplier_from_folder = true;
       } else if (!line.lib_frss && bestName) {
@@ -846,19 +893,19 @@ function guessTaux(ht, tva) {
 }
 
 function extractSupplierName(text, filename = "") {
-  const pathHint = supplierHintFromPath(filename);
-  if (pathHint?.lib_frss) return pathHint.lib_frss;
-
   const companyPattern = /\b(SARL|SA|STE|S\.A\.R\.L|S\.A\.R\.L\.A\.U)\b/i;
   for (const line of text.split("\n")) {
     const candidate = line.trim();
     if (!candidate || candidate.length < 3 || SUPPLIER_SKIP.test(candidate)) continue;
+    if (SUPPLIER_NOT_NAME.test(candidate)) continue;
     if (candidate.toUpperCase().includes("AICHOUM")) continue;
     if (ICE_PATTERN.test(candidate) || IF_PATTERN.test(candidate)) continue;
     if (companyPattern.test(candidate) || /^[A-Z][A-Za-z0-9 .&'-]{2,}$/.test(candidate)) {
       return candidate;
     }
   }
+  const pathHint = supplierHintFromPath(filename);
+  if (pathHint?.lib_frss) return pathHint.lib_frss;
   return "";
 }
 

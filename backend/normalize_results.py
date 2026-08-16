@@ -48,23 +48,79 @@ def folder_key(filename: str) -> str:
 
 
 GENERIC_FOLDERS = {".", "..", "unknown", "factures", "invoices", "scans", "documents", "pdf"}
+# Google Drive / Takeout : « Probun-20260816T102702Z-1-001 »
+DRIVE_EXPORT_STEM = re.compile(
+    r"^(?P<name>.+)-(?P<ts>\d{8}T\d{6}Z)(?P<seq>(?:-\d+)+)(?:_[a-z0-9]+)?$",
+    re.I,
+)
+_PERIOD_FOLDER = re.compile(
+    r"\b(janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|"
+    r"novembre|d[ée]cembre|trimestre|semestre)\b",
+    re.I,
+)
+
+
+def strip_drive_export_stem(segment: str) -> str | None:
+    """« Probun-20260816T102702Z-1-001 » → « Probun ». None si ce n'est pas un export Drive."""
+    match = DRIVE_EXPORT_STEM.fullmatch((segment or "").strip())
+    if not match:
+        return None
+    name = (match.group("name") or "").strip()
+    return name or None
+
+
+def _is_period_folder(key: str) -> bool:
+    text = (key or "").strip()
+    if not text:
+        return True
+    return bool(re.fullmatch(r"[\d\s._/-]+", text) or _PERIOD_FOLDER.search(text))
+
+
+def _folder_label(key: str) -> str:
+    return " ".join(word.capitalize() for word in re.split(r"[\s_-]+", key) if word)
+
+
+def _is_noisy_folder_label(label: str) -> bool:
+    """Rejette un libellé trop numérique (horodatage Drive resté collé)."""
+    text = (label or "").strip()
+    if not text:
+        return True
+    return sum(ch.isdigit() for ch in text) > max(3, len(text) / 4)
+
+
+def supplier_folder_segment(filename: str) -> str:
+    """Dossier interne utile, pas le nom du fichier ZIP Drive.
+
+    « Probun-20260816T102702Z-1-001/Probun/facture.pdf » → « Probun »
+    """
+    parts = [part for part in PurePosixPath(filename).as_posix().split("/") if part and part != "."]
+    if len(parts) <= 1:
+        return ""
+    fallback = ""
+    for part in parts[:-1]:
+        stripped = strip_drive_export_stem(part)
+        lowered = part.lower().strip()
+        if lowered in GENERIC_FOLDERS or (stripped and stripped.lower() in GENERIC_FOLDERS):
+            continue
+        if stripped is not None:
+            if not fallback and not _is_period_folder(stripped.lower()):
+                fallback = stripped
+            continue
+        if _is_period_folder(lowered):
+            continue
+        return part
+    return fallback
 
 
 def supplier_hint_from_path(filename: str) -> dict[str, str] | None:
-    """Indice organisationnel (nom de dossier ZIP) — pas de règle fournisseur codée."""
-    key = folder_key(filename)
-    if not key or key in GENERIC_FOLDERS:
+    """Indice organisationnel (dossier interne) — pas le stem Drive, pas de règle fournisseur."""
+    key = supplier_folder_segment(filename)
+    if not key:
         return None
-    # Un dossier nommé par période (« 2026-06 », « juin 2026 ») ne désigne pas
-    # un fournisseur.
-    if re.fullmatch(r"[\d\s._/-]+", key) or re.search(
-        r"\b(janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|"
-        r"novembre|d[ée]cembre|trimestre|semestre)\b",
-        key,
-    ):
+    label = _folder_label(key)
+    if not label or _is_noisy_folder_label(label):
         return None
-    label = " ".join(word.capitalize() for word in re.split(r"[\s_-]+", key) if word)
-    return {"lib_frss": label} if label else None
+    return {"lib_frss": label}
 
 
 def looks_like_supplier_name(name: str) -> bool:
@@ -276,12 +332,11 @@ def normalize_extraction_results(
         if path_hint and not best_name:
             best_name = path_hint.get("lib_frss", "")
 
-        # Le dossier du ZIP est nommé par le comptable : il vaut mieux qu'un nom
-        # reconstitué par OCR sur un scan de mauvaise qualité.
+        # Dossier interne seulement si la facture n'a pas déjà un nom.
         folder_name = (path_hint or {}).get("lib_frss", "")
 
         for line in bucket["lines"]:
-            if folder_name:
+            if not (line.lib_frss or "").strip() and folder_name:
                 line.lib_frss = folder_name
                 line.supplier_from_folder = True
             elif best_name and not line.lib_frss:
