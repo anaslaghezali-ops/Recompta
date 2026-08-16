@@ -6,7 +6,7 @@ import {
   countSupplierFieldTargets,
   fieldValuesMatch,
   findDuplicateLineIndexes,
-} from "./extract-client.js?v=zipname1";
+} from "./extract-client.js?v=ifdot1";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,

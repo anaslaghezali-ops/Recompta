@@ -37,8 +37,8 @@ function isExcludedIce(ice) {
 // « N° », « No », « Numéro » s'intercalent souvent entre le libellé et le numéro.
 const ICE_PATTERN = /\bI\.?C\.?E\.?\s*(?:N\s*[°ºo]?\.?|Num[ée]ro)?\s*[:\s]*(\d{15})\b/i;
 const IF_PATTERN =
-  /\b(?:IF|I\.F\.|1F|Identifiant\s+fiscal)\s*(?:N\s*[°ºo]?\.?|Num[ée]ro)?\s*[:\s-]*([0-9A-Za-z]+)/i;
-const IF_FOOTER_PATTERN = /\bF\s+(\d{6,9})\b/;
+  /\b(?:Identifiant\s+fiscal|I\.?F\.?|1F)\s*(?:N\s*[°ºo]?\.?|Num[ée]ro)?\s*[:\s.-]*([0-9A-Za-z]+)/i;
+const IF_FOOTER_PATTERN = /\bF(?:\s*[:.]\s*|\s+)(\d{6,9})\b/;
 const INVOICE_NUM_PATTERN =
   /(?:FACTURE|AVOIR|N[°o]\s*Pi[eè]ce)\s*(?:N\s*[°ºo]\.?|Num[ée]ro)?\s*[:\s]*([A-Za-z0-9][A-Za-z0-9/_.-]{2,})/i;
 const FACT_NUM_STOPWORDS = new Set([
@@ -922,11 +922,21 @@ function extractSupplierIce(text, filename = "") {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
+function cleanSupplierIf(value) {
+  const cleaned = String(value || "").trim();
+  const digits = cleaned.replace(/\D/g, "");
+  if (!cleaned || digits.length === 15) return "";
+  return cleaned;
+}
+
 function extractSupplierIf(text) {
   const ifMatch = text.match(IF_PATTERN);
-  if (ifMatch) return ifMatch[1].trim();
+  if (ifMatch) {
+    const cleaned = cleanSupplierIf(ifMatch[1]);
+    if (cleaned) return cleaned;
+  }
   const footer = text.match(IF_FOOTER_PATTERN);
-  if (footer) return footer[1].trim();
+  if (footer) return cleanSupplierIf(footer[1]);
   return "";
 }
 
