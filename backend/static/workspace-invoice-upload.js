@@ -139,6 +139,15 @@ export function createWorkspaceInvoiceUpload({
       }
     }
     renderFileQueue(zone);
+    if (zone.queueEl && zone.pendingFiles.length) {
+      zone.queueEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      showToast?.({
+        title: `${zone.pendingFiles.length} fichier(s) sélectionné(s)`,
+        message: "Choisissez « Mettre en attente » ou « Extraction immédiate ».",
+        variant: "info",
+        durationMs: 7000,
+      });
+    }
     return true;
   }
 

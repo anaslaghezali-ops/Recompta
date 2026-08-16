@@ -205,7 +205,7 @@ export function createWorkspaceReview({
     if (clearSelection) selectedLineIndex = null;
     showLinePreview(previewUi, null);
     syncDetailVisibility();
-    renderTable();
+    if (lines.length > 0) renderTable();
   }
 
   function navigateDetail(delta) {
@@ -914,8 +914,16 @@ export function createWorkspaceReview({
     }
     if (els.reviewLayout) els.reviewLayout.hidden = lines.length === 0;
     if (els.tableWrap) els.tableWrap.hidden = lines.length === 0 || (anomaliesOnly && visibleRows === 0);
-    if (lines.length === 0) closeLinePreview({ clearSelection: true });
-    else refreshOpenPreview();
+    if (lines.length === 0) {
+      if (previewOpen || selectedLineIndex != null) {
+        previewOpen = false;
+        selectedLineIndex = null;
+        showLinePreview(previewUi, null);
+        syncDetailVisibility();
+      }
+    } else {
+      refreshOpenPreview();
+    }
   }
 
   function render() {

@@ -629,9 +629,9 @@
       createWorkspaceBankMatch,
       countLinesWithoutPaymentDate,
     } from "./workspace-bank-match.js?v=bankws2";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review13";
+    import { createWorkspaceReview } from "./workspace-review.js?v=review14";
     import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup1";
-    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload4";
+    import { createWorkspaceInvoiceUpload } from "./workspace-invoice-upload.js?v=upload5";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -1199,7 +1199,12 @@
         analysisLaunchQueued = 0;
         if (hadActiveImport) {
           hadActiveImport = false;
-          await reloadCockpit(selectedDossierId);
+          if (activeTab !== "review") {
+            await reloadCockpit(selectedDossierId);
+          } else {
+            await refreshPendingAnalysis({ forceDocuments: true });
+            await refreshCockpitMetadata();
+          }
         }
         banner.hidden = true;
         banner.classList.remove("is-analysis");
