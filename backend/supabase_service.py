@@ -308,6 +308,36 @@ class SupabaseService:
         )
         response.raise_for_status()
 
+    async def get_dossier_client_id(self, dossier_id: int) -> int | None:
+        response = await self.client.get(
+            f"{self.base}/rest/v1/client_dossiers",
+            params={"id": f"eq.{dossier_id}", "select": "client_id", "limit": "1"},
+            headers=service_headers(),
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if not rows:
+            return None
+        try:
+            return int(rows[0]["client_id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    async def list_client_suppliers(self, client_id: int) -> list[dict[str, Any]]:
+        response = await self.client.get(
+            f"{self.base}/rest/v1/client_suppliers",
+            params={
+                "client_id": f"eq.{client_id}",
+                "select": "id, ice, if_number, official_name, accounting_code",
+                "limit": "2000",
+            },
+            headers=service_headers(),
+        )
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        return response.json() or []
+
     async def find_dossier_document(
         self,
         dossier_id: int,

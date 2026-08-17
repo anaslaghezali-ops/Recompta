@@ -1,5 +1,12 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
-import { supplierNameKey } from "./extract-client.js?v=ifdot1";
+import {
+  lineIfValue,
+  normalizeIceDigits,
+  normalizeIfDigits,
+  officialNameForLine,
+  supplierIdentityKey,
+  supplierNameKey,
+} from "./extract-client.js?v=notebook1";
 import { formatMonthLabel, getClientWithDossiers } from "./dossiers-client.js?v=dash2";
 
 function pickCanonicalName(names) {
@@ -22,8 +29,18 @@ function pickCanonicalName(names) {
 
 function pickIdentifier(lines, field) {
   for (const line of lines) {
-    const value = String(line?.[field] || "").trim();
+    const value = field === "if"
+      ? lineIfValue(line)
+      : String(line?.[field] || "").trim();
     if (value) return value;
+  }
+  return "";
+}
+
+function officialNameForSupplier(lines, notebook) {
+  for (const line of lines || []) {
+    const name = officialNameForLine(line, notebook);
+    if (name) return name;
   }
   return "";
 }
@@ -31,15 +48,16 @@ function pickIdentifier(lines, field) {
 /**
  * @param {Array} dossiers
  * @param {Record<string, object[]>} workspacesByDossier
+ * @param {Array} notebook
  */
-export function aggregateClientSuppliers(dossiers, workspacesByDossier) {
+export function aggregateClientSuppliers(dossiers, workspacesByDossier, notebook = []) {
   const supplierMap = new Map();
 
   for (const dossier of dossiers || []) {
     const lines = workspacesByDossier[dossier.id] || [];
     lines.forEach((line, lineIndex) => {
       const displayName = String(line.lib_frss || "").trim();
-      const key = supplierNameKey(displayName) || `unknown:${displayName.toLowerCase() || "inconnu"}`;
+      const key = supplierIdentityKey(line);
 
       if (!supplierMap.has(key)) {
         supplierMap.set(key, {
@@ -90,7 +108,7 @@ export function aggregateClientSuppliers(dossiers, workspacesByDossier) {
       }
       return {
         key: supplier.key,
-        name: pickCanonicalName(supplier.names),
+        name: officialNameForSupplier(supplier.lines, notebook) || pickCanonicalName(supplier.names),
         ice: pickIdentifier(supplier.lines, "ice_frs"),
         if: pickIdentifier(supplier.lines, "if"),
         invoiceCount: supplier.invoiceCount,
@@ -107,6 +125,109 @@ export function aggregateClientSuppliers(dossiers, workspacesByDossier) {
     .sort((a, b) => a.name.localeCompare(b.name, "fr"));
 }
 
+export async function listClientSupplierEntries(clientId) {
+  if (!clientId) return [];
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("client_suppliers")
+    .select("id, ice, if_number, official_name, accounting_code")
+    .eq("client_id", clientId)
+    .limit(2000);
+  if (error) {
+    if (/client_suppliers|schema cache|does not exist|PGRST/i.test(`${error.code || ""} ${error.message || ""}`)) {
+      return [];
+    }
+    throw error;
+  }
+  return data || [];
+}
+
+export async function upsertClientSupplier({ clientId, ice, ifNumber, officialName }) {
+  const supabase = getSupabase();
+  const name = String(officialName || "").trim();
+  const iceNorm = normalizeIceDigits(ice);
+  const ifNorm = normalizeIfDigits(ifNumber);
+  if (!supabase || !clientId || !name || (!iceNorm && !ifNorm)) return null;
+
+  let existing = null;
+  if (iceNorm) {
+    const { data, error } = await supabase
+      .from("client_suppliers")
+      .select("id, ice, if_number, official_name, accounting_code")
+      .eq("client_id", clientId)
+      .eq("ice", iceNorm)
+      .maybeSingle();
+    if (error && error.code !== "PGRST116") throw error;
+    existing = data;
+  }
+  if (!existing && ifNorm) {
+    const { data, error } = await supabase
+      .from("client_suppliers")
+      .select("id, ice, if_number, official_name, accounting_code")
+      .eq("client_id", clientId)
+      .eq("if_number", ifNorm)
+      .maybeSingle();
+    if (error && error.code !== "PGRST116") throw error;
+    existing = data;
+  }
+
+  const payload = {
+    client_id: clientId,
+    official_name: name,
+    ice: iceNorm || existing?.ice || null,
+    if_number: ifNorm || existing?.if_number || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from("client_suppliers")
+      .update(payload)
+      .eq("id", existing.id)
+      .select("id, ice, if_number, official_name, accounting_code")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from("client_suppliers")
+    .insert(payload)
+    .select("id, ice, if_number, official_name, accounting_code")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function rememberOfficialSupplierName({ clientId, line, lines = [], officialName }) {
+  const nameKey = supplierNameKey(officialName || line?.lib_frss);
+  const iceOfLine = normalizeIceDigits(line?.ice_frs);
+  const ifOfLine = lineIfValue(line);
+  const related = (lines || []).filter((row) => {
+    if (!row) return false;
+    if (row === line) return true;
+    if (iceOfLine && normalizeIceDigits(row.ice_frs) === iceOfLine) return true;
+    if (ifOfLine && lineIfValue(row) === ifOfLine) return true;
+    if (nameKey && supplierNameKey(row.lib_frss) === nameKey) return true;
+    return false;
+  });
+  let ice = iceOfLine;
+  let ifNumber = ifOfLine;
+  for (const row of related) {
+    if (!ice) ice = normalizeIceDigits(row.ice_frs);
+    if (!ifNumber) ifNumber = lineIfValue(row);
+    if (ice && ifNumber) break;
+  }
+  return upsertClientSupplier({
+    clientId,
+    ice,
+    ifNumber,
+    officialName,
+  });
+}
+
 export async function loadClientSupplierNotebook(clientId, cabinetId) {
   const client = await getClientWithDossiers(clientId, cabinetId);
   if (!client) return { dossiers: [], suppliers: [] };
@@ -118,10 +239,10 @@ export async function loadClientSupplierNotebook(clientId, cabinetId) {
   const supabase = getSupabase();
   if (!supabase) throw new Error("Supabase non configuré");
 
-  const { data, error } = await supabase
-    .from("dossier_workspaces")
-    .select("dossier_id, lines")
-    .in("dossier_id", dossierIds);
+  const [{ data, error }, notebook] = await Promise.all([
+    supabase.from("dossier_workspaces").select("dossier_id, lines").in("dossier_id", dossierIds),
+    listClientSupplierEntries(clientId),
+  ]);
   if (error) throw error;
 
   const workspacesByDossier = Object.fromEntries(
@@ -130,6 +251,6 @@ export async function loadClientSupplierNotebook(clientId, cabinetId) {
 
   return {
     dossiers,
-    suppliers: aggregateClientSuppliers(dossiers, workspacesByDossier),
+    suppliers: aggregateClientSuppliers(dossiers, workspacesByDossier, notebook),
   };
 }
