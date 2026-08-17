@@ -190,6 +190,12 @@ def extraction_concurrency() -> int:
     return max(1, min(value, 12))
 
 
+def persist_source_document(job: dict[str, Any]) -> bool:
+    """Les jobs d'analyse recopient un fichier déjà dans dossier_documents : ne pas le réécrire."""
+    options = job.get("options") or {}
+    return not bool(options.get("analysis_from_documents"))
+
+
 def _is_spreadsheet(filename: str, mime_type: str) -> bool:
     lower = (filename or "").lower()
     if lower.endswith((".csv", ".txt", ".xlsx", ".xls")):
@@ -233,14 +239,15 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
     try:
         content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
 
-        await db.save_dossier_document(
-            dossier_id,
-            filename=filename,
-            content=content,
-            mime_type=mime_type,
-            doc_type="bank",
-            source_id=file_row.get("source_id") or None,
-        )
+        if persist_source_document(job):
+            await db.save_dossier_document(
+                dossier_id,
+                filename=filename,
+                content=content,
+                mime_type=mime_type,
+                doc_type="bank",
+                source_id=file_row.get("source_id") or None,
+            )
 
         if _is_spreadsheet(filename, mime_type):
             transactions, bank_meta, warnings = parse_bank_file(filename, content)
@@ -376,14 +383,15 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
 
             if len(expanded) == 1:
                 relative_name, file_content, file_mime = expanded[0]
-                await db.save_dossier_document(
-                    dossier_id,
-                    filename=relative_name,
-                    content=file_content,
-                    mime_type=file_mime,
-                    doc_type="invoice",
-                    source_id=parent_source,
-                )
+                if persist_source_document(job):
+                    await db.save_dossier_document(
+                        dossier_id,
+                        filename=relative_name,
+                        content=file_content,
+                        mime_type=file_mime,
+                        doc_type="invoice",
+                        source_id=parent_source,
+                    )
 
             zip_expanded = len(expanded) > 1
             for relative_name, file_content, file_mime in expanded:
@@ -393,7 +401,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     else relative_name.replace("\\", "/")
                 )
                 source_id = parent_source if len(expanded) == 1 else _next_source_id()
-                if zip_expanded:
+                if zip_expanded and persist_source_document(job):
                     saved = await db.save_dossier_document(
                         dossier_id,
                         filename=normalized_name,

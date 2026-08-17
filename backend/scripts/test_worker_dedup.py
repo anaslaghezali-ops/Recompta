@@ -12,6 +12,7 @@ from import_job_worker import (  # noqa: E402
     _merge_workspace_lines,
     _processed_invoice_keys,
     _work_item_already_processed,
+    persist_source_document,
 )
 
 
@@ -69,6 +70,12 @@ def test_merge_keeps_multi_vat_same_source_id() -> None:
     assert rates == [0.1, 0.2]
 
 
+def test_analysis_jobs_do_not_rewrite_source_documents() -> None:
+    assert persist_source_document({"options": {"analysis_from_documents": True}}) is False
+    assert persist_source_document({"options": {}}) is True
+    assert persist_source_document({}) is True
+
+
 def test_merge_skips_exact_duplicate_line() -> None:
     line = {
         "source_file": "scan.pdf",
@@ -86,6 +93,7 @@ def main() -> int:
     test_merge_preserves_distinct_lines()
     test_merge_keeps_multi_vat_same_source_id()
     test_merge_skips_exact_duplicate_line()
+    test_analysis_jobs_do_not_rewrite_source_documents()
     print("OK test_worker_dedup")
     return 0
 

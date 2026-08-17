@@ -30,7 +30,7 @@ import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
   listDossierDocuments,
-} from "./dossier-documents.js?v=doc12";
+} from "./dossier-documents.js?v=doc15";
 import {
   bindPreviewControls,
   clearSourceFiles,
