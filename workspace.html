@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=docs-collapse1" />
+  <link rel="stylesheet" href="dashboard.css?v=carnet-load1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -2015,7 +2015,8 @@
         if (view === "anomalies") review?.setAnomaliesOnly(true);
       }
       if (tab === "suppliers") {
-        await ensureSuppliersController()?.load();
+        const suppliers = await ensureSuppliersController();
+        await suppliers?.load();
       }
       initLucide();
     }
