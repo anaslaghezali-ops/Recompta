@@ -976,10 +976,10 @@ export function createWorkspaceReview({
     }
   }
 
-  function downloadExcel() {
+  async function downloadExcel() {
     const { clientName, periodYear, periodMonth, dossierId } = ctx();
     const period = periodToMmaaaa(periodYear, periodMonth);
-    const filename = exportDedTvaExcel({
+    const filename = await exportDedTvaExcel({
       clientName: clientName || "CLIENT",
       period,
       lines,

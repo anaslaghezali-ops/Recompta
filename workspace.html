@@ -546,7 +546,6 @@
     </form>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth6";
     import {
@@ -595,13 +594,7 @@
       importJobPageUrl,
     } from "./import-jobs-client.js?v=jobs26";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace12";
-    import {
-      createWorkspaceBankMatch,
-      countLinesWithoutPaymentDate,
-    } from "./workspace-bank-match.js?v=bankws3";
-    import { createWorkspaceReview } from "./workspace-review.js?v=review15";
-    import { createWorkspaceSuppliers } from "./workspace-suppliers.js?v=sup2";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace13";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -658,6 +651,13 @@
     let bankExtractInFlight = false;
     let suppliersController = null;
     let workspaceSessionStartedAt = new Date().toISOString();
+    let reviewModulePromise = null;
+    let bankMatchModulePromise = null;
+    let suppliersModulePromise = null;
+
+    function countLinesWithoutPaymentDate(lines) {
+      return (lines || []).filter((line) => !String(line.date_paie || "").trim()).length;
+    }
 
     function invoiceImportPageUrl(dossierId = selectedDossierId) {
       const id = dossierId || selectedDossierId;
@@ -694,8 +694,12 @@
       });
     }
 
-    function ensureBankMatchController() {
+    async function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
+      if (!bankMatchModulePromise) {
+        bankMatchModulePromise = import("./workspace-bank-match.js?v=bankws3");
+      }
+      const { createWorkspaceBankMatch } = await bankMatchModulePromise;
       bankMatchController = createWorkspaceBankMatch({
         getContext: () => ({
           dossierId: selectedDossierId,
@@ -703,7 +707,7 @@
         }),
         onComplete: () => {
           reloadCockpit(selectedDossierId).catch(() => {});
-          if (activeTab === "review") ensureReviewController()?.load();
+          if (activeTab === "review") ensureReviewController().then((review) => review?.load());
         },
         showToast: showWorkspaceToast,
       });
@@ -990,10 +994,14 @@
       await reloadCockpit(selectedDossierId);
     }
 
-    function ensureReviewController() {
+    async function ensureReviewController() {
       if (reviewController) return reviewController;
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
+      if (!reviewModulePromise) {
+        reviewModulePromise = import("./workspace-review.js?v=review16");
+      }
+      const { createWorkspaceReview } = await reviewModulePromise;
       reviewController = createWorkspaceReview({
         mountEl: panel,
         getContext: getReviewContext,
@@ -1004,7 +1012,7 @@
     }
 
     async function openDeclarePeriod() {
-      const review = ensureReviewController();
+      const review = await ensureReviewController();
       await review?.load();
       review?.openDeclareDialog?.();
     }
@@ -1055,10 +1063,14 @@
       }
     }
 
-    function ensureSuppliersController() {
+    async function ensureSuppliersController() {
       if (suppliersController) return suppliersController;
       const panel = document.getElementById("suppliersPanel");
       if (!panel) return null;
+      if (!suppliersModulePromise) {
+        suppliersModulePromise = import("./workspace-suppliers.js?v=sup2");
+      }
+      const { createWorkspaceSuppliers } = await suppliersModulePromise;
       suppliersController = createWorkspaceSuppliers({
         mountEl: panel,
         getContext: () => ({
@@ -1069,7 +1081,7 @@
           if (!dossierId) return;
           await reloadCockpit(dossierId);
           await setTab("review");
-          const review = ensureReviewController();
+          const review = await ensureReviewController();
           await review?.load();
           if (lineIndex != null) review?.openLineAt?.(lineIndex);
         },
@@ -1611,7 +1623,7 @@
           await refreshPendingAnalysis();
           workspaceSnapshot = await loadDossierWorkspace(selectedDossierId);
         }
-        await ensureBankMatchController().run();
+        await (await ensureBankMatchController()).run();
       } finally {
         bankMatchInFlight = false;
         await renderProductionCard();
@@ -1630,7 +1642,7 @@
           showImportCompletionToast(job, { dossierName: client?.name || "", clientId: client?.id });
           if (job.dossier_id === selectedDossierId) {
             reloadCockpit(selectedDossierId).catch(() => {});
-            if (activeTab === "review") ensureReviewController()?.load();
+            if (activeTab === "review") ensureReviewController().then((review) => review?.load());
           }
         },
         { sinceIso: workspaceSessionStartedAt },
@@ -1993,7 +2005,7 @@
         renderDocuments();
       }
       if (tab === "review") {
-        const review = ensureReviewController();
+        const review = await ensureReviewController();
         await review?.load();
         updateImportLinks();
         if (view === "anomalies") review?.setAnomaliesOnly(true);
@@ -2482,19 +2494,19 @@
         : `<li><div style="color:var(--dash-muted);">Aucune activité — commencez la production TVA.</div></li>`;
     }
 
-    async function reloadCockpit(preferredDossierId = null, { force = false } = {}) {
+    async function reloadCockpit(preferredDossierId = null, { force = false, refreshClient = true } = {}) {
       if (reloadCockpitPromise && !force) return reloadCockpitPromise;
       const generation = ++reloadCockpitGeneration;
-      reloadCockpitPromise = reloadCockpitInner(preferredDossierId, generation).finally(() => {
+      reloadCockpitPromise = reloadCockpitInner(preferredDossierId, generation, { refreshClient }).finally(() => {
         if (reloadCockpitGeneration === generation) reloadCockpitPromise = null;
       });
       return reloadCockpitPromise;
     }
 
-    async function reloadCockpitInner(preferredDossierId = null, generation = 0) {
+    async function reloadCockpitInner(preferredDossierId = null, generation = 0, { refreshClient = true } = {}) {
       const stillCurrent = () => generation === reloadCockpitGeneration;
 
-      if (clientId && cabinetId) {
+      if (refreshClient && clientId && cabinetId) {
         const refreshed = await getClientWithDossiers(clientId, cabinetId);
         if (!stillCurrent()) return;
         if (refreshed) {
@@ -2506,8 +2518,10 @@
       const dossierId = preferredDossierId || selectedDossierId || dossierParam;
       if (dossierId) {
         try {
-          const docs = await listDossierDocuments(dossierId);
-          const workspace = await loadDossierWorkspace(dossierId);
+          const [docs, workspace] = await Promise.all([
+            listDossierDocuments(dossierId),
+            loadDossierWorkspace(dossierId),
+          ]);
           if (!stillCurrent()) return;
           documentsCache = docs;
           workspaceSnapshot = workspace;
@@ -2519,6 +2533,7 @@
         } catch {
           if (!stillCurrent()) return;
           documentsCache = [];
+          workspaceSnapshot = null;
           pendingAnalysisCount = 0;
           bankPendingCount = 0;
           invoicePendingCount = 0;
@@ -2526,6 +2541,7 @@
         }
       } else {
         documentsCache = [];
+        workspaceSnapshot = null;
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
         invoicePendingCount = 0;
@@ -2533,6 +2549,7 @@
       }
 
       cockpit = await loadWorkspaceCockpit(client, dossierId, {
+        workspace: workspaceSnapshot,
         pendingAnalysis: pendingAnalysisCount,
         bankPending: bankPendingCount,
         invoicePending: invoicePendingCount,
@@ -2541,32 +2558,37 @@
       if (!stillCurrent()) return;
       if (cockpit.dossier) selectedDossierId = cockpit.dossier.id;
       renderCockpit();
-      await renderTimeline();
-      if (!stillCurrent()) return;
-      const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
-      if (dossierIds.length) {
-        try {
-          await reconcileStaleImportJobs(dossierIds);
-        } catch {
-          /* ignore cleanup errors */
+
+      const finishSecondary = async () => {
+        if (!stillCurrent()) return;
+        await renderTimeline();
+        if (!stillCurrent()) return;
+        const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
+        if (dossierIds.length) {
+          try {
+            await reconcileStaleImportJobs(dossierIds);
+          } catch {
+            /* ignore cleanup errors */
+          }
         }
-      }
-      if (!stillCurrent()) return;
-      await renderImportBanner();
-      if (!stillCurrent()) return;
-      await renderAnalysisCard();
-      if (!stillCurrent()) return;
-      if (activeTab === "documents") {
-        const hintEl = document.getElementById("documentsPeriodHint");
-        const isReadOnly = cockpit?.statusKey === "exported";
-        if (hintEl && cockpit?.dossier) {
-          hintEl.textContent = isReadOnly
-            ? `Documents de ${cockpit.periodLabel} — consultation seule (période déclarée)`
-            : `Documents de ${cockpit.periodLabel} — supprimez un fichier ou tout un dossier avec l'icône corbeille`;
+        if (!stillCurrent()) return;
+        await renderImportBanner();
+        if (!stillCurrent()) return;
+        await renderAnalysisCard();
+        if (!stillCurrent()) return;
+        if (activeTab === "documents") {
+          const hintEl = document.getElementById("documentsPeriodHint");
+          const isReadOnly = cockpit?.statusKey === "exported";
+          if (hintEl && cockpit?.dossier) {
+            hintEl.textContent = isReadOnly
+              ? `Documents de ${cockpit.periodLabel} — consultation seule (période déclarée)`
+              : `Documents de ${cockpit.periodLabel} — supprimez un fichier ou tout un dossier avec l'icône corbeille`;
+          }
+          renderDocumentsList();
         }
-        renderDocumentsList();
-      }
-      if (activeTab === "review") ensureReviewController()?.load();
+        if (activeTab === "review") (await ensureReviewController())?.load();
+      };
+      finishSecondary().catch(() => {});
     }
 
     function openNewPeriodModal(presetMonth) {
@@ -2608,15 +2630,11 @@
             persistAnalysisApiSettings();
             refreshAnalysisServerStatus().catch(() => {});
           });
-          await reloadCockpit(dossierParam);
+          await reloadCockpit(dossierParam, { refreshClient: false });
           if (tabParam) setTab(tabParam, { view: viewParam });
           const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
           if (dossierIds.length) {
-            try {
-              await dismissHistoricImportJobs(dossierIds);
-            } catch {
-              /* ignore */
-            }
+            dismissHistoricImportJobs(dossierIds).catch(() => {});
           }
           workspaceSessionStartedAt = new Date().toISOString();
           startCompletionWatcher();

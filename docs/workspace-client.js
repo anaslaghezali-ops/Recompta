@@ -12,8 +12,7 @@ import {
   resolvePriority,
   tvaDeadlineDate,
 } from "./portfolio-client.js?v=portfolio10";
-import { countLinesNeedingReview } from "./field-confidence.js?v=conf1";
-import { findDuplicateLineIndexes } from "./extract-client.js?v=notebook1";
+import { countAnomaliesFromStoredConfidence } from "./workspace-summary.js?v=summary1";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -162,10 +161,7 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
 
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
-  const anomalyCount = countLinesNeedingReview(lines, {
-    clientIce: client?.ice || "",
-    duplicateIndexes: findDuplicateLineIndexes(lines),
-  });
+  const anomalyCount = countAnomaliesFromStoredConfidence(lines);
   const progress = computeProgress(dossier, {
     lineCount: lines.length,
     bankCount: bank.length,
@@ -232,10 +228,18 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
 export async function loadWorkspaceCockpit(
   client,
   preferredDossierId = null,
-  { pendingAnalysis = 0, bankPending = 0, invoicePending = 0, invoiceDocumentCount = 0 } = {},
+  {
+    pendingAnalysis = 0,
+    bankPending = 0,
+    invoicePending = 0,
+    invoiceDocumentCount = 0,
+    workspace: providedWorkspace,
+  } = {},
 ) {
   const dossier = pickActiveDossier(client.dossiers, preferredDossierId);
-  const workspace = dossier ? await loadDossierWorkspace(dossier.id) : null;
+  const workspace = providedWorkspace !== undefined
+    ? providedWorkspace
+    : (dossier ? await loadDossierWorkspace(dossier.id) : null);
   return buildCockpitState(client, dossier, workspace, {
     pendingAnalysis,
     bankPending,
