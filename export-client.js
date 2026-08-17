@@ -127,10 +127,24 @@ function styleWorksheet(ws, rowCount) {
   };
 }
 
-export function exportDedTvaExcel({ clientName, period, lines }) {
+export async function ensureXlsxLoaded() {
+  if (globalThis.XLSX) return globalThis.XLSX;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Impossible de charger la librairie Excel."));
+    document.head.appendChild(script);
+  });
+  if (!globalThis.XLSX) throw new Error("Impossible de charger la librairie Excel.");
+  return globalThis.XLSX;
+}
+
+export async function exportDedTvaExcel({ clientName, period, lines }) {
   if (!/^\d{6}$/.test(period)) {
     throw new Error("La période doit être au format MMAAAA (ex: 062026).");
   }
+  await ensureXlsxLoaded();
 
   const sheetName = `EDI${period.slice(0, 2)}${period.slice(4, 6)}`;
   const rows = [HEADERS];

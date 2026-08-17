@@ -1064,7 +1064,7 @@ function downloadExcel() {
 
   (async () => {
   try {
-    const filename = exportDedTvaExcel({
+    const filename = await exportDedTvaExcel({
       clientName: els.clientName.value.trim() || "CLIENT",
       period: els.period.value.trim(),
       lines: state.lines.map(
