@@ -1,4 +1,4 @@
-import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=persist3";
+import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=persist4";
 import {
   formatMonthLabel,
   formatRelativeTime,
@@ -161,8 +161,9 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
 
   const lineCount = workspace?.lineCount ?? workspace?.lines?.length ?? 0;
   const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
-  const anomalyCount = workspace?.anomalyCount
-    ?? countAnomaliesFromStoredConfidence(workspace?.lines || []);
+  const anomalyCount = workspace?.anomalyCount != null
+    ? Number(workspace.anomalyCount) || 0
+    : countAnomaliesFromStoredConfidence(workspace?.lines || []);
   const progress = computeProgress(dossier, {
     lineCount,
     bankCount,

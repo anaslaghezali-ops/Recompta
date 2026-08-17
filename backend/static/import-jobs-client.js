@@ -6,7 +6,7 @@ import {
   partitionDocumentsForDisplay,
   shouldSkipZipForAnalysis,
   sourceIdsWithLines,
-} from "./dossier-documents.js?v=doc18";
+} from "./dossier-documents.js?v=doc19";
 import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
@@ -1160,7 +1160,9 @@ export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {
 }
 
 export function countPendingAnalysis(documents, workspace) {
-  const lines = workspace?.lineRefs || workspace?.lines || [];
+  const lines = (workspace?.lines?.length ? workspace.lines : null)
+    || workspace?.lineRefs
+    || [];
   const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
   const processedKeys = new Set();
 

@@ -50,6 +50,30 @@ function parseCockpitRow(data) {
   };
 }
 
+/** Prefers full lines when present; empty lineRefs must not hide them. */
+export function workspaceLinesForAnalysis(workspace) {
+  if (Array.isArray(workspace?.lines) && workspace.lines.length) return workspace.lines;
+  if (Array.isArray(workspace?.lineRefs) && workspace.lineRefs.length) return workspace.lineRefs;
+  return [];
+}
+
+/** Keep lines/bank already loaded (documents / revue) when a summary refresh arrives. */
+export function mergeWorkspaceSnapshot(current, next) {
+  if (!next) return current || null;
+  if ((next.lines && next.lines.length) || (next.bank_transactions && next.bank_transactions.length)) {
+    return next;
+  }
+  if ((current?.lines && current.lines.length) || (current?.bank_transactions && current.bank_transactions.length)) {
+    return {
+      ...current,
+      ...next,
+      lines: current.lines,
+      bank_transactions: current.bank_transactions,
+    };
+  }
+  return next;
+}
+
 export async function loadDossierWorkspaceSummary(dossierId) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return null;
@@ -84,10 +108,11 @@ export async function loadDossierWorkspaceSummary(dossierId) {
   const full = await loadDossierWorkspace(dossierId);
   if (!full) return null;
   const lines = full.lines || [];
+  const storedAnomalies = summary.data?.anomaly_count;
   return {
     lineCount: lines.length,
     bankCount: (full.bank_transactions || []).length,
-    anomalyCount: Number(summary.data?.anomaly_count) || 0,
+    anomalyCount: storedAnomalies != null ? Number(storedAnomalies) || 0 : undefined,
     updated_at: full.updated_at,
     bank_meta: full.bank_meta,
     lineRefs: lines.map((line) => ({
