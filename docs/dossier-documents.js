@@ -581,11 +581,45 @@ export function collectDocumentsForDeletion(docs, allDocs, options = {}) {
   return [...byId.values()];
 }
 
+function documentRowIds(docs) {
+  return [...new Set(
+    (docs || [])
+      .map((doc) => Number(doc?.id))
+      .filter((id) => Number.isFinite(id) && id > 0),
+  )];
+}
+
+async function deleteDossierDocumentRows(supabase, ids) {
+  const { data, error } = await supabase.rpc("delete_dossier_documents", { p_ids: ids });
+  if (!error) {
+    return (Array.isArray(data) ? data : []).map(Number).filter((id) => Number.isFinite(id));
+  }
+  const missingRpc = error.code === "PGRST202" || /delete_dossier_documents/i.test(error.message || "");
+  if (!missingRpc) throw error;
+
+  const { data: rows, error: tableError } = await supabase
+    .from("dossier_documents")
+    .delete()
+    .in("id", ids)
+    .select("id");
+  if (tableError) throw tableError;
+  return (rows || []).map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+}
+
 export async function deleteDossierDocuments(docs) {
   const supabase = getSupabase();
-  const list = [...new Map((docs || []).filter((doc) => doc?.id).map((doc) => [doc.id, doc])).values()];
+  const list = [...new Map((docs || []).filter((doc) => doc?.id).map((doc) => [String(doc.id), doc])).values()];
   if (!list.length) return true;
   if (!supabase) throw new Error("Session indisponible.");
+
+  const ids = documentRowIds(list);
+  if (!ids.length) throw new Error("Document introuvable.");
+
+  const deletedIds = await deleteDossierDocumentRows(supabase, ids);
+  const deletedSet = new Set(deletedIds);
+  if (deletedSet.size !== ids.length) {
+    throw new Error("La suppression n'a pas été enregistrée. Le fichier est encore dans le dossier.");
+  }
 
   const paths = list.map((doc) => doc.storage_path).filter(Boolean);
   for (let i = 0; i < paths.length; i += 100) {
@@ -596,13 +630,6 @@ export async function deleteDossierDocuments(docs) {
     if (storageError && !/not found|object not found/i.test(storageError.message || "")) {
       throw storageError;
     }
-  }
-
-  const ids = list.map((doc) => doc.id);
-  for (let i = 0; i < ids.length; i += 200) {
-    const chunk = ids.slice(i, i + 200);
-    const { error } = await supabase.from("dossier_documents").delete().in("id", chunk);
-    if (error) throw error;
   }
   return true;
 }
