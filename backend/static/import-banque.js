@@ -35,7 +35,6 @@ const els = {};
 let session = null;
 let pendingBankMatchQueue = [];
 let lastBankApplyStats = null;
-let skipBankMatchCloseHandler = false;
 let bankFile = null;
 let queuing = false;
 let stopJobPolling = null;
@@ -432,15 +431,20 @@ function showNextBankMatchDialog() {
     updateBankMatchInvoiceDetail();
     const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
     els.bankMatchLearnWrap.hidden = !bankToken;
-    els.bankMatchDialog.showModal();
-    return;
+    if (!els.bankMatchDialog.open) els.bankMatchDialog.showModal();
+    return true;
   }
+  if (els.bankMatchDialog.open) els.bankMatchDialog.close();
   updateApplyStatus();
+  return false;
 }
 
 function confirmBankMatch() {
   const item = pendingBankMatchQueue[0];
-  if (!item) return;
+  if (!item) {
+    showNextBankMatchDialog();
+    return;
+  }
   const proposals = validBankMatchProposals(item);
   const selectedId = els.bankMatchProposals.querySelector('input[name="bankProposal"]:checked')?.value;
   const proposal = proposals.find((p) => p.id === selectedId) || proposals[0];
@@ -458,9 +462,6 @@ function confirmBankMatch() {
   if (lastBankApplyStats?.paymentsPending > 0) lastBankApplyStats.paymentsPending -= 1;
   if (lastBankApplyStats) lastBankApplyStats.paymentsMatched += 1;
   pendingBankMatchQueue.shift();
-  skipBankMatchCloseHandler = true;
-  els.bankMatchDialog.close();
-  skipBankMatchCloseHandler = false;
   showNextBankMatchDialog();
   if (!pendingBankMatchQueue.length) {
     persistWorkspaceNow(session, setStatus, "bank_match", "Rapprochement bancaire confirmé");
@@ -562,9 +563,12 @@ export async function bootImportBanque() {
   els.bankMatchConfirm?.addEventListener("click", (e) => { e.preventDefault(); confirmBankMatch(); });
   els.bankMatchProposals?.addEventListener("change", updateBankMatchInvoiceDetail);
   els.bankMatchDialog?.addEventListener("close", () => {
-    if (skipBankMatchCloseHandler) return;
-    if (pendingBankMatchQueue.length) pendingBankMatchQueue.shift();
-    showNextBankMatchDialog();
+    if (!pendingBankMatchQueue.length) {
+      updateApplyStatus();
+      return;
+    }
+    pendingBankMatchQueue.shift();
+    setTimeout(() => showNextBankMatchDialog(), 0);
   });
 
   initLucide();

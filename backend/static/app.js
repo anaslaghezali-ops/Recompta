@@ -261,7 +261,6 @@ const els = {
 
 let pendingBankMatchQueue = [];
 let lastBankApplyStats = null;
-let skipBankMatchCloseHandler = false;
 
 const previewUi = {
   panel: els.previewPanel,
@@ -1366,16 +1365,21 @@ function showNextBankMatchDialog() {
     els.bankMatchLearnWrap.hidden = !showLearn;
     if (showLearn) els.bankMatchLearnAlias.checked = true;
 
-    els.bankMatchDialog.showModal();
-    return;
+    if (!els.bankMatchDialog.open) els.bankMatchDialog.showModal();
+    return true;
   }
 
+  if (els.bankMatchDialog.open) els.bankMatchDialog.close();
   updateBankStatusMessage();
+  return false;
 }
 
 function confirmBankMatch() {
   const item = pendingBankMatchQueue[0];
-  if (!item) return;
+  if (!item) {
+    showNextBankMatchDialog();
+    return;
+  }
 
   const selectedId = els.bankMatchProposals.querySelector('input[name="bankProposal"]:checked')?.value;
   const proposals = validBankMatchProposals(item);
@@ -1401,9 +1405,6 @@ function confirmBankMatch() {
   pendingBankMatchQueue.shift();
   renderTable();
   updateButtons();
-  skipBankMatchCloseHandler = true;
-  els.bankMatchDialog.close();
-  skipBankMatchCloseHandler = false;
   showNextBankMatchDialog();
   if (!pendingBankMatchQueue.length) scheduleWorkspaceSave("bank_match", "Rapprochement bancaire confirmé");
 }
@@ -1578,10 +1579,13 @@ els.bankMatchConfirm?.addEventListener("click", (event) => {
 els.bankMatchProposals?.addEventListener("change", (event) => {
   if (event.target?.name === "bankProposal") updateBankMatchInvoiceDetail();
 });
-els.bankMatchForm?.addEventListener("close", () => {
-  if (skipBankMatchCloseHandler) return;
-  if (pendingBankMatchQueue.length > 0) pendingBankMatchQueue.shift();
-  showNextBankMatchDialog();
+els.bankMatchDialog?.addEventListener("close", () => {
+  if (!pendingBankMatchQueue.length) {
+    updateBankStatusMessage();
+    return;
+  }
+  pendingBankMatchQueue.shift();
+  setTimeout(() => showNextBankMatchDialog(), 0);
 });
 loadClientSettings();
 updateFilenamePreview();

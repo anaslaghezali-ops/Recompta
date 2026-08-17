@@ -52,8 +52,9 @@ export function createWorkspaceBankMatch({
   let bankTransactions = [];
   let pendingQueue = [];
   let lastStats = null;
-  let skipCloseHandler = false;
   let running = false;
+  let confirming = false;
+  let finishStarted = false;
 
   function validProposals(item) {
     return (item.proposals || []).filter((proposal) =>
@@ -109,7 +110,11 @@ export function createWorkspaceBankMatch({
     els.invoiceDetail.hidden = rows.length === 0;
   }
 
-  function showNextDialog() {
+  function dialogIsOpen() {
+    return Boolean(els.dialog?.open);
+  }
+
+  function presentCurrentMatch() {
     while (pendingQueue.length > 0) {
       const item = pendingQueue[0];
       const proposals = validProposals(item);
@@ -138,10 +143,16 @@ export function createWorkspaceBankMatch({
       const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
       if (els.learnWrap) els.learnWrap.hidden = !bankToken;
       if (bankToken && els.learnAlias) els.learnAlias.checked = true;
-      els.dialog?.showModal();
-      return;
+      if (!dialogIsOpen()) els.dialog?.showModal();
+      return true;
     }
-    finishAfterDialog();
+    return false;
+  }
+
+  function showNextDialog() {
+    if (presentCurrentMatch()) return;
+    if (dialogIsOpen()) els.dialog.close();
+    else finishAfterDialog();
   }
 
   async function persistLines(summary, eventType = "bank_match") {
@@ -158,7 +169,8 @@ export function createWorkspaceBankMatch({
   }
 
   async function finishAfterDialog() {
-    if (!lastStats) return;
+    if (!lastStats || finishStarted) return;
+    finishStarted = true;
     const { paymentsMatched, paymentsUnmatched, paymentsPending, feesAdded } = lastStats;
     let message = `${paymentsMatched} paiement(s) rapproché(s), ${feesAdded} frais bancaire(s) ajouté(s).`;
     if (paymentsPending) message += ` ${paymentsPending} virement(s) ignoré(s).`;
@@ -172,8 +184,12 @@ export function createWorkspaceBankMatch({
   }
 
   async function confirmMatch() {
+    if (confirming) return;
     const item = pendingQueue[0];
-    if (!item) return;
+    if (!item) {
+      showNextDialog();
+      return;
+    }
     const proposals = validProposals(item);
     const selectedId = els.proposals?.querySelector('input[name="bankProposal"]:checked')?.value;
     const proposal = proposals.find((p) => p.id === selectedId) || proposals[0];
@@ -182,20 +198,24 @@ export function createWorkspaceBankMatch({
       showNextDialog();
       return;
     }
-    const { clientIce } = getContext() || {};
-    applyPaymentToLineIndices(lines, proposal.indices, item.txn);
-    const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
-    if (els.learnAlias?.checked && bankToken) {
-      saveBankAlias(clientIce, bankToken, proposal.supplierKey, proposal.lib_frss);
+    confirming = true;
+    if (els.confirmBtn) els.confirmBtn.disabled = true;
+    try {
+      const { clientIce } = getContext() || {};
+      applyPaymentToLineIndices(lines, proposal.indices, item.txn);
+      const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
+      if (els.learnAlias?.checked && bankToken) {
+        saveBankAlias(clientIce, bankToken, proposal.supplierKey, proposal.lib_frss);
+      }
+      if (lastStats?.paymentsPending > 0) lastStats.paymentsPending -= 1;
+      if (lastStats) lastStats.paymentsMatched += 1;
+      pendingQueue.shift();
+      showNextDialog();
+      persistLines("Rapprochement confirmé", "bank_match").catch(() => {});
+    } finally {
+      confirming = false;
+      if (els.confirmBtn) els.confirmBtn.disabled = false;
     }
-    if (lastStats?.paymentsPending > 0) lastStats.paymentsPending -= 1;
-    if (lastStats) lastStats.paymentsMatched += 1;
-    pendingQueue.shift();
-    await persistLines("Rapprochement confirmé", "bank_match");
-    skipCloseHandler = true;
-    els.dialog?.close();
-    skipCloseHandler = false;
-    showNextDialog();
   }
 
   els.confirmBtn?.addEventListener("click", (event) => {
@@ -204,9 +224,14 @@ export function createWorkspaceBankMatch({
   });
   els.proposals?.addEventListener("change", updateInvoiceDetail);
   els.dialog?.addEventListener("close", () => {
-    if (skipCloseHandler) return;
-    if (pendingQueue.length) pendingQueue.shift();
-    showNextDialog();
+    if (!pendingQueue.length) {
+      finishAfterDialog();
+      return;
+    }
+    pendingQueue.shift();
+    setTimeout(() => {
+      if (!presentCurrentMatch()) finishAfterDialog();
+    }, 0);
   });
 
   async function run() {
@@ -249,6 +274,7 @@ export function createWorkspaceBankMatch({
       lines = result.lines;
       pendingQueue = result.pendingMatches || [];
       lastStats = { ...result.stats };
+      finishStarted = false;
 
       const autoMatched = (lastStats.paymentsMatched || 0) > 0 || (lastStats.feesAdded || 0) > 0;
       if (autoMatched) {
