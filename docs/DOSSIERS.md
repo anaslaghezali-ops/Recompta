@@ -20,6 +20,9 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 1. `supabase/migrations/20260813220000_cabinet_clients_dossiers.sql` → **Run**
 2. Si erreur RLS à la création de dossier : `supabase/migrations/20260813230000_fix_dossiers_rls.sql` → **Run**
 3. Persistance lignes + banque + historique : `supabase/migrations/20260813240000_dossier_workspace_persistence.sql` → **Run**
+4. Documents + Storage : `supabase/migrations/20260813250000_dossier_documents.sql` → **Run**
+5. File d'import : `supabase/migrations/20260813260000_import_jobs.sql` → **Run**
+6. Suppression réelle des documents : `supabase/migrations/20260817200000_delete_dossier_documents_rpc.sql` → **Run**
 
 ## Flux cabinet
 
