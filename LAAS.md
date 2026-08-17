@@ -70,6 +70,10 @@ Autres colonnes (pas pour le solde) : date, client, téléphone, motif d’annul
 
 6 retours Excel avec K = 0 n’ont aucune ligne facture — cohérent avec la règle.
 
+## Outil
+
+Page web (GitHub Pages) : **`/laas/laas.html`** — import Excel + factures PDF, rapprochement par quinzaine et explication des écarts (refunds, commandes absentes de l’Excel, etc.).
+
 ## À valider plus tard (pas maintenant)
 
 - Un export Excel peut omettre des commandes déjà facturées.
