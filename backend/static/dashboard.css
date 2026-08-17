@@ -3438,6 +3438,13 @@
   min-height: 420px;
 }
 
+.ws-suppliers-layout[hidden],
+#suppliersDetail[hidden],
+#suppliersDetailEmpty[hidden],
+#suppliersEmpty[hidden] {
+  display: none !important;
+}
+
 .ws-suppliers-list-pane {
   border: 1px solid var(--dash-border);
   border-radius: 12px;
