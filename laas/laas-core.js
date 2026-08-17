@@ -271,7 +271,10 @@ export function reconcileFortnight(orders, pdf, fortnight) {
     .map((line) => ({
       orderId: line.orderId,
       pdfFeeHt: line.ht,
+      pdfTva: line.tva,
+      pdfTtc: line.ttc,
       serviceDate: line.serviceDate,
+      pdfLine: `Serv. On Demand ${line.orderId} ${line.serviceDate || ""}`.trim(),
       note: "Présente sur la facture PDF mais absente de l’export Excel.",
     }));
 
@@ -323,6 +326,19 @@ export function reconcileFortnight(orders, pdf, fortnight) {
       title: "Remboursements (refunds) uniquement sur le PDF",
       detail: `${pdf.refunds.length} ligne(s) Refunds. On Demand pour ${formatMad(refundsHt)} HT — absentes de l’export Excel. Elles réduisent la facture TTC.`,
       amount: refundsHt,
+      items: pdf.refunds.map((line) => ({
+        pdfLine: line.label,
+        pdfFeeHt: line.ht,
+        pdfTva: line.tva,
+        pdfTtc: line.ttc,
+      })),
+      bridge: {
+        fees: {
+          excel: excel.feeHt,
+          missing: refundsHt,
+          pdf: pdfAgg.feeHt,
+        },
+      },
     });
   }
 
@@ -335,12 +351,31 @@ export function reconcileFortnight(orders, pdf, fortnight) {
   }
 
   if (missingInExcel.length) {
+    const missingTtc = round2(missingInExcel.reduce((s, row) => s + row.pdfTtc, 0));
     explanations.push({
       kind: "missing-excel",
       title: "Commandes facturées mais absentes de l’Excel",
-      detail: `${missingInExcel.length} commande(s) sur la facture ne figurent pas dans l’export (${formatMad(missingFeesHt)} de frais HT). L’export plateforme peut être incomplet.`,
+      detail: `${missingInExcel.length} commande(s) sur la facture ne figurent pas dans l’export (${formatMad(missingFeesHt)} HT · ${formatMad(missingTtc)} TTC). L’export plateforme peut être incomplet.`,
       amount: missingFeesHt,
       items: missingInExcel,
+      bridge: {
+        fees: {
+          excel: excel.feeHt,
+          missing: missingFeesHt,
+          pdf: pdfAgg.feeHt,
+        },
+        collected: {
+          excel: excel.collected,
+          missing: collectedDelta,
+          pdf: pdfAgg.collected,
+          note: "Le PDF ne détaille pas le montant collecté (F) par commande. L’écart correspond au F des livrées absentes de l’Excel.",
+        },
+        invoiceTtc: {
+          excel: excel.invoiceTtcFromFees,
+          missing: missingTtc,
+          pdf: pdfAgg.invoiceTtc,
+        },
+      },
     });
   }
 

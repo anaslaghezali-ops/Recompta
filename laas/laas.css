@@ -198,6 +198,40 @@ th {
   color: var(--text);
 }
 
+.lines-table,
+.bridge-table {
+  width: 100%;
+  margin-top: 0.75rem;
+  font-size: 0.84rem;
+}
+
+.lines-table th,
+.bridge-table th {
+  font-size: 0.72rem;
+}
+
+.lines-total td {
+  border-top: 2px solid var(--border);
+  background: #f8fafc;
+}
+
+.bridge-missing {
+  color: var(--warn);
+}
+
+.bridge-hint {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.bridge-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 .empty {
   color: var(--muted);
   text-align: center;

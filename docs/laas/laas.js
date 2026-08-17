@@ -121,12 +121,110 @@ function renderComparisonRow(label, excelValue, pdfValue, delta) {
   `;
 }
 
+function renderBridgeRow(label, excelValue, missingValue, pdfValue, { missingSign = "+", missingLabel = "lignes manquantes" } = {}) {
+  return `
+    <tr>
+      <td>${escapeHtml(label)}</td>
+      <td class="num">${escapeHtml(formatMad(excelValue))}</td>
+      <td class="num bridge-missing">${escapeHtml(missingSign)} ${escapeHtml(formatMad(missingValue))}<br><span class="bridge-hint">${escapeHtml(missingLabel)}</span></td>
+      <td class="num">= ${escapeHtml(formatMad(pdfValue))}</td>
+    </tr>
+  `;
+}
+
+function renderBridgeTable(bridge, note) {
+  if (!bridge) return "";
+  const rows = [];
+  if (bridge.fees) {
+    rows.push(renderBridgeRow(
+      "Frais livraison HT",
+      bridge.fees.excel,
+      bridge.fees.missing,
+      bridge.fees.pdf,
+      { missingLabel: "PDF absentes Excel / refunds" },
+    ));
+  }
+  if (bridge.collected) {
+    rows.push(renderBridgeRow(
+      "Montant collecté (F livrées)",
+      bridge.collected.excel,
+      bridge.collected.missing,
+      bridge.collected.pdf,
+      { missingLabel: "F des commandes absentes Excel" },
+    ));
+  }
+  if (bridge.invoiceTtc) {
+    rows.push(renderBridgeRow(
+      "Facture TTC",
+      bridge.invoiceTtc.excel,
+      bridge.invoiceTtc.missing,
+      bridge.invoiceTtc.pdf,
+      { missingLabel: "TTC des lignes absentes Excel" },
+    ));
+  }
+  if (!rows.length) return "";
+
+  return `
+    <table class="bridge-table">
+      <thead>
+        <tr>
+          <th>Indicateur</th>
+          <th class="num">Excel</th>
+          <th class="num">+ écart expliqué</th>
+          <th class="num">= PDF</th>
+        </tr>
+      </thead>
+      <tbody>${rows.join("")}</tbody>
+    </table>
+    ${note || bridge.collected?.note ? `<p class="bridge-note">${escapeHtml(note || bridge.collected.note)}</p>` : ""}
+  `;
+}
+
+function renderPdfLinesTable(items) {
+  if (!items?.length) return "";
+  const hasOrderId = items.some((item) => item.orderId);
+  const totalHt = round2(items.reduce((s, item) => s + (item.pdfFeeHt || 0), 0));
+  const totalTva = round2(items.reduce((s, item) => s + (item.pdfTva || 0), 0));
+  const totalTtc = round2(items.reduce((s, item) => s + (item.pdfTtc || 0), 0));
+
+  return `
+    <table class="lines-table">
+      <thead>
+        <tr>
+          ${hasOrderId ? "<th>Order id</th><th>Date</th>" : "<th>Ligne PDF</th>"}
+          <th class="num">HT</th>
+          <th class="num">TVA</th>
+          <th class="num">TTC</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item) => `
+          <tr>
+            ${hasOrderId
+              ? `<td><code>${escapeHtml(item.orderId)}</code></td><td>${escapeHtml(item.serviceDate || "—")}</td>`
+              : `<td>${escapeHtml(item.pdfLine || "Refunds. On Demand")}</td>`}
+            <td class="num">${escapeHtml(formatMad(item.pdfFeeHt))}</td>
+            <td class="num">${escapeHtml(formatMad(item.pdfTva))}</td>
+            <td class="num">${escapeHtml(formatMad(item.pdfTtc))}</td>
+          </tr>
+        `).join("")}
+        <tr class="lines-total">
+          ${hasOrderId ? "<td colspan=\"2\"><strong>Total lignes</strong></td>" : "<td><strong>Total</strong></td>"}
+          <td class="num"><strong>${escapeHtml(formatMad(totalHt))}</strong></td>
+          <td class="num"><strong>${escapeHtml(formatMad(totalTva))}</strong></td>
+          <td class="num"><strong>${escapeHtml(formatMad(totalTtc))}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
 function renderExplanation(explanation) {
-  const items = explanation.items?.length
+  const hasPdfLines = explanation.items?.some((item) => item.pdfFeeHt != null && (item.orderId || item.pdfLine));
+  const pdfLinesTable = hasPdfLines ? renderPdfLinesTable(explanation.items) : "";
+
+  const legacyItems = !hasPdfLines && explanation.items?.length
     ? `<ul>${explanation.items.slice(0, 12).map((item) => {
-      if (item.orderId && item.pdfFeeHt != null) {
-        return `<li><code>${escapeHtml(item.orderId)}</code> — frais PDF ${escapeHtml(formatMad(item.pdfFeeHt))}${item.serviceDate ? ` (${escapeHtml(item.serviceDate)})` : ""}</li>`;
-      }
       if (item.orderId && item.deliveryFee != null) {
         return `<li><code>${escapeHtml(item.orderId)}</code> — ${escapeHtml(item.status)} · K ${escapeHtml(formatMad(item.deliveryFee))} · F ${escapeHtml(formatMad(item.orderAmount || 0))}</li>`;
       }
@@ -137,11 +235,15 @@ function renderExplanation(explanation) {
     }).join("")}${explanation.items.length > 12 ? `<li>… et ${explanation.items.length - 12} autre(s)</li>` : ""}</ul>`
     : "";
 
+  const bridgeTable = renderBridgeTable(explanation.bridge);
+
   return `
     <article class="explain">
       <h4>${escapeHtml(explanation.title)}</h4>
       <p>${escapeHtml(explanation.detail)}</p>
-      ${items}
+      ${pdfLinesTable}
+      ${bridgeTable}
+      ${legacyItems}
     </article>
   `;
 }
