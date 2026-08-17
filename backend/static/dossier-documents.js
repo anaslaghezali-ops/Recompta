@@ -70,19 +70,83 @@ export function documentsAreExactDuplicates(a, b) {
 
 export function dedupeDocuments(docs) {
   const kept = [];
+  const byKey = new Map();
   for (const doc of docs || []) {
-    const duplicateIndex = kept.findIndex((row) => documentsAreExactDuplicates(row, doc));
-    if (duplicateIndex === -1) {
+    const key = doc?.id
+      ? `id:${doc.id}`
+      : doc?.storage_path
+        ? `path:${doc.storage_path}`
+        : doc?.source_id
+          ? `sid:${doc.source_id}`
+          : null;
+    if (!key) {
       kept.push(doc);
       continue;
     }
-    if (new Date(doc.created_at) > new Date(kept[duplicateIndex].created_at)) {
-      kept[duplicateIndex] = doc;
+    const existingIndex = byKey.get(key);
+    if (existingIndex == null) {
+      byKey.set(key, kept.length);
+      kept.push(doc);
+      continue;
+    }
+    if (new Date(doc.created_at) > new Date(kept[existingIndex].created_at)) {
+      kept[existingIndex] = doc;
     }
   }
   return kept.sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
+}
+
+export const UPLOAD_CONCURRENCY = 4;
+
+export async function mapPool(items, concurrency, worker) {
+  const list = items || [];
+  const results = new Array(list.length);
+  let next = 0;
+  async function run() {
+    while (next < list.length) {
+      const index = next;
+      next += 1;
+      results[index] = await worker(list[index], index);
+    }
+  }
+  const n = Math.max(1, Math.min(concurrency || UPLOAD_CONCURRENCY, list.length || 1));
+  await Promise.all(Array.from({ length: list.length ? n : 0 }, () => run()));
+  return results;
+}
+
+export function indexDocumentsByIdentity(docs) {
+  const index = new Map();
+  for (const doc of docs || []) {
+    for (const key of documentIdentityKeys(doc.original_filename || "")) {
+      const rows = index.get(key) || [];
+      rows.push(doc);
+      index.set(key, rows);
+    }
+  }
+  return index;
+}
+
+export function findIndexedDocument(index, filename, fileSize = null) {
+  if (!index) return null;
+  for (const key of documentIdentityKeys(filename)) {
+    const rows = index.get(key) || [];
+    const match = fileSize == null
+      ? rows[0]
+      : rows.find((row) => Number(row.size_bytes || 0) === Number(fileSize));
+    if (match) return match;
+  }
+  return null;
+}
+
+function rememberIndexedDocument(index, doc) {
+  if (!index || !doc) return;
+  for (const key of documentIdentityKeys(doc.original_filename || "")) {
+    const rows = index.get(key) || [];
+    rows.unshift(doc);
+    index.set(key, rows);
+  }
 }
 
 export async function findDossierDocumentByIdentity(dossierId, filename) {
@@ -112,6 +176,8 @@ export async function uploadDossierDocument({
   docType,
   sourceId = null,
   skipIfSameNameAndSize = false,
+  existingIndex = null,
+  uploadedBy = undefined,
 }) {
   const supabase = getSupabase();
   if (!supabase || !dossierId || !file) return null;
@@ -120,7 +186,9 @@ export async function uploadDossierDocument({
   const fileSize = file.size || 0;
 
   if (skipIfSameNameAndSize) {
-    const existing = await findDossierDocumentByIdentity(dossierId, originalFilename);
+    const existing = existingIndex
+      ? findIndexedDocument(existingIndex, originalFilename, fileSize)
+      : await findDossierDocumentByIdentity(dossierId, originalFilename);
     if (existing && Number(existing.size_bytes || 0) === Number(fileSize)) {
       return { ...existing, reused: true };
     }
@@ -159,8 +227,11 @@ export async function uploadDossierDocument({
     throw new Error(raw || "Envoi Storage refusé (400).");
   }
 
-  const { data: userData } = await supabase.auth.getUser();
-  const uploadedBy = userData?.user?.id || null;
+  let resolvedUploadedBy = uploadedBy;
+  if (resolvedUploadedBy === undefined) {
+    const { data: userData } = await supabase.auth.getUser();
+    resolvedUploadedBy = userData?.user?.id || null;
+  }
 
   const { data, error } = await supabase
     .from("dossier_documents")
@@ -172,7 +243,7 @@ export async function uploadDossierDocument({
       mime_type: mimeType,
       size_bytes: fileSize,
       source_id: resolvedSourceId,
-      uploaded_by: uploadedBy,
+      uploaded_by: resolvedUploadedBy || null,
     })
     .select("id, dossier_id, doc_type, original_filename, storage_path, mime_type, size_bytes, source_id, created_at")
     .single();
@@ -182,6 +253,7 @@ export async function uploadDossierDocument({
     throw error;
   }
 
+  rememberIndexedDocument(existingIndex, data);
   return data;
 }
 
@@ -193,6 +265,8 @@ export async function uploadDossierDocumentFromBlob({
   docType,
   sourceId = null,
   skipIfSameNameAndSize = false,
+  existingIndex = null,
+  uploadedBy = undefined,
 }) {
   const file = new File([content], filename, { type: mime || "application/octet-stream" });
   return uploadDossierDocument({
@@ -201,6 +275,8 @@ export async function uploadDossierDocumentFromBlob({
     docType,
     sourceId,
     skipIfSameNameAndSize,
+    existingIndex,
+    uploadedBy,
   });
 }
 
@@ -217,16 +293,36 @@ export function storagePathForZipMember(zipFilename, memberPath) {
   return parts.join("/");
 }
 
-/**
- * Importe un fichier dans le dossier. Les ZIP sont décompressés immédiatement :
- * le conteneur est stocké en archive, chaque pièce exploitable en facture distincte.
- */
+export async function prepareDossierUploadContext(dossierId) {
+  const supabase = getSupabase();
+  const existing = await listDossierDocuments(dossierId);
+  let uploadedBy = null;
+  if (supabase) {
+    const { data: userData } = await supabase.auth.getUser();
+    uploadedBy = userData?.user?.id || null;
+  }
+  return {
+    existing,
+    existingIndex: indexDocumentsByIdentity(existing),
+    uploadedBy,
+  };
+}
+
+/** ZIP : archive + factures enfants envoyés en parallèle (4 à la fois). */
 export async function uploadDossierFileForImport({
   dossierId,
   file,
   skipIfSameNameAndSize = true,
+  existingIndex = null,
+  uploadedBy = undefined,
 }) {
   if (!file) return null;
+
+  if (!existingIndex || uploadedBy === undefined) {
+    const context = await prepareDossierUploadContext(dossierId);
+    existingIndex = existingIndex || context.existingIndex;
+    if (uploadedBy === undefined) uploadedBy = context.uploadedBy;
+  }
 
   if (isZipFile(file.name)) {
     const archive = await uploadDossierDocument({
@@ -234,28 +330,31 @@ export async function uploadDossierFileForImport({
       file,
       docType: "archive",
       skipIfSameNameAndSize,
+      existingIndex,
+      uploadedBy,
     });
     const expanded = await expandUploadedFiles([file]);
     if (!expanded.length) {
       throw new Error("Archive vide ou sans facture exploitable (PDF, image).");
     }
 
-    const children = [];
-    for (const item of expanded) {
+    const children = await mapPool(expanded, UPLOAD_CONCURRENCY, async (item) => {
       const filename = storagePathForZipMember(file.name, item.filename);
-      const child = await uploadDossierDocumentFromBlob({
+      return uploadDossierDocumentFromBlob({
         dossierId,
         filename,
         content: item.content,
         mime: item.mime,
         docType: "invoice",
         skipIfSameNameAndSize,
+        existingIndex,
+        uploadedBy,
       });
-      if (child) children.push(child);
-    }
+    });
+    const savedChildren = children.filter(Boolean);
 
-    const allReused = Boolean(archive?.reused) && children.every((child) => child?.reused);
-    return { archive, children, reused: allReused };
+    const allReused = Boolean(archive?.reused) && savedChildren.every((child) => child?.reused);
+    return { archive, children: savedChildren, reused: allReused };
   }
 
   const document = await uploadDossierDocument({
@@ -263,6 +362,8 @@ export async function uploadDossierFileForImport({
     file,
     docType: "invoice",
     skipIfSameNameAndSize,
+    existingIndex,
+    uploadedBy,
   });
   return { document, children: [], reused: Boolean(document?.reused) };
 }
@@ -611,8 +712,8 @@ export async function downloadDossierDocument(doc) {
 
 export function isDocumentAnalyzed(doc, workspace) {
   if (!doc) return false;
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
+  const lines = workspace?.lineRefs || workspace?.lines || [];
+  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
   const processedKeys = new Set();
 
   for (const line of lines) {
@@ -623,7 +724,7 @@ export function isDocumentAnalyzed(doc, workspace) {
   }
 
   if (doc.doc_type === "bank") {
-    return bank.length > 0;
+    return bankCount > 0;
   }
   return isInvoiceDocumentProcessed(doc, processedKeys, sourceIdsWithLines(lines));
 }

@@ -6,7 +6,7 @@ import {
   partitionDocumentsForDisplay,
   shouldSkipZipForAnalysis,
   sourceIdsWithLines,
-} from "./dossier-documents.js?v=doc10";
+} from "./dossier-documents.js?v=doc18";
 import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
@@ -1160,8 +1160,8 @@ export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {
 }
 
 export function countPendingAnalysis(documents, workspace) {
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
+  const lines = workspace?.lineRefs || workspace?.lines || [];
+  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
   const processedKeys = new Set();
 
   for (const line of lines) {
@@ -1185,7 +1185,7 @@ export function countPendingAnalysis(documents, workspace) {
         ? withLines.has(doc.source_id)
         : [...keys].some((key) => processedKeys.has(key));
       if (!processed) invoicePending += 1;
-    } else if (doc.doc_type === "bank" && bank.length === 0) {
+    } else if (doc.doc_type === "bank" && bankCount === 0) {
       bankPending += 1;
     }
   }

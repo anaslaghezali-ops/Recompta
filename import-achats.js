@@ -19,7 +19,7 @@ import {
   getApiUrl,
   saveApiUrl,
 } from "./api-client.js?v=api7";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist3";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
@@ -32,7 +32,7 @@ import {
   listImportJobs,
   startImportJobPolling,
   startInvoiceImportUpload,
-} from "./import-jobs-client.js?v=jobs12";
+} from "./import-jobs-client.js?v=jobs27";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc17";
+import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc18";
 
 const els = {};
 let session = null;
@@ -362,6 +362,7 @@ async function runQueue() {
   let reused = 0;
   let expandedFromArchives = 0;
   const failures = [];
+  const uploadContext = await prepareDossierUploadContext(session.dossierId);
 
   for (let index = 0; index < filesToSend.length; index += 1) {
     const file = filesToSend[index];
@@ -378,6 +379,8 @@ async function runQueue() {
         dossierId: session.dossierId,
         file,
         skipIfSameNameAndSize: true,
+        existingIndex: uploadContext.existingIndex,
+        uploadedBy: uploadContext.uploadedBy,
       });
       if (saved?.reused) reused += 1;
       else uploaded += 1;

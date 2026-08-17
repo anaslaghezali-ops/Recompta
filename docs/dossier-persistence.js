@@ -37,6 +37,69 @@ export function createDebouncedSaver(fn, delayMs = 2000) {
   };
 }
 
+function parseCockpitRow(data) {
+  const row = typeof data === "string" ? JSON.parse(data) : data;
+  return {
+    lineCount: Number(row.line_count) || 0,
+    bankCount: Number(row.bank_count) || 0,
+    anomalyCount: Number(row.anomaly_count) || 0,
+    updated_at: row.updated_at || null,
+    bank_meta: { ...DEFAULT_BANK_META, ...(row.bank_meta || {}) },
+    lineRefs: Array.isArray(row.line_refs) ? row.line_refs : [],
+    missingPaymentDates: Number(row.missing_payment_dates) || 0,
+  };
+}
+
+export async function loadDossierWorkspaceSummary(dossierId) {
+  const supabase = getSupabase();
+  if (!supabase || !dossierId) return null;
+
+  const rpc = await supabase.rpc("get_workspace_cockpit", { p_dossier_id: dossierId });
+  if (!rpc.error && rpc.data) {
+    try {
+      return parseCockpitRow(rpc.data);
+    } catch {
+      /* fallback below */
+    }
+  }
+
+  const summary = await supabase
+    .from("dossier_workspaces")
+    .select("dossier_id, line_count, bank_count, anomaly_count, bank_meta, updated_at")
+    .eq("dossier_id", dossierId)
+    .maybeSingle();
+
+  if (!summary.error && summary.data && !(Number(summary.data.line_count) > 0)) {
+    return {
+      lineCount: Number(summary.data.line_count) || 0,
+      bankCount: Number(summary.data.bank_count) || 0,
+      anomalyCount: Number(summary.data.anomaly_count) || 0,
+      updated_at: summary.data.updated_at || null,
+      bank_meta: { ...DEFAULT_BANK_META, ...(summary.data.bank_meta || {}) },
+      lineRefs: [],
+      missingPaymentDates: 0,
+    };
+  }
+
+  const full = await loadDossierWorkspace(dossierId);
+  if (!full) return null;
+  const lines = full.lines || [];
+  return {
+    lineCount: lines.length,
+    bankCount: (full.bank_transactions || []).length,
+    anomalyCount: Number(summary.data?.anomaly_count) || 0,
+    updated_at: full.updated_at,
+    bank_meta: full.bank_meta,
+    lineRefs: lines.map((line) => ({
+      source_id: line.source_id || "",
+      source_file: line.source_file || "",
+    })),
+    missingPaymentDates: lines.filter((line) => !String(line.date_paie || "").trim()).length,
+    lines: full.lines,
+    bank_transactions: full.bank_transactions,
+  };
+}
+
 export async function loadDossierWorkspace(dossierId) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return null;

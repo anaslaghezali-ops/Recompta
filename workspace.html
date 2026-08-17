@@ -559,7 +559,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
-    import { listClientActivity, loadDossierWorkspace, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist2";
+    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist3";
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
@@ -573,7 +573,7 @@
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc16";
+    } from "./dossier-documents.js?v=doc18";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -592,9 +592,9 @@
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
       importJobPageUrl,
-    } from "./import-jobs-client.js?v=jobs26";
+    } from "./import-jobs-client.js?v=jobs27";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace13";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace14";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -946,7 +946,7 @@
         const dossierId = selectedDossierId;
         if (dossierId) {
           try {
-            workspaceSnapshot = await loadDossierWorkspace(dossierId);
+            workspaceSnapshot = await loadDossierWorkspaceSummary(dossierId);
           } catch {
             workspaceSnapshot = null;
           }
@@ -1221,9 +1221,8 @@
       const bankJobActive = bankExtractInFlight || (activeImportJob && isBankImportJob(activeImportJob));
       const invoiceJobActive = !bankJobActive && (analysisInFlight || Boolean(activeImportJob));
       const isJobRunning = bankJobActive || invoiceJobActive;
-      const missingPaymentDates = workspaceSnapshot
-        ? countLinesWithoutPaymentDate(workspaceSnapshot.lines || [])
-        : 0;
+      const missingPaymentDates = workspaceSnapshot?.missingPaymentDates
+        ?? countLinesWithoutPaymentDate(workspaceSnapshot?.lines || []);
 
       const extractionStep = document.getElementById("extractionStep");
       const bankMatchStep = document.getElementById("bankMatchStep");
@@ -1362,8 +1361,9 @@
           if (generation !== documentsListGeneration) return;
           documentsCache = docs;
         }
-        const workspace = await loadDossierWorkspace(selectedDossierId);
+        const workspace = await loadDossierWorkspaceSummary(selectedDossierId);
         if (generation !== documentsListGeneration) return;
+        workspaceSnapshot = workspace;
         const pending = countPendingAnalysis(documentsCache, workspace);
         pendingAnalysisCount = pending.total;
         bankPendingCount = pending.bankPending;
@@ -2520,7 +2520,7 @@
         try {
           const [docs, workspace] = await Promise.all([
             listDossierDocuments(dossierId),
-            loadDossierWorkspace(dossierId),
+            loadDossierWorkspaceSummary(dossierId),
           ]);
           if (!stillCurrent()) return;
           documentsCache = docs;

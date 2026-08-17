@@ -1,4 +1,4 @@
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
+import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=persist3";
 import {
   formatMonthLabel,
   formatRelativeTime,
@@ -51,11 +51,11 @@ export function buildPipelineSteps({
   invoicePending = 0,
   invoiceDocumentCount = 0,
 }) {
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
-  const hasBank = bank.length > 0;
+  const lineCount = workspace?.lineCount ?? workspace?.lines?.length ?? 0;
+  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
+  const hasBank = bankCount > 0;
   const hasBankDocument = hasBank || bankPending > 0;
-  const hasLines = lines.length > 0;
+  const hasLines = lineCount > 0;
   const hasInvoiceWork = hasLines || invoicePending > 0 || invoiceDocumentCount > 0;
   const needsAnalysis = bankPending > 0 || invoicePending > 0;
   const isExported = statusKey === "exported";
@@ -90,7 +90,7 @@ export function buildPipelineSteps({
       key: "bank",
       label: "Relevé bancaire",
       desc: hasBank
-        ? `${bank.length} opération${bank.length > 1 ? "s" : ""}`
+        ? `${bankCount} opération${bankCount > 1 ? "s" : ""}`
         : bankPending > 0
           ? "Importé — analyse en attente"
           : "Importer le relevé",
@@ -102,7 +102,7 @@ export function buildPipelineSteps({
       key: "purchases",
       label: "Factures achats",
       desc: hasLines
-        ? `${lines.length} ligne${lines.length > 1 ? "s" : ""} · ajoutez-en si besoin`
+        ? `${lineCount} ligne${lineCount > 1 ? "s" : ""} · ajoutez-en si besoin`
         : invoicePending > 0
           ? `${invoicePending} doc(s) en attente`
           : invoiceDocumentCount > 0
@@ -159,12 +159,13 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
     };
   }
 
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
-  const anomalyCount = countAnomaliesFromStoredConfidence(lines);
+  const lineCount = workspace?.lineCount ?? workspace?.lines?.length ?? 0;
+  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
+  const anomalyCount = workspace?.anomalyCount
+    ?? countAnomaliesFromStoredConfidence(workspace?.lines || []);
   const progress = computeProgress(dossier, {
-    lineCount: lines.length,
-    bankCount: bank.length,
+    lineCount,
+    bankCount,
     anomalyCount,
   });
   const statusKey = dossier.status || "draft";
@@ -204,11 +205,11 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
     periodLabel: `${formatMonthLabel(dossier.period_month)} ${dossier.period_year}`,
     periodCode: periodToMmaaaa(dossier.period_year, dossier.period_month),
     progress: statusKey === "exported" ? 100 : progress,
-    lineCount: lines.length,
-    bankCount: bank.length,
+    lineCount,
+    bankCount,
     bankPending,
     invoicePending,
-    operationCount: lines.length + bank.length,
+    operationCount: lineCount + bankCount,
     anomalyCount,
     daysLeft,
     deadlineLabel: formatDeadlineLabel(daysLeft, dossier.period_year, dossier.period_month),
@@ -239,7 +240,7 @@ export async function loadWorkspaceCockpit(
   const dossier = pickActiveDossier(client.dossiers, preferredDossierId);
   const workspace = providedWorkspace !== undefined
     ? providedWorkspace
-    : (dossier ? await loadDossierWorkspace(dossier.id) : null);
+    : (dossier ? await loadDossierWorkspaceSummary(dossier.id) : null);
   return buildCockpitState(client, dossier, workspace, {
     pendingAnalysis,
     bankPending,
