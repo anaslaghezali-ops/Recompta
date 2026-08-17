@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=delete-folder1" />
+  <link rel="stylesheet" href="dashboard.css?v=docs-collapse1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -643,6 +643,7 @@
     let documentsCache = [];
     let documentFilter = "all";
     let archivesExpanded = false;
+    const expandedDocumentGroups = new Set();
     let pendingAnalysisCount = 0;
     let bankPendingCount = 0;
     let invoicePendingCount = 0;
@@ -1782,22 +1783,40 @@
         });
       });
       rootEl?.querySelectorAll("[data-delete-group]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
+        btn.addEventListener("click", async (event) => {
+          event.stopPropagation();
           await handleDeleteDocumentGroup(btn.dataset.deleteGroup, btn);
         });
       });
+      rootEl?.querySelectorAll("[data-toggle-group]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.dataset.toggleGroup;
+          if (!key) return;
+          if (expandedDocumentGroups.has(key)) expandedDocumentGroups.delete(key);
+          else expandedDocumentGroups.add(key);
+          renderDocumentsList();
+        });
+      });
+    }
+
+    function documentGroupCountLabel(group) {
+      const n = group.docs.length;
+      if (group.kind === "bank") return n > 1 ? `${n} relevés` : "1 relevé";
+      if (group.kind === "archive") return n > 1 ? `${n} archives` : "1 archive";
+      return n > 1 ? `${n} factures` : "1 facture";
     }
 
     function renderDocumentGroups(docs) {
       const groups = groupDocumentsBySupplier(docs);
       const workspace = getDocumentAnalysisState();
       return groups.map((group) => {
-        const countLabel = group.docs.length > 1
-          ? `${group.docs.length} documents`
-          : "1 document";
-        const rows = group.docs.map((doc) => renderDocumentRow(doc, {
-          analyzed: isDocumentAnalyzed(doc, workspace),
-        })).join("");
+        const expanded = expandedDocumentGroups.has(group.key);
+        const countLabel = documentGroupCountLabel(group);
+        const rows = expanded
+          ? group.docs.map((doc) => renderDocumentRow(doc, {
+            analyzed: isDocumentAnalyzed(doc, workspace),
+          })).join("")
+          : "";
         const groupIcon = group.kind === "bank" ? "landmark"
           : group.kind === "archive" ? "archive"
             : "building-2";
@@ -1806,24 +1825,26 @@
           ? "Supprimer l'archive"
           : "Supprimer le dossier";
         const groupActions = showGroupDelete
-          ? `<div class="ws-doc-group-actions">
-              <button type="button" class="dash-btn dash-btn-sm ws-doc-delete" data-delete-group="${escapeHtml(group.key)}" title="${escapeHtml(groupDeleteLabel)}">
+          ? `<button type="button" class="dash-btn dash-btn-sm ws-doc-delete" data-delete-group="${escapeHtml(group.key)}" title="${escapeHtml(groupDeleteLabel)}">
                 <i data-lucide="folder-x"></i>
                 ${escapeHtml(groupDeleteLabel)}
-              </button>
-            </div>`
+              </button>`
           : "";
         return `
-          <section class="ws-doc-group" data-group="${escapeHtml(group.key)}">
-            <header class="ws-doc-group-header">
-              <span class="ws-doc-group-icon"><i data-lucide="${groupIcon}"></i></span>
-              <div>
-                <h3>${escapeHtml(group.label)}</h3>
-                <p>${countLabel}</p>
-              </div>
+          <section class="ws-doc-group${expanded ? " is-open" : ""}" data-group="${escapeHtml(group.key)}">
+            <div class="ws-doc-group-bar">
+              <button type="button" class="ws-doc-group-toggle" data-toggle-group="${escapeHtml(group.key)}" aria-expanded="${expanded ? "true" : "false"}">
+                <span class="ws-doc-group-icon"><i data-lucide="${groupIcon}"></i></span>
+                <span class="ws-doc-group-copy">
+                  <h3>${escapeHtml(group.label)}</h3>
+                  <p>${escapeHtml(countLabel)}</p>
+                </span>
+                <span class="ws-doc-group-count">${group.docs.length}</span>
+                <i data-lucide="chevron-down" class="ws-doc-group-chevron"></i>
+              </button>
               ${groupActions}
-            </header>
-            <div class="ws-doc-group-list">${rows}</div>
+            </div>
+            <div class="ws-doc-group-list" ${expanded ? "" : "hidden"}>${rows}</div>
           </section>
         `;
       }).join("");

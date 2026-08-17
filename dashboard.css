@@ -2340,6 +2340,81 @@
   gap: 0.45rem;
 }
 
+.ws-doc-group-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.ws-doc-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-doc-group-toggle:hover {
+  background: #f1f5f9;
+}
+
+.ws-doc-group.is-open .ws-doc-group-toggle {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.ws-doc-group-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-doc-group-copy h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.ws-doc-group-copy p {
+  margin: 0.05rem 0 0;
+  font-size: 0.72rem;
+  color: var(--dash-muted);
+}
+
+.ws-doc-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ws-doc-group-chevron {
+  width: 16px;
+  height: 16px;
+  color: #64748b;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.ws-doc-group.is-open .ws-doc-group-chevron {
+  transform: rotate(180deg);
+}
+
 .ws-doc-group-header {
   display: flex;
   align-items: center;
@@ -2360,7 +2435,8 @@
   flex-shrink: 0;
 }
 
-.ws-doc-group-header .ws-doc-delete {
+.ws-doc-group-header .ws-doc-delete,
+.ws-doc-group-bar .ws-doc-delete {
   font-size: 0.72rem;
   padding: 0.28rem 0.55rem;
   white-space: nowrap;
