@@ -72,7 +72,7 @@ Autres colonnes (pas pour le solde) : date, client, téléphone, motif d’annul
 
 ## Outil
 
-Page web (GitHub Pages) : **`/laas/laas.html`** — import Excel + factures PDF, rapprochement par quinzaine et explication des écarts (refunds, commandes absentes de l’Excel, etc.).
+Page web (GitHub Pages) : **https://anaslaghezali-ops.github.io/Recompta/laas/laas.html** — import Excel + factures PDF, rapprochement par quinzaine et explication des écarts (refunds, commandes absentes de l’Excel, etc.).
 
 ## À valider plus tard (pas maintenant)
 
