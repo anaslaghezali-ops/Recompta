@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc11";
+import { uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc17";
 
 const els = {};
 let session = null;
@@ -84,6 +84,65 @@ function setStatus(text, tone = "muted") {
   if (!els.saveStatus) return;
   els.saveStatus.textContent = text || "";
   els.saveStatus.dataset.tone = tone;
+}
+
+const QUEUE_BTN_IDLE = '<i data-lucide="cloud-upload"></i> Importer les documents';
+const EXTRACT_BTN_IDLE = '<i data-lucide="sparkles"></i> Extraction immédiate';
+
+function setImportPhase(phase, {
+  title = "",
+  detail = "",
+  percent = 0,
+  progressText = "",
+  indeterminate = false,
+} = {}) {
+  const sending = phase === "sending" || phase === "extracting";
+  const done = phase === "done";
+  const error = phase === "error";
+  const idle = phase === "idle";
+
+  if (els.queueHint) els.queueHint.hidden = !idle;
+  if (els.transferPanel) {
+    els.transferPanel.hidden = idle;
+    els.transferPanel.dataset.phase = phase;
+  }
+  if (els.dropZone) els.dropZone.classList.toggle("is-busy", sending);
+  if (els.transferBanner) {
+    els.transferBanner.className = `imp-transfer-banner is-${phase}`;
+  }
+  if (els.transferSpinner) els.transferSpinner.hidden = !sending;
+  if (els.transferCheck) els.transferCheck.hidden = !done;
+  if (els.transferTitle) els.transferTitle.textContent = title;
+  if (els.transferDetail) {
+    els.transferDetail.textContent = detail;
+    els.transferDetail.hidden = !detail;
+  }
+  if (els.progressText) els.progressText.textContent = progressText || detail || "—";
+  if (els.progressPct) {
+    els.progressPct.textContent = indeterminate && sending ? "…" : `${Math.max(0, Math.min(100, percent))}%`;
+  }
+  if (els.progressBar) {
+    els.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    els.progressBar.classList.toggle("is-success", done);
+    els.progressBar.classList.toggle("is-indeterminate", Boolean(indeterminate && sending));
+  }
+  if (els.transferWorkspaceBtn) {
+    els.transferWorkspaceBtn.hidden = !done;
+    if (els.backLink?.href) els.transferWorkspaceBtn.href = els.backLink.href;
+  }
+  if (els.queueBtn) {
+    els.queueBtn.disabled = sending || !pendingFiles.length;
+    els.queueBtn.innerHTML = sending && phase === "sending"
+      ? '<span class="imp-btn-spinner"></span> Envoi en cours…'
+      : QUEUE_BTN_IDLE;
+  }
+  if (els.extractBtn) {
+    els.extractBtn.disabled = sending || !pendingFiles.length;
+    els.extractBtn.innerHTML = sending && phase === "extracting"
+      ? '<span class="imp-btn-spinner"></span> Extraction en cours…'
+      : EXTRACT_BTN_IDLE;
+  }
+  initLucide();
 }
 
 function setWorkerHint(message = "", tone = "muted") {
@@ -205,8 +264,10 @@ function renderFileQueue() {
   if (!pendingFiles.length) {
     els.fileQueue.hidden = true;
     els.fileQueue.innerHTML = "";
-    els.queueBtn.disabled = true;
-    els.extractBtn.disabled = true;
+    if (!extracting) {
+      els.queueBtn.disabled = true;
+      els.extractBtn.disabled = true;
+    }
     return;
   }
   els.fileQueue.hidden = false;
@@ -270,6 +331,7 @@ function renderLinesTable() {
 }
 
 function addFiles(fileList) {
+  if (extracting) return;
   for (const file of fileList || []) {
     if (!pendingFiles.some((f) => f.name === file.name && f.size === file.size)) {
       pendingFiles.push(file);
@@ -281,15 +343,20 @@ function addFiles(fileList) {
 async function runQueue() {
   if (!pendingFiles.length || extracting) return;
   extracting = true;
-  els.queueBtn.disabled = true;
-  els.extractBtn.disabled = true;
-  els.progressPanel.hidden = false;
-  els.progressText.textContent = "Envoi des documents…";
-  els.progressBar.style.width = "5%";
-
   const filesToSend = [...pendingFiles];
   pendingFiles = [];
   renderFileQueue();
+
+  const first = filesToSend[0];
+  setImportPhase("sending", {
+    title: "Importation en cours — restez sur cette page",
+    detail: filesToSend.length === 1
+      ? `${first.name} · ${formatFileSize(first.size)}`
+      : `${filesToSend.length} fichier(s) à envoyer`,
+    percent: 8,
+    progressText: "Envoi vers la plateforme…",
+    indeterminate: filesToSend.length === 1,
+  });
 
   let uploaded = 0;
   let reused = 0;
@@ -298,9 +365,14 @@ async function runQueue() {
 
   for (let index = 0; index < filesToSend.length; index += 1) {
     const file = filesToSend[index];
-    const percent = 8 + Math.round(((index + 1) / filesToSend.length) * 88);
-    els.progressText.textContent = `Envoi ${index + 1}/${filesToSend.length} — ${file.name}`;
-    els.progressBar.style.width = `${percent}%`;
+    const percent = 8 + Math.round((index / filesToSend.length) * 88);
+    setImportPhase("sending", {
+      title: "Importation en cours — restez sur cette page",
+      detail: `${file.name} · ${formatFileSize(file.size)}`,
+      percent,
+      progressText: `Envoi ${index + 1}/${filesToSend.length} — ${file.name}`,
+      indeterminate: filesToSend.length === 1,
+    });
     try {
       const saved = await uploadDossierFileForImport({
         dossierId: session.dossierId,
@@ -315,30 +387,43 @@ async function runQueue() {
     }
   }
 
-  els.progressBar.style.width = "100%";
   const stored = uploaded + reused;
   const docCount = expandedFromArchives || stored;
-  if (failures.length) {
-    els.progressText.textContent = `${docCount} document(s) reçu(s), ${failures.length} erreur(s).`;
-    setStatus(`${uploaded} nouveau(x), ${reused} déjà présent(s), ${failures.length} échec(s)`, "warn");
-  } else {
-    els.progressText.textContent = expandedFromArchives
-      ? `${expandedFromArchives} document(s) détecté(s) dans ${stored} archive(s). Lancez l'analyse IA depuis le workspace.`
-      : `${stored} fichier(s) reçu(s). Lancez l'analyse IA depuis le workspace.`;
-    setStatus(
-      expandedFromArchives
-        ? `${expandedFromArchives} pièce(s) importée(s) depuis ${stored} archive(s) — lancez l'extraction depuis le workspace`
-        : reused
-          ? `${uploaded} importé(s), ${reused} ignoré(s) (même nom et taille déjà présents)`
-          : `${uploaded} document(s) importé(s) — lancez l'analyse depuis le workspace`,
-      reused && !expandedFromArchives ? "warn" : "success",
-    );
+  extracting = false;
+
+  if (failures.length && !stored) {
+    setImportPhase("error", {
+      title: "Envoi interrompu",
+      detail: failures[0]?.message || "Erreur d'envoi",
+      percent: 0,
+      progressText: `${failures.length} erreur(s) — aucun fichier reçu.`,
+    });
+    setStatus(`${failures.length} échec(s)`, "warn");
+    return;
   }
 
-  extracting = false;
-  els.queueBtn.disabled = !pendingFiles.length;
-  els.extractBtn.disabled = !pendingFiles.length;
-  initLucide();
+  const doneTitle = expandedFromArchives
+    ? `${expandedFromArchives} document(s) détecté(s) dans ${stored} archive(s)`
+    : `${stored} fichier(s) reçu(s)`;
+  const doneDetail = failures.length
+    ? `${failures.length} erreur(s) en plus. Lancez l'analyse IA depuis le workspace.`
+    : "Les fichiers sont sur la plateforme. Lancez l'analyse IA depuis le workspace.";
+  setImportPhase("done", {
+    title: doneTitle,
+    detail: doneDetail,
+    percent: 100,
+    progressText: doneDetail,
+  });
+  setStatus(
+    failures.length
+      ? `${uploaded} nouveau(x), ${reused} déjà présent(s), ${failures.length} échec(s)`
+      : expandedFromArchives
+        ? `${expandedFromArchives} pièce(s) importée(s) depuis ${stored} archive(s)`
+        : reused
+          ? `${uploaded} importé(s), ${reused} ignoré(s) (même nom et taille déjà présents)`
+          : `${uploaded} document(s) importé(s)`,
+    failures.length || (reused && !expandedFromArchives) ? "warn" : "success",
+  );
 }
 
 function formatJobDate(iso) {
@@ -423,14 +508,22 @@ async function reloadSessionLines() {
 async function runExtract() {
   if (!pendingFiles.length || extracting) return;
   extracting = true;
-  els.extractBtn.disabled = true;
-  els.progressPanel.hidden = false;
-  els.progressText.textContent = "Préparation des fichiers…";
-  els.progressBar.style.width = "8%";
+  setImportPhase("extracting", {
+    title: "Extraction en cours — restez sur cette page",
+    detail: `${pendingFiles.length} fichier(s)`,
+    percent: 8,
+    progressText: "Préparation des fichiers…",
+    indeterminate: true,
+  });
 
   try {
     const expanded = await expandUploadedFiles(pendingFiles);
-    els.progressBar.style.width = "20%";
+    setImportPhase("extracting", {
+      title: "Extraction en cours — restez sur cette page",
+      detail: `${expanded.length} document(s)`,
+      percent: 20,
+      progressText: "Lecture des documents…",
+    });
     const sourceRecords = cacheSourceFiles(expanded);
     const tagged = expanded.map((item, index) => ({
       ...item,
@@ -439,8 +532,12 @@ async function runExtract() {
 
     const results = normalizeExtractionResults(
       await runExtraction(tagged, (msg) => {
-        els.progressText.textContent = msg;
-        els.progressBar.style.width = "55%";
+        setImportPhase("extracting", {
+          title: "Extraction en cours — restez sur cette page",
+          detail: msg,
+          percent: 55,
+          progressText: msg,
+        });
       }),
     );
 
@@ -484,8 +581,13 @@ async function runExtract() {
     renderFileQueue();
     renderLinesTable();
 
-    els.progressBar.style.width = "100%";
-    els.progressText.textContent = `${newLines} ligne(s) extraite(s) et enregistrée(s).`;
+    extracting = false;
+    setImportPhase("done", {
+      title: `${newLines} ligne(s) extraite(s) et enregistrée(s)`,
+      detail: "Vous pouvez retourner au workspace pour la revue.",
+      percent: 100,
+      progressText: `${newLines} ligne(s) extraite(s) et enregistrée(s).`,
+    });
     await persistWorkspaceNow(
       session,
       setStatus,
@@ -494,13 +596,13 @@ async function runExtract() {
       { new_lines: newLines },
     );
   } catch (error) {
-    els.progressText.textContent = `Erreur : ${error.message}`;
-    els.progressBar.style.width = "0%";
-  } finally {
     extracting = false;
-    els.queueBtn.disabled = !pendingFiles.length;
-    els.extractBtn.disabled = !pendingFiles.length;
-    initLucide();
+    setImportPhase("error", {
+      title: "Extraction interrompue",
+      detail: error.message,
+      percent: 0,
+      progressText: `Erreur : ${error.message}`,
+    });
   }
 }
 
@@ -529,7 +631,9 @@ export async function bootImportAchats() {
   [
     "contextBar", "saveStatus", "backLink", "dropZone", "fileInput", "fileQueue",
     "queueBtn", "extractBtn", "queueHint", "jobsPanel", "jobsList", "workerHint",
-    "progressPanel", "progressText", "progressBar", "linesPanel",
+    "transferPanel", "transferBanner", "transferSpinner", "transferCheck",
+    "transferTitle", "transferDetail", "transferWorkspaceBtn",
+    "progressPanel", "progressText", "progressBar", "progressPct", "linesPanel",
     "linesBody", "lineCount", "anomalyCount", "fileCount", "duplicateCount",
     "apiUrl", "useAi", "engineBadge", "testApiBtn",
   ].forEach((id) => { els[id] = document.getElementById(id); });
@@ -552,6 +656,12 @@ export async function bootImportAchats() {
   bindDropZone(els.dropZone, els.fileInput);
   els.queueBtn.addEventListener("click", runQueue);
   els.extractBtn.addEventListener("click", runExtract);
+  document.getElementById("backBtn")?.addEventListener("click", (event) => {
+    if (!extracting) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    alert("L'envoi n'est pas terminé. Restez sur cette page jusqu'à la bannière verte.");
+  }, true);
   els.apiUrl?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.useAi?.addEventListener("change", () => { persistApiSettings(); refreshEngineBadge(); });
   els.testApiBtn?.addEventListener("click", async () => {
