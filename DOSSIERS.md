@@ -23,6 +23,9 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 4. Documents + Storage : `supabase/migrations/20260813250000_dossier_documents.sql` → **Run**
 5. File d'import : `supabase/migrations/20260813260000_import_jobs.sql` → **Run**
 6. Suppression réelle des documents : `supabase/migrations/20260817200000_delete_dossier_documents_rpc.sql` → **Run**
+7. Résumés portefeuille (line_count / bank_count / anomaly_count) : `supabase/migrations/20260817240000_dossier_workspace_summary.sql` → **Run**
+
+Pour tester le chargement du portefeuille **sans tokens IA** : `scripts/seed-fake-workspace.sql` (400 lignes fictives).
 
 ## Flux cabinet
 
