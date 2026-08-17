@@ -7,12 +7,13 @@ import {
 } from "./dossiers-client.js?v=dash2";
 import {
   computeProgress,
-  countLineAnomalies,
   daysUntilDeadline,
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio9";
+} from "./portfolio-client.js?v=portfolio10";
+import { countLinesNeedingReview } from "./field-confidence.js?v=conf1";
+import { findDuplicateLineIndexes } from "./extract-client.js?v=notebook1";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
   if (!dossiers?.length) return null;
@@ -161,8 +162,15 @@ export function buildCockpitState(client, dossier, workspace, { pendingAnalysis 
 
   const lines = workspace?.lines || [];
   const bank = workspace?.bank_transactions || [];
-  const anomalyCount = countLineAnomalies(lines, client?.ice || "");
-  const progress = computeProgress(dossier, workspace);
+  const anomalyCount = countLinesNeedingReview(lines, {
+    clientIce: client?.ice || "",
+    duplicateIndexes: findDuplicateLineIndexes(lines),
+  });
+  const progress = computeProgress(dossier, {
+    lineCount: lines.length,
+    bankCount: bank.length,
+    anomalyCount,
+  });
   const statusKey = dossier.status || "draft";
   const statusLabel = STATUS_META[statusKey]?.label || "En cours";
   const daysLeft = daysUntilDeadline(dossier.period_year, dossier.period_month);

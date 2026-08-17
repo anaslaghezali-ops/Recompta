@@ -1,7 +1,9 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
 import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs13";
-import { countLinesNeedingReview } from "./field-confidence.js";
-import { findDuplicateLineIndexes } from "./extract-client.js";
+import {
+  computeProgress,
+  workspaceSummaryFromRow,
+} from "./workspace-summary.js?v=summary1";
 import {
   formatMonthLabel,
   formatRelativeTime,
@@ -10,7 +12,7 @@ import {
   STATUS_META,
 } from "./dossiers-client.js?v=portfolio1";
 
-export { formatRelativeTime, STATUS_META };
+export { formatRelativeTime, STATUS_META, computeProgress };
 
 /** Échéance TVA Maroc : 20 du mois suivant la période */
 export function tvaDeadlineDate(year, month) {
@@ -20,32 +22,6 @@ export function tvaDeadlineDate(year, month) {
 export function daysUntilDeadline(year, month) {
   const deadline = tvaDeadlineDate(year, month);
   return Math.ceil((deadline.getTime() - Date.now()) / 86400000);
-}
-
-export function countLineAnomalies(lines, clientIce = "") {
-  return countLinesNeedingReview(lines, {
-    clientIce,
-    duplicateIndexes: findDuplicateLineIndexes(lines || []),
-  });
-}
-
-export function computeProgress(dossier, workspace) {
-  if (!dossier) return 0;
-  if (dossier.status === "exported") return 100;
-
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
-  const anomalies = countLineAnomalies(lines);
-
-  let score = 0;
-  if (bank.length > 0) score += 20;
-  if (lines.length > 0) score += 35;
-  if (lines.length > 0 && anomalies === 0) score += 25;
-  else if (lines.length > 0 && anomalies < lines.length * 0.1) score += 15;
-  if (dossier.status === "in_review" && anomalies === 0) score += 15;
-  if (dossier.status === "in_review") score += 5;
-
-  return Math.min(99, score);
 }
 
 export function resolvePriority({ dossier, progress, anomalyCount, daysLeft, statusKey }) {
@@ -68,8 +44,8 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
     return { label: "Période clôturée", href: null, action: "done" };
   }
 
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
+  const lineCount = workspace?.lineCount ?? workspace?.lines?.length ?? 0;
+  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
   const pendingAnalysis = workspace?.pendingAnalysis || 0;
   const bankPending = workspace?.bankPending || 0;
   const invoicePending = workspace?.invoicePending || 0;
@@ -78,14 +54,14 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
     ? `workspace.html?client=${clientId}&dossier=${dossier.id}`
     : null;
 
-  if (bank.length === 0 && bankPending === 0) {
+  if (bankCount === 0 && bankPending === 0) {
     return {
       label: "Importer le relevé bancaire",
       href: `import-banque.html?dossier=${dossier.id}`,
       action: "bank",
     };
   }
-  if (bank.length === 0 && bankPending > 0 && lines.length === 0) {
+  if (bankCount === 0 && bankPending > 0 && lineCount === 0) {
     return {
       label: "Extraire le relevé bancaire",
       href: wsBase ? `${wsBase}&tab=cockpit` : null,
@@ -93,15 +69,15 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
       tab: "cockpit",
     };
   }
-  if (lines.length === 0 && pendingAnalysis > 0) {
+  if (lineCount === 0 && pendingAnalysis > 0) {
     return {
       label: "Lancer l'extraction",
       href: wsBase ? `${wsBase}&tab=cockpit` : null,
       action: "analysis",
     };
   }
-  if (lines.length === 0 && pendingAnalysis === 0 && (bank.length > 0 || invoiceDocumentCount > 0)) {
-    if (bank.length > 0 && invoiceDocumentCount > 0) {
+  if (lineCount === 0 && pendingAnalysis === 0 && (bankCount > 0 || invoiceDocumentCount > 0)) {
+    if (bankCount > 0 && invoiceDocumentCount > 0) {
       return {
         label: "Lancer le rapprochement bancaire",
         href: wsBase ? `${wsBase}&tab=cockpit` : null,
@@ -116,7 +92,7 @@ export function resolveNextAction({ dossier, workspace, anomalyCount, statusKey,
       tab: "review",
     };
   }
-  if (lines.length === 0) {
+  if (lineCount === 0) {
     return {
       label: "Importer les factures achats",
       href: `import-achats.html?dossier=${dossier.id}`,
@@ -162,12 +138,11 @@ function pickActiveDossier(dossiers) {
 
 export function buildPortfolioRow(client, workspaceByDossierId = {}, activeImportByDossierId = new Map()) {
   const activeDossier = pickActiveDossier(client.dossiers);
-  const workspace = activeDossier ? workspaceByDossierId[activeDossier.id] : null;
-  const lines = workspace?.lines || [];
-  const bank = workspace?.bank_transactions || [];
-  const anomalyCount = countLineAnomalies(lines);
-  const operationCount = lines.length + bank.length;
-  const progress = computeProgress(activeDossier, workspace);
+  const raw = activeDossier ? workspaceByDossierId[activeDossier.id] : null;
+  const summary = workspaceSummaryFromRow(raw);
+  const anomalyCount = summary.anomalyCount;
+  const operationCount = summary.lineCount + summary.bankCount;
+  const progress = computeProgress(activeDossier, summary);
   const statusKey = activeDossier?.status || "draft";
   const statusLabel = activeDossier
     ? (STATUS_META[statusKey]?.label || "En cours")
@@ -187,13 +162,13 @@ export function buildPortfolioRow(client, workspaceByDossierId = {}, activeImpor
 
   const nextAction = resolveNextAction({
     dossier: activeDossier,
-    workspace,
+    workspace: summary,
     anomalyCount,
     statusKey,
     clientId: client.id,
   });
 
-  const lastActivity = workspace?.updated_at
+  const lastActivity = summary.updated_at
     || activeDossier?.updated_at
     || activeDossier?.created_at
     || client.created_at;
@@ -215,8 +190,8 @@ export function buildPortfolioRow(client, workspaceByDossierId = {}, activeImpor
     periodCode,
     progress,
     operationCount,
-    lineCount: lines.length,
-    bankCount: bank.length,
+    lineCount: summary.lineCount,
+    bankCount: summary.bankCount,
     anomalyCount,
     lastActivity,
     lastActivityLabel: formatRelativeTime(lastActivity),
@@ -270,26 +245,58 @@ export function matchesPortfolioFilter(row, filter, userId) {
   }
 }
 
+const SUMMARY_SELECT = "dossier_id, line_count, bank_count, anomaly_count, updated_at";
+const LEGACY_SELECT = "dossier_id, lines, bank_transactions, updated_at";
+
+async function fetchWorkspaceSummaries(supabase, dossierIds) {
+  const summaryQuery = await supabase
+    .from("dossier_workspaces")
+    .select(SUMMARY_SELECT)
+    .in("dossier_id", dossierIds);
+
+  if (!summaryQuery.error) {
+    const map = {};
+    for (const row of summaryQuery.data || []) {
+      map[row.dossier_id] = row;
+    }
+    return map;
+  }
+
+  const missingColumn = /line_count|anomaly_count|bank_count/i.test(summaryQuery.error.message || "");
+  if (!missingColumn) throw summaryQuery.error;
+
+  const legacy = await supabase
+    .from("dossier_workspaces")
+    .select(LEGACY_SELECT)
+    .in("dossier_id", dossierIds);
+  if (legacy.error) throw legacy.error;
+
+  const map = {};
+  for (const row of legacy.data || []) {
+    map[row.dossier_id] = row;
+  }
+  return map;
+}
+
 export async function listPortfolioRows(cabinetId) {
   const clients = await listClientsWithDossiers(cabinetId);
-  const dossierIds = clients.flatMap((c) => (c.dossiers || []).map((d) => d.id));
+  const activeDossierIds = clients
+    .map((client) => pickActiveDossier(client.dossiers)?.id)
+    .filter(Boolean);
+  const allDossierIds = clients.flatMap((c) => (c.dossiers || []).map((d) => d.id));
 
   const workspaceByDossierId = {};
   let activeImportByDossierId = new Map();
-  if (dossierIds.length > 0) {
+  if (activeDossierIds.length > 0 || allDossierIds.length > 0) {
     const supabase = getSupabase();
     if (supabase) {
-      const [{ data, error }, importMap] = await Promise.all([
-        supabase
-          .from("dossier_workspaces")
-          .select("dossier_id, lines, bank_transactions, updated_at")
-          .in("dossier_id", dossierIds),
-        fetchActiveImportMap(dossierIds),
+      const [summaries, importMap] = await Promise.all([
+        activeDossierIds.length
+          ? fetchWorkspaceSummaries(supabase, activeDossierIds)
+          : Promise.resolve({}),
+        fetchActiveImportMap(allDossierIds),
       ]);
-      if (error) throw error;
-      for (const ws of data || []) {
-        workspaceByDossierId[ws.dossier_id] = ws;
-      }
+      Object.assign(workspaceByDossierId, summaries);
       activeImportByDossierId = importMap;
     }
   }
