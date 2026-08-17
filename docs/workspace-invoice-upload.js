@@ -1,4 +1,4 @@
-import { uploadDossierFileForImport } from "./dossier-documents.js?v=doc11";
+import { uploadDossierFileForImport } from "./dossier-documents.js?v=doc17";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import { formatFileSize } from "./import-dossier.js?v=imp1";
 

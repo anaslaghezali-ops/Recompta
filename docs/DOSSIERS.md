@@ -24,6 +24,8 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 5. File d'import : `supabase/migrations/20260813260000_import_jobs.sql` → **Run**
 6. Suppression réelle des documents : `supabase/migrations/20260817200000_delete_dossier_documents_rpc.sql` → **Run**
 7. Résumés portefeuille (line_count / bank_count / anomaly_count) : `supabase/migrations/20260817240000_dossier_workspace_summary.sql` → **Run**
+8. Limite upload ZIP 200 Mo : `supabase/migrations/20260817250000_raise_storage_file_limit.sql` → **Run**  
+   Puis Dashboard → Storage → Settings → **Global file size limit** ≥ 200 Mo (plan Pro ; Free reste bloqué à 50 Mo).
 
 Pour tester le chargement du portefeuille **sans tokens IA** : `scripts/seed-fake-workspace.sql` (400 lignes fictives, dossier existant le plus récent — pas un id inventé).
 

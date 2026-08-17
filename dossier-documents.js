@@ -7,6 +7,8 @@ import {
 } from "./extract-client.js";
 
 export const DOCUMENTS_BUCKET = "dossier-documents";
+/** Aligné sur storage.buckets.file_size_limit (200 Mo). */
+export const MAX_DOCUMENT_BYTES = 209715200;
 
 export const DOC_TYPE_LABELS = {
   invoice: "Facture achat",
@@ -124,15 +126,38 @@ export async function uploadDossierDocument({
     }
   }
 
+  if (fileSize > MAX_DOCUMENT_BYTES) {
+    const sizeMo = (fileSize / (1024 * 1024)).toFixed(1);
+    throw new Error(
+      `Fichier trop volumineux (${sizeMo} Mo). Maximum ${Math.round(MAX_DOCUMENT_BYTES / (1024 * 1024))} Mo. `
+      + "Coupez le ZIP ou augmentez la limite Storage (bucket + réglage global du projet).",
+    );
+  }
+
   const resolvedSourceId = sourceId || nextDocumentSourceId();
   const storagePath = buildStoragePath(dossierId, originalFilename);
-  const mimeType = file.type || "application/octet-stream";
+  const lowerName = originalFilename.toLowerCase();
+  let mimeType = file.type || "application/octet-stream";
+  if (lowerName.endsWith(".zip") && (!mimeType || mimeType === "application/octet-stream")) {
+    mimeType = "application/zip";
+  }
 
   const { error: uploadError } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
     .upload(storagePath, file, { contentType: mimeType, upsert: false });
 
-  if (uploadError) throw uploadError;
+  if (uploadError) {
+    const status = Number(uploadError.statusCode || uploadError.status || 0);
+    const raw = String(uploadError.message || "");
+    if (status === 413 || /too large|maximum|size/i.test(raw)) {
+      throw new Error(
+        "Fichier refusé : trop volumineux pour Storage (limite 50 Mo sur le plan Free, "
+        + "ou plafond global du projet encore à 50 Mo). "
+        + "Dashboard → Storage → Settings → Global file size limit.",
+      );
+    }
+    throw new Error(raw || "Envoi Storage refusé (400).");
+  }
 
   const { data: userData } = await supabase.auth.getUser();
   const uploadedBy = userData?.user?.id || null;
