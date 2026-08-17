@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Laas — Rapprochement Glovo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="laas.css?v=1" />
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Laas — rapprochement livraisons</h1>
+      <p>Compare l’export plateforme (Excel) aux factures PDF de quinzaine et explique les écarts.</p>
+    </header>
+
+    <section class="card">
+      <h2>Fichiers</h2>
+      <div class="upload-grid">
+        <label class="dropzone">
+          <input id="excelInput" type="file" accept=".xls,.xlsx,application/vnd.ms-excel" hidden />
+          <strong>Export Excel</strong>
+          <span><code>laasexport-AAAA-MM-01_AAAA-MM-31.xls</code></span>
+          <div class="file-name" id="excelName"></div>
+        </label>
+
+        <label class="dropzone">
+          <input id="pdfQ1Input" type="file" accept="application/pdf,.pdf" hidden />
+          <strong>Facture 1re quinzaine</strong>
+          <span>Date facture vers le 15 · ex. <code>MA-FVR…816</code></span>
+          <div class="file-name" id="pdfQ1Name"></div>
+        </label>
+
+        <label class="dropzone">
+          <input id="pdfQ2Input" type="file" accept="application/pdf,.pdf" hidden />
+          <strong>Facture 2e quinzaine</strong>
+          <span>Date facture fin de mois · ex. <code>MA-FVR…818</code></span>
+          <div class="file-name" id="pdfQ2Name"></div>
+        </label>
+      </div>
+
+      <ul class="rules" style="margin-top:1rem;">
+        <li><strong>Colonne A</strong> — order id · <strong>C</strong> — statut · <strong>F</strong> — montant collecté · <strong>K</strong> — frais livraison HT</li>
+        <li><strong>Livrée</strong> : F + K · <strong>Returned / Cancelled</strong> : seulement K (F ignoré)</li>
+        <li>Les lignes <strong>Refunds</strong> du PDF sont des remboursements — absentes de l’Excel</li>
+        <li>Virement = montant collecté − facture TTC</li>
+      </ul>
+    </section>
+
+    <div id="error" class="error" hidden></div>
+    <section id="summary" class="card" hidden></section>
+    <div id="results"></div>
+
+    <footer>
+      Outil temporaire Laas (Glovo). Tout est traité dans le navigateur — rien n’est envoyé au serveur.
+      Voir aussi <a href="https://github.com/anaslaghezali-ops/Recompta/blob/main/LAAS.md">LAAS.md</a> (note métier).
+    </footer>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  </script>
+  <script type="module" src="laas.js?v=1"></script>
+</body>
+</html>
