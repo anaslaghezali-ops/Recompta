@@ -569,11 +569,12 @@
       deleteDossierDocuments,
       groupDocumentsBySupplier,
       isDocumentAnalyzed,
+      isRecreatedDeletedDocument,
       isZipDocument,
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc14";
+    } from "./dossier-documents.js?v=doc15";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -921,6 +922,7 @@
 
     let reloadCockpitPromise = null;
     let reloadCockpitGeneration = 0;
+    let documentsListGeneration = 0;
     let documentsRenderGeneration = 0;
     let refreshingCockpitMetadata = false;
 
@@ -1340,17 +1342,22 @@
         invoiceDocumentCount = 0;
         return;
       }
+      const generation = documentsListGeneration;
       try {
         if (forceDocuments || !documentsCache.length) {
-          documentsCache = await listDossierDocuments(selectedDossierId);
+          const docs = await listDossierDocuments(selectedDossierId);
+          if (generation !== documentsListGeneration) return;
+          documentsCache = docs;
         }
         const workspace = await loadDossierWorkspace(selectedDossierId);
+        if (generation !== documentsListGeneration) return;
         const pending = countPendingAnalysis(documentsCache, workspace);
         pendingAnalysisCount = pending.total;
         bankPendingCount = pending.bankPending;
         invoicePendingCount = pending.invoicePending;
         invoiceDocumentCount = countInvoiceDocuments(documentsCache);
       } catch {
+        if (generation !== documentsListGeneration) return;
         pendingAnalysisCount = 0;
         bankPendingCount = 0;
         invoicePendingCount = 0;
@@ -1711,11 +1718,19 @@
     async function applyDocumentDeletion(docs) {
       documentsRenderGeneration += 1;
       reloadCockpitGeneration += 1;
+      documentsListGeneration += 1;
+      const generation = documentsListGeneration;
       await deleteDossierDocuments(docs);
-      const ids = new Set(docs.map((doc) => doc.id));
-      documentsCache = (documentsCache || []).filter((row) => !ids.has(row.id));
+      documentsCache = (documentsCache || []).filter((row) => !isRecreatedDeletedDocument(row, docs));
       renderDocumentsList();
       if (selectedDossierId) await reloadCockpit(selectedDossierId, { force: true });
+      if (generation !== documentsListGeneration) return;
+      const revived = (documentsCache || []).filter((row) => isRecreatedDeletedDocument(row, docs));
+      if (revived.length) {
+        throw new Error(
+          "Le fichier est réapparu : une extraction ou un import encore en cours l'a ré-enregistré. Attendez la fin du traitement, puis supprimez à nouveau.",
+        );
+      }
     }
 
     async function handleDeleteDocument(doc, btn) {

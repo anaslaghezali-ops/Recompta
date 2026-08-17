@@ -477,20 +477,24 @@ export async function getDocumentDownloadUrl(storagePath, expiresIn = 3600) {
 }
 
 export async function fetchDossierDocumentBytes(doc) {
-  const url = await getDocumentDownloadUrl(doc.storage_path);
-  if (!url) throw new Error("Lien de téléchargement indisponible.");
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Téléchargement impossible (${response.status}).`);
+  const supabase = getSupabase();
+  if (!supabase || !doc?.storage_path) {
+    throw new Error("Lien de téléchargement indisponible.");
   }
 
-  const content = await response.arrayBuffer();
-  const mime = doc.mime_type || response.headers.get("content-type") || "application/octet-stream";
+  const { data, error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .download(doc.storage_path);
+  if (error || !data) {
+    throw error || new Error("Téléchargement impossible.");
+  }
+
+  const content = await data.arrayBuffer();
+  const mime = doc.mime_type || data.type || "application/octet-stream";
   return {
     content,
     mime,
-    filename: doc.original_filename || "document",
+    filename: (doc.original_filename || "document").split(/[/\\]/).pop(),
   };
 }
 
@@ -515,17 +519,20 @@ export function findDocumentForLine(line, documents = []) {
 }
 
 export async function downloadDossierDocument(doc) {
-  const url = await getDocumentDownloadUrl(doc.storage_path);
-  if (!url) throw new Error("Lien de téléchargement indisponible.");
-
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = doc.original_filename || "document";
-  anchor.rel = "noopener";
-  anchor.target = "_blank";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+  const { content, mime, filename } = await fetchDossierDocumentBytes(doc);
+  const blob = new Blob([content], { type: mime || "application/octet-stream" });
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename || "document";
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 2500);
+  }
 }
 
 export function isDocumentAnalyzed(doc, workspace) {
@@ -589,21 +596,86 @@ function documentRowIds(docs) {
   )];
 }
 
-async function deleteDossierDocumentRows(supabase, ids) {
-  const { data, error } = await supabase.rpc("delete_dossier_documents", { p_ids: ids });
-  if (!error) {
-    return (Array.isArray(data) ? data : []).map(Number).filter((id) => Number.isFinite(id));
-  }
-  const missingRpc = error.code === "PGRST202" || /delete_dossier_documents/i.test(error.message || "");
-  if (!missingRpc) throw error;
+export function parseDeletedIds(data) {
+  const rows = Array.isArray(data) ? data : data != null ? [data] : [];
+  return [...new Set(
+    rows
+      .map((row) => Number(row?.id ?? row))
+      .filter((id) => Number.isFinite(id) && id > 0),
+  )];
+}
 
-  const { data: rows, error: tableError } = await supabase
+export function isRecreatedDeletedDocument(row, deletedDocs) {
+  return (deletedDocs || []).some((doc) => {
+    if (!row || !doc) return false;
+    if (row.id != null && doc.id != null && Number(row.id) === Number(doc.id)) return true;
+    if (row.storage_path && doc.storage_path && row.storage_path === doc.storage_path) return true;
+    if (row.source_id && doc.source_id && String(row.source_id) === String(doc.source_id)) return true;
+    if (
+      row.original_filename
+      && doc.original_filename
+      && String(row.original_filename) === String(doc.original_filename)
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchRemainingDocumentIds(supabase, ids) {
+  if (!ids.length) return [];
+  const { data, error } = await supabase
     .from("dossier_documents")
-    .delete()
-    .in("id", ids)
-    .select("id");
-  if (tableError) throw tableError;
-  return (rows || []).map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+    .select("id")
+    .in("id", ids);
+  if (error) throw error;
+  return parseDeletedIds(data);
+}
+
+async function removeStoragePaths(supabase, paths) {
+  const unique = [...new Set((paths || []).filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 100) {
+    const chunk = unique.slice(i, i + 100);
+    const { error } = await supabase.storage
+      .from(DOCUMENTS_BUCKET)
+      .remove(chunk);
+    if (error && !/not found|object not found/i.test(error.message || "")) {
+      throw error;
+    }
+  }
+}
+
+async function deleteDossierDocumentRows(supabase, ids) {
+  if (!ids.length) return [];
+
+  const { error } = await supabase.rpc("delete_dossier_documents", { p_ids: ids });
+  if (error) {
+    const missingRpc = error.code === "PGRST202"
+      || /could not find.*delete_dossier_documents|delete_dossier_documents/i.test(error.message || "");
+    if (!missingRpc) throw error;
+  }
+
+  let remaining = await fetchRemainingDocumentIds(supabase, ids);
+  if (remaining.length) {
+    const { error: tableError } = await supabase
+      .from("dossier_documents")
+      .delete()
+      .in("id", remaining);
+    if (tableError) throw tableError;
+    remaining = await fetchRemainingDocumentIds(supabase, ids);
+  }
+
+  if (remaining.length) {
+    throw new Error(
+      "La suppression n'a pas été enregistrée en base. Exécutez la migration SQL delete_dossier_documents dans Supabase, puis réessayez.",
+    );
+  }
+
+  return ids;
 }
 
 export async function deleteDossierDocuments(docs) {
@@ -615,20 +687,23 @@ export async function deleteDossierDocuments(docs) {
   const ids = documentRowIds(list);
   if (!ids.length) throw new Error("Document introuvable.");
 
-  const deletedIds = await deleteDossierDocumentRows(supabase, ids);
-  const deletedSet = new Set(deletedIds);
-  if (deletedSet.size !== ids.length) {
-    throw new Error("La suppression n'a pas été enregistrée. Le fichier est encore dans le dossier.");
-  }
+  await deleteDossierDocumentRows(supabase, ids);
+  await removeStoragePaths(supabase, list.map((doc) => doc.storage_path));
 
-  const paths = list.map((doc) => doc.storage_path).filter(Boolean);
-  for (let i = 0; i < paths.length; i += 100) {
-    const chunk = paths.slice(i, i + 100);
-    const { error: storageError } = await supabase.storage
-      .from(DOCUMENTS_BUCKET)
-      .remove(chunk);
-    if (storageError && !/not found|object not found/i.test(storageError.message || "")) {
-      throw storageError;
+  const dossierId = list[0]?.dossier_id;
+  if (dossierId) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const remaining = await listDossierDocuments(dossierId);
+      const clones = remaining.filter((row) => isRecreatedDeletedDocument(row, list));
+      if (!clones.length) break;
+      if (attempt === 3) {
+        throw new Error(
+          "Le fichier a été recréé par une extraction ou un import encore en cours. Attendez la fin du traitement, puis supprimez à nouveau.",
+        );
+      }
+      await sleep(400);
+      await deleteDossierDocumentRows(supabase, documentRowIds(clones));
+      await removeStoragePaths(supabase, clones.map((row) => row.storage_path));
     }
   }
   return true;
