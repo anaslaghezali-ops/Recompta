@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc11";
+import { uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc17";
 
 const els = {};
 let session = null;
