@@ -6,7 +6,7 @@ import {
   countSupplierFieldTargets,
   fieldValuesMatch,
   findDuplicateLineIndexes,
-} from "./extract-client.js?v=ifdot1";
+} from "./extract-client.js?v=notebook1";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,
@@ -38,6 +38,7 @@ import {
   registerSourceFile,
   showLinePreview,
 } from "./document-preview.js?v=preview9";
+import { rememberOfficialSupplierName } from "./suppliers-client.js?v=sup2";
 import { periodToMmaaaa } from "./dossiers-client.js?v=dash2";
 import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
 
@@ -142,6 +143,18 @@ export function createWorkspaceReview({
 
   function ctx() {
     return getContext() || {};
+  }
+
+  function rememberSupplierName(line, officialName) {
+    const { clientId } = ctx();
+    const name = String(officialName || line?.lib_frss || "").trim();
+    if (!clientId || !line || !name) return;
+    rememberOfficialSupplierName({
+      clientId,
+      line,
+      lines,
+      officialName: name,
+    }).catch(() => {});
   }
 
   function setStatus(text, tone = "muted") {
@@ -303,6 +316,10 @@ export function createWorkspaceReview({
         scheduleSave();
         if (field.key in BULK_EDIT_FIELDS) {
           maybeOfferFieldBulk(field.key, oldValue, newValue, index);
+        }
+        if (field.key === "lib_frss" && newValue) rememberSupplierName(line, newValue);
+        if ((field.key === "ice_frs" || field.key === "if") && newValue && line.lib_frss) {
+          rememberSupplierName(line, line.lib_frss);
         }
       });
     }
@@ -849,6 +866,10 @@ export function createWorkspaceReview({
             if (field.key in BULK_EDIT_FIELDS) {
               maybeOfferFieldBulk(field.key, oldValue, newValue, index);
             }
+            if (field.key === "lib_frss" && newValue) rememberSupplierName(line, newValue);
+            if ((field.key === "ice_frs" || field.key === "if") && newValue && line.lib_frss) {
+              rememberSupplierName(line, line.lib_frss);
+            }
           });
         }
 
@@ -1013,7 +1034,17 @@ export function createWorkspaceReview({
   els.anomaliesToggle?.addEventListener("click", () => setAnomaliesOnly(!anomaliesOnly));
   els.validateAllBtn?.addEventListener("click", () => validateAllLines());
   els.fieldBulkApplyAll?.addEventListener("click", () => {
+    const pending = pendingFieldBulk;
     const count = applyPendingFieldBulk();
+    if (pending && ["lib_frss", "ice_frs", "if"].includes(pending.fieldKey)) {
+      const sample = lines.find((line) => {
+        if (pending.fieldKey === "lib_frss") {
+          return fieldValuesMatch("lib_frss", line.lib_frss, pending.newValue);
+        }
+        return fieldValuesMatch(pending.fieldKey, line[pending.fieldKey], pending.newValue);
+      });
+      if (sample?.lib_frss) rememberSupplierName(sample, sample.lib_frss);
+    }
     render();
     scheduleSave("bulk_edit", count > 1 ? `Correction appliquée sur ${count} lignes` : "Correction appliquée");
     els.fieldBulkDialog?.close();

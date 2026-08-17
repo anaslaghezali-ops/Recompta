@@ -426,9 +426,17 @@ function supplierHintFromPath(filename) {
   return { lib_frss: label };
 }
 
-function normalizeIceDigits(value) {
+export function normalizeIceDigits(value) {
   const digits = String(value || "").replace(/\D/g, "");
   return digits.length === 15 ? digits : "";
+}
+
+export function normalizeIfDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+export function lineIfValue(line) {
+  return normalizeIfDigits(line?.if || line?.if_fournisseur || "");
 }
 
 function pickMostCommon(values) {
@@ -1706,4 +1714,43 @@ export function applyFieldValueBulk(lines, fieldKey, oldValue, newValue) {
 /** @deprecated utiliser applyFieldValueBulk */
 export function applySupplierRename(lines, oldName, newName) {
   return applyFieldValueBulk(lines, "lib_frss", oldName, newName);
+}
+
+export function supplierIdentityKey(line) {
+  const ice = normalizeIceDigits(line?.ice_frs);
+  if (ice) return `ice:${ice}`;
+  const fiscal = lineIfValue(line);
+  if (fiscal) return `if:${fiscal}`;
+  const nameKey = supplierNameKey(line?.lib_frss);
+  return nameKey ? `name:${nameKey}` : "name:inconnu";
+}
+
+export function officialNameForLine(line, entries) {
+  const ice = normalizeIceDigits(line?.ice_frs);
+  const fiscal = lineIfValue(line);
+  const byIce = new Map();
+  const byIf = new Map();
+  for (const entry of entries || []) {
+    const name = String(entry?.official_name || "").trim();
+    if (!name) continue;
+    const entryIce = normalizeIceDigits(entry.ice);
+    const entryIf = normalizeIfDigits(entry.if_number || entry.if);
+    if (entryIce) byIce.set(entryIce, name);
+    if (entryIf) byIf.set(entryIf, name);
+  }
+  if (ice && byIce.get(ice)) return byIce.get(ice);
+  if (fiscal && byIf.get(fiscal)) return byIf.get(fiscal);
+  return "";
+}
+
+export function applyOfficialSupplierNames(lines, entries) {
+  let changed = 0;
+  for (const line of lines || []) {
+    const official = officialNameForLine(line, entries);
+    if (!official || String(line.lib_frss || "").trim() === official) continue;
+    line.lib_frss = official;
+    line.supplier_from_folder = false;
+    changed += 1;
+  }
+  return changed;
 }

@@ -17,6 +17,7 @@ from normalize_results import (
     normalize_extraction_results,
 )
 from supabase_service import SupabaseService, _document_identity_keys
+from supplier_notebook import apply_official_supplier_names
 from zip_utils import iter_invoice_files, storage_path_for_zip_member
 
 IMPORT_QUEUE_BUCKET = "import-queue"
@@ -554,6 +555,15 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                         extraction_engine=result.engine,
                     )
                 )
+
+        if new_lines:
+            try:
+                client_id = await db.get_dossier_client_id(dossier_id)
+                if client_id:
+                    notebook = await db.list_client_suppliers(client_id)
+                    apply_official_supplier_names(new_lines, notebook)
+            except Exception:  # noqa: BLE001
+                pass
 
         if new_lines:
             async with _dossier_lock(dossier_id):
