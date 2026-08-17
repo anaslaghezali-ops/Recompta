@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=import-states1" />
+  <link rel="stylesheet" href="dashboard.css?v=import-states2" />
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
@@ -61,7 +61,7 @@
                 <span class="imp-transfer-spinner" id="transferSpinner" aria-hidden="true"></span>
                 <i data-lucide="check-circle-2" class="imp-transfer-check" id="transferCheck" hidden></i>
                 <div class="imp-transfer-copy">
-                  <strong id="transferTitle">Importation en cours — restez sur cette page</strong>
+                  <strong id="transferTitle"></strong>
                   <p id="transferDetail"></p>
                 </div>
               </div>
@@ -129,7 +129,7 @@
     </div>
   </div>
 
-  <script type="module" src="import-achats.js?v=upload5"></script>
+  <script type="module" src="import-achats.js?v=upload6"></script>
   <script type="module">
     document.getElementById("backBtn").addEventListener("click", (e) => {
       e.preventDefault();

@@ -637,6 +637,7 @@ export async function bootImportAchats() {
     "linesBody", "lineCount", "anomalyCount", "fileCount", "duplicateCount",
     "apiUrl", "useAi", "engineBadge", "testApiBtn",
   ].forEach((id) => { els[id] = document.getElementById(id); });
+  setImportPhase("idle");
 
   session = await initDossierImportPage();
   if (!session) return;

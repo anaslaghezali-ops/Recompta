@@ -1817,7 +1817,12 @@
   100% { transform: translateX(280%); }
 }
 
-.imp-transfer { margin-top: 0.85rem; display: grid; gap: 0.65rem; }
+.imp-transfer:not([hidden]) { margin-top: 0.85rem; display: grid; gap: 0.65rem; }
+.imp-transfer[hidden],
+.imp-transfer-check[hidden],
+#transferWorkspaceBtn[hidden] {
+  display: none !important;
+}
 .imp-transfer-banner {
   display: flex;
   align-items: flex-start;
