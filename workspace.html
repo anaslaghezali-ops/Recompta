@@ -574,7 +574,7 @@
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc15";
+    } from "./dossier-documents.js?v=doc16";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -1748,10 +1748,14 @@
       }
     }
 
+    function documentGroupOptions() {
+      return { lines: workspaceSnapshot?.lines || [] };
+    }
+
     async function handleDeleteDocumentGroup(groupKey, btn) {
       if (!groupKey || btn?.disabled) return;
       const { workingDocs } = partitionDocumentsForDisplay(documentsCache);
-      const group = groupDocumentsBySupplier(workingDocs).find((row) => row.key === groupKey);
+      const group = groupDocumentsBySupplier(workingDocs, documentGroupOptions()).find((row) => row.key === groupKey);
       if (!group?.docs.length) return;
 
       const toDelete = collectDocumentsForDeletion(group.docs, documentsCache, {
@@ -1807,7 +1811,7 @@
     }
 
     function renderDocumentGroups(docs) {
-      const groups = groupDocumentsBySupplier(docs);
+      const groups = groupDocumentsBySupplier(docs, documentGroupOptions());
       const workspace = getDocumentAnalysisState();
       return groups.map((group) => {
         const expanded = expandedDocumentGroups.has(group.key);

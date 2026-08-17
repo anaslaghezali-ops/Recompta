@@ -1,5 +1,10 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
-import { expandUploadedFiles, isZipFile } from "./extract-client.js";
+import {
+  expandUploadedFiles,
+  isZipFile,
+  officialNameForLine,
+  supplierIdentityKey,
+} from "./extract-client.js";
 
 export const DOCUMENTS_BUCKET = "dossier-documents";
 
@@ -384,7 +389,35 @@ export function countInvoiceDocuments(documents) {
   return workingDocs.filter((doc) => doc.doc_type === "invoice").length;
 }
 
-export function documentSupplierGroup(doc) {
+export function findLinesForDocument(doc, lines = []) {
+  if (!doc) return [];
+  return (lines || []).filter((line) => {
+    if (!line) return false;
+    if (doc.source_id && line.source_id && String(doc.source_id) === String(line.source_id)) {
+      return true;
+    }
+    if (line.source_file && documentsShareIdentity(doc.original_filename, line.source_file)) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function looksLikeDriveExportFolder(name) {
+  return /-\d{8}T\d{6}Z(?:-\d+)*$/i.test(String(name || "").trim());
+}
+
+function pathSupplierFallback(doc) {
+  const raw = String(doc?.original_filename || "").replace(/\\/g, "/");
+  const parts = raw.split("/").filter(Boolean);
+  if (parts.length >= 2 && looksLikeDriveExportFolder(parts[0]) && parts[1]) {
+    return parts[1].trim();
+  }
+  if (parts.length >= 2) return parts[0].trim();
+  return "";
+}
+
+export function documentSupplierGroup(doc, { lines = [], notebook = [] } = {}) {
   if (doc?.doc_type === "bank") {
     return {
       key: "__bank__",
@@ -394,15 +427,30 @@ export function documentSupplierGroup(doc) {
     };
   }
 
+  const matchedLine = findLinesForDocument(doc, lines)[0];
+  if (matchedLine) {
+    const official = officialNameForLine(matchedLine, notebook)
+      || String(matchedLine.lib_frss || "").trim();
+    if (official) {
+      return {
+        key: supplierIdentityKey(matchedLine),
+        label: official,
+        kind: "supplier",
+        filename: documentDisplayName(doc, { withSize: true }),
+      };
+    }
+  }
+
   const raw = String(doc?.original_filename || "").replace(/\\/g, "/");
   const parts = raw.split("/").filter(Boolean);
-  if (parts.length >= 2) {
-    const supplier = parts[0].trim();
+  const folderSupplier = pathSupplierFallback(doc);
+  if (folderSupplier) {
     return {
-      key: `supplier:${supplier.toLowerCase()}`,
-      label: supplier,
+      key: `supplier:${folderSupplier.toLowerCase()}`,
+      label: folderSupplier,
       kind: "supplier",
-      filename: parts.slice(1).join("/"),
+      filename: parts.slice(looksLikeDriveExportFolder(parts[0]) ? 2 : 1).join("/")
+        || documentDisplayName(doc, { withSize: true }),
     };
   }
 
@@ -425,10 +473,10 @@ export function documentSupplierGroup(doc) {
 
 const GROUP_KIND_ORDER = { supplier: 0, bank: 1, archive: 2, other: 3 };
 
-export function groupDocumentsBySupplier(docs) {
+export function groupDocumentsBySupplier(docs, { lines = [], notebook = [] } = {}) {
   const map = new Map();
   for (const doc of docs || []) {
-    const group = documentSupplierGroup(doc);
+    const group = documentSupplierGroup(doc, { lines, notebook });
     if (!map.has(group.key)) {
       map.set(group.key, {
         key: group.key,
@@ -437,7 +485,8 @@ export function groupDocumentsBySupplier(docs) {
         docs: [],
       });
     }
-    map.get(group.key).docs.push({ ...doc, displayName: group.filename });
+    const bucket = map.get(group.key);
+    bucket.docs.push({ ...doc, displayName: group.filename });
   }
 
   return [...map.values()].sort((a, b) => {
