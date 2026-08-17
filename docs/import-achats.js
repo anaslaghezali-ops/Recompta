@@ -19,7 +19,7 @@ import {
   getApiUrl,
   saveApiUrl,
 } from "./api-client.js?v=api7";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist3";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist4";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
@@ -32,7 +32,7 @@ import {
   listImportJobs,
   startImportJobPolling,
   startInvoiceImportUpload,
-} from "./import-jobs-client.js?v=jobs27";
+} from "./import-jobs-client.js?v=jobs28";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc18";
+import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc19";
 
 const els = {};
 let session = null;

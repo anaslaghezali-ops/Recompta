@@ -559,7 +559,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
-    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist3";
+    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist4";
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
@@ -573,7 +573,7 @@
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc18";
+    } from "./dossier-documents.js?v=doc19";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -592,9 +592,9 @@
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
       importJobPageUrl,
-    } from "./import-jobs-client.js?v=jobs27";
+    } from "./import-jobs-client.js?v=jobs28";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace14";
+    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace15";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -946,13 +946,17 @@
         const dossierId = selectedDossierId;
         if (dossierId) {
           try {
-            workspaceSnapshot = await loadDossierWorkspaceSummary(dossierId);
+            workspaceSnapshot = mergeWorkspaceSnapshot(
+              workspaceSnapshot,
+              await loadDossierWorkspaceSummary(dossierId),
+            );
           } catch {
-            workspaceSnapshot = null;
+            /* garder le snapshot déjà chargé */
           }
         }
 
         cockpit = await loadWorkspaceCockpit(client, dossierId, {
+          workspace: workspaceSnapshot,
           pendingAnalysis: pendingAnalysisCount,
           bankPending: bankPendingCount,
           invoicePending: invoicePendingCount,
@@ -1363,8 +1367,8 @@
         }
         const workspace = await loadDossierWorkspaceSummary(selectedDossierId);
         if (generation !== documentsListGeneration) return;
-        workspaceSnapshot = workspace;
-        const pending = countPendingAnalysis(documentsCache, workspace);
+        workspaceSnapshot = mergeWorkspaceSnapshot(workspaceSnapshot, workspace);
+        const pending = countPendingAnalysis(documentsCache, workspaceSnapshot);
         pendingAnalysisCount = pending.total;
         bankPendingCount = pending.bankPending;
         invoicePendingCount = pending.invoicePending;
@@ -2524,7 +2528,7 @@
           ]);
           if (!stillCurrent()) return;
           documentsCache = docs;
-          workspaceSnapshot = workspace;
+          workspaceSnapshot = mergeWorkspaceSnapshot(workspaceSnapshot, workspace);
           const pending = countPendingAnalysis(documentsCache, workspaceSnapshot);
           pendingAnalysisCount = pending.total;
           bankPendingCount = pending.bankPending;
@@ -2577,14 +2581,7 @@
         await renderAnalysisCard();
         if (!stillCurrent()) return;
         if (activeTab === "documents") {
-          const hintEl = document.getElementById("documentsPeriodHint");
-          const isReadOnly = cockpit?.statusKey === "exported";
-          if (hintEl && cockpit?.dossier) {
-            hintEl.textContent = isReadOnly
-              ? `Documents de ${cockpit.periodLabel} — consultation seule (période déclarée)`
-              : `Documents de ${cockpit.periodLabel} — supprimez un fichier ou tout un dossier avec l'icône corbeille`;
-          }
-          renderDocumentsList();
+          await renderDocuments();
         }
         if (activeTab === "review") (await ensureReviewController())?.load();
       };

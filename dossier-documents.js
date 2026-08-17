@@ -712,7 +712,9 @@ export async function downloadDossierDocument(doc) {
 
 export function isDocumentAnalyzed(doc, workspace) {
   if (!doc) return false;
-  const lines = workspace?.lineRefs || workspace?.lines || [];
+  const lines = (workspace?.lines?.length ? workspace.lines : null)
+    || workspace?.lineRefs
+    || [];
   const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
   const processedKeys = new Set();
 
