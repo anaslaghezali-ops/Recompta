@@ -1,4 +1,4 @@
-import { uploadDossierFileForImport } from "./dossier-documents.js?v=doc17";
+import { prepareDossierUploadContext, uploadDossierFileForImport } from "./dossier-documents.js?v=doc18";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import { formatFileSize } from "./import-dossier.js?v=imp1";
 
@@ -258,6 +258,7 @@ export function createWorkspaceInvoiceUpload({
     let reused = 0;
     let expanded = 0;
     const failures = [];
+    const uploadContext = await prepareDossierUploadContext(dossierId);
 
     try {
       for (let index = 0; index < files.length; index += 1) {
@@ -271,6 +272,8 @@ export function createWorkspaceInvoiceUpload({
             dossierId,
             file,
             skipIfSameNameAndSize: true,
+            existingIndex: uploadContext.existingIndex,
+            uploadedBy: uploadContext.uploadedBy,
           });
           if (saved?.reused) reused += 1;
           else uploaded += 1;
