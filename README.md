@@ -33,7 +33,8 @@ Puis **Ports** → **8000** → **Open in Browser**.
 4. Vérifiez le tableau, corrigez si besoin
 5. **Télécharger Excel**
 
-> Auth super-admin (étape 1) : voir [docs/AUTH.md](docs/AUTH.md). Admin cabinets (étape 2) : [docs/ADMIN.md](docs/ADMIN.md).
+> Auth super-admin (étape 1) : voir [docs/AUTH.md](docs/AUTH.md). Admin cabinets (étape 2) : [docs/ADMIN.md](docs/ADMIN.md).  
+> Branches et retour arrière par PR : [docs/BRANCHES.md](docs/BRANCHES.md).
 
 ## Problème
 
