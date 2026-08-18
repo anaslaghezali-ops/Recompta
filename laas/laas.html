@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="laas.css?v=3" />
+  <link rel="stylesheet" href="laas.css?v=4" />
 </head>
 <body>
   <div class="page">
@@ -42,10 +42,9 @@
       </div>
 
       <ul class="rules" style="margin-top:1rem;">
-        <li><strong>Colonne A</strong> — order id · <strong>C</strong> — statut · <strong>F</strong> — montant collecté · <strong>K</strong> — frais livraison HT</li>
-        <li><strong>Livrée</strong> : F + K · <strong>Returned / Cancelled</strong> : seulement K (F ignoré)</li>
-        <li>Les lignes <strong>Refunds</strong> du PDF sont des remboursements — absentes de l’Excel</li>
-        <li>Virement = montant collecté − facture TTC</li>
+        <li><strong>Excel</strong> — F = montant collecté (livrées) · K = frais livraison HT</li>
+        <li><strong>PDF (bas de facture)</strong> — Montant collecté · Total facture TTC · <strong>Montant à payer au partenaire</strong> = virement reçu</li>
+        <li><strong>Formule</strong> : virement = collecté − facture TTC (les frais K sont convertis en TTC × 1,20)</li>
       </ul>
     </section>
 
@@ -65,6 +64,6 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   </script>
-  <script type="module" src="laas.js?v=3"></script>
+  <script type="module" src="laas.js?v=4"></script>
 </body>
 </html>
