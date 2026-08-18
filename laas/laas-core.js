@@ -459,6 +459,28 @@ export function reconcileFortnight(orders, pdf, fortnight) {
     && feeMismatches.length === 0
     && missingOnPdf.filter((r) => !(isReturnedOrCancelled(r.status) && r.deliveryFee === 0)).length === 0;
 
+  const missingTtc = round2(missingInExcel.reduce((s, row) => s + row.pdfTtc, 0));
+  const presentation = buildPresentation({
+    ok,
+    excel,
+    pdfAgg,
+    pdf,
+    missingInExcel,
+    missingFeesHt,
+    missingTtc,
+    refundsHt,
+    feesExplainedByRefunds,
+    explainedByMissingExcel,
+    collectedDelta,
+    feeHtDelta,
+    feeHtDeltaAfterMissing,
+    payoutExcel,
+    payoutDelta,
+    feeMismatches,
+    missingOnPdf,
+    explanations,
+  });
+
   return {
     fortnight,
     ok,
@@ -476,7 +498,179 @@ export function reconcileFortnight(orders, pdf, fortnight) {
     missingOnPdf,
     feeMismatches,
     explanations,
+    presentation,
   };
+}
+
+/**
+ * @param {object} ctx
+ */
+function buildPresentation(ctx) {
+  const {
+    ok,
+    excel,
+    pdfAgg,
+    pdf,
+    missingInExcel,
+    missingFeesHt,
+    missingTtc,
+    refundsHt,
+    feesExplainedByRefunds,
+    explainedByMissingExcel,
+    collectedDelta,
+    feeHtDelta,
+    payoutExcel,
+    payoutDelta,
+    feeMismatches,
+    missingOnPdf,
+    explanations,
+  } = ctx;
+
+  /** @type {Array<{type:string,title:string,subtitle:string,lines:object[]}>} */
+  const causes = [];
+
+  if (pdf.refunds.length) {
+    causes.push({
+      type: "refunds",
+      title: `${pdf.refunds.length} remboursement(s) sur la facture`,
+      subtitle: "Ces lignes « Refunds » sont sur le PDF mais pas dans l’export Excel. Elles réduisent les frais facturés.",
+      lines: pdf.refunds.map((line) => ({
+        label: line.label,
+        pdfFeeHt: line.ht,
+        pdfTva: line.tva,
+        pdfTtc: line.ttc,
+      })),
+    });
+  }
+
+  if (missingInExcel.length) {
+    causes.push({
+      type: "missing-excel",
+      title: `${missingInExcel.length} commande(s) sur la facture, absentes de l’Excel`,
+      subtitle: "L’export plateforme est incomplet. Ces commandes expliquent l’écart de frais (et souvent le montant collecté).",
+      lines: missingInExcel,
+    });
+  }
+
+  /** @type {Array<{key:string,label:string,ok:boolean,steps:Array<{text:string,value:number,highlight?:boolean,note?:string,result?:boolean}>}>} */
+  const metrics = [];
+
+  const feeSteps = [
+    { text: "Somme colonne K (Excel)", value: excel.feeHt },
+  ];
+  if (feesExplainedByRefunds) {
+    feeSteps.push({
+      text: "Remboursements PDF (non dans Excel)",
+      value: refundsHt,
+      highlight: true,
+    });
+  } else if (explainedByMissingExcel && missingFeesHt) {
+    feeSteps.push({
+      text: `Frais des ${missingInExcel.length} commandes absentes Excel`,
+      value: missingFeesHt,
+      highlight: true,
+    });
+  } else if (!nearlyEqual(feeHtDelta, 0)) {
+    feeSteps.push({
+      text: "Écart non expliqué",
+      value: feeHtDelta,
+      highlight: true,
+      note: "à vérifier",
+    });
+  }
+  feeSteps.push({ text: "Frais HT sur la facture PDF", value: pdfAgg.feeHt, result: true });
+  metrics.push({
+    key: "fees",
+    label: "Frais livraison HT",
+    ok: nearlyEqual(feeHtDelta, 0, 0.5) || feesExplainedByRefunds || nearlyEqual(ctx.feeHtDeltaAfterMissing, 0, 0.5),
+    steps: feeSteps,
+  });
+
+  const collectedSteps = [
+    { text: "Somme F des livrées (Excel)", value: excel.collected },
+  ];
+  if (explainedByMissingExcel && !nearlyEqual(collectedDelta, 0)) {
+    collectedSteps.push({
+      text: `Montant collecté des ${missingInExcel.length} commandes absentes Excel`,
+      value: collectedDelta,
+      highlight: true,
+      note: "le PDF ne détaille pas F par commande — c’est la différence de total",
+    });
+  } else if (!nearlyEqual(collectedDelta, 0)) {
+    collectedSteps.push({
+      text: "Écart non expliqué",
+      value: collectedDelta,
+      highlight: true,
+      note: "à vérifier",
+    });
+  }
+  collectedSteps.push({ text: "Montant collecté sur la facture PDF", value: pdfAgg.collected, result: true });
+  metrics.push({
+    key: "collected",
+    label: "Montant collecté (argent encaissé)",
+    ok: nearlyEqual(collectedDelta, 0, 0.5) || explainedByMissingExcel,
+    steps: collectedSteps,
+  });
+
+  const ttcSteps = [
+    { text: "Facture TTC calculée depuis Excel (K × 1,20)", value: excel.invoiceTtcFromFees },
+  ];
+  const ttcAdjustment = round2(pdfAgg.invoiceTtc - excel.invoiceTtcFromFees);
+  if (!nearlyEqual(ttcAdjustment, 0)) {
+    if (feesExplainedByRefunds) {
+      ttcSteps.push({
+        text: "Impact TTC des remboursements",
+        value: ttcAdjustment,
+        highlight: true,
+      });
+    } else if (explainedByMissingExcel && missingTtc) {
+      ttcSteps.push({
+        text: "TTC des commandes absentes Excel",
+        value: missingTtc,
+        highlight: true,
+      });
+    } else {
+      ttcSteps.push({ text: "Écart TTC", value: ttcAdjustment, highlight: true, note: "à vérifier" });
+    }
+  }
+  ttcSteps.push({ text: "Facture TTC sur le PDF", value: pdfAgg.invoiceTtc, result: true });
+  metrics.push({
+    key: "ttc",
+    label: "Facture TTC",
+    ok: nearlyEqual(ttcAdjustment, 0, 0.5) || feesExplainedByRefunds || explainedByMissingExcel,
+    steps: ttcSteps,
+  });
+
+  const virementOk = nearlyEqual(payoutDelta, 0, 0.5) || explainedByMissingExcel;
+  const virement = {
+    ok: virementOk,
+    formula: "Virement = montant collecté − facture TTC",
+    excelCalc: `${formatMad(excel.collected)} − ${formatMad(pdfAgg.invoiceTtc)} = ${formatMad(payoutExcel)}`,
+    pdfAmount: pdfAgg.payout,
+    match: nearlyEqual(payoutExcel, pdfAgg.payout, 0.5),
+    note: explainedByMissingExcel && !nearlyEqual(payoutDelta, 0)
+      ? "L’écart de virement suit l’écart de collecté (même facture TTC des deux côtés)."
+      : null,
+  };
+
+  let headline;
+  if (ok) {
+    if (causes.length === 1 && causes[0].type === "refunds") {
+      headline = "Tout est cohérent. L’Excel ne liste pas les remboursements PDF — c’est normal, la facture est correcte.";
+    } else if (causes.length === 1 && causes[0].type === "missing-excel") {
+      headline = "Tout est cohérent. L’export Excel est incomplet : des commandes facturées n’y figurent pas.";
+    } else if (causes.length) {
+      headline = "Tout est cohérent une fois les différences PDF/Excel ci-dessous prises en compte.";
+    } else {
+      headline = "Excel et facture PDF concordent pour cette quinzaine.";
+    }
+  } else {
+    headline = "Il reste des écarts à vérifier manuellement.";
+  }
+
+  const warnings = explanations.filter((e) => e.kind.includes("unexplained") || e.kind === "missing-pdf" || e.kind === "fee-mismatch");
+
+  return { headline, causes, metrics, virement, warnings };
 }
 
 /**
