@@ -102,155 +102,105 @@ async function handlePdf(file, forcedFortnight) {
   }
 }
 
-function nearlyZero(value, tolerance = 0.02) {
-  return Math.abs(Number(value) || 0) <= tolerance;
-}
-
-function deltaClass(value) {
-  return nearlyZero(value) ? "delta-ok" : "delta-bad";
-}
-
-function renderComparisonRow(label, excelValue, pdfValue, delta) {
+function renderMetricSteps(metric) {
   return `
-    <tr>
-      <td>${escapeHtml(label)}</td>
-      <td class="num">${escapeHtml(formatMad(excelValue))}</td>
-      <td class="num">${pdfValue == null ? "—" : escapeHtml(formatMad(pdfValue))}</td>
-      <td class="num ${deltaClass(delta)}">${escapeHtml(formatMad(delta))}</td>
-    </tr>
+    <div class="metric-block ${metric.ok ? "metric-ok" : "metric-warn"}">
+      <div class="metric-head">
+        <strong>${escapeHtml(metric.label)}</strong>
+        <span class="pill ${metric.ok ? "ok" : "warn"}">${metric.ok ? "OK" : "À vérifier"}</span>
+      </div>
+      <ol class="calc-steps">
+        ${metric.steps.map((step) => `
+          <li class="${step.highlight ? "step-adjust" : ""} ${step.result ? "step-result" : ""}">
+            <span class="step-label">${escapeHtml(step.text)}</span>
+            <span class="step-value">${escapeHtml(formatMad(step.value))}</span>
+            ${step.note ? `<span class="step-note">${escapeHtml(step.note)}</span>` : ""}
+          </li>
+        `).join("")}
+      </ol>
+    </div>
   `;
 }
 
-function renderBridgeRow(label, excelValue, missingValue, pdfValue, { missingSign = "+", missingLabel = "lignes manquantes" } = {}) {
-  return `
-    <tr>
-      <td>${escapeHtml(label)}</td>
-      <td class="num">${escapeHtml(formatMad(excelValue))}</td>
-      <td class="num bridge-missing">${escapeHtml(missingSign)} ${escapeHtml(formatMad(missingValue))}<br><span class="bridge-hint">${escapeHtml(missingLabel)}</span></td>
-      <td class="num">= ${escapeHtml(formatMad(pdfValue))}</td>
-    </tr>
-  `;
-}
+function renderCauseLines(cause) {
+  const lines = cause.lines || [];
+  if (!lines.length) return "";
 
-function renderBridgeTable(bridge, note) {
-  if (!bridge) return "";
-  const rows = [];
-  if (bridge.fees) {
-    rows.push(renderBridgeRow(
-      "Frais livraison HT",
-      bridge.fees.excel,
-      bridge.fees.missing,
-      bridge.fees.pdf,
-      { missingLabel: "PDF absentes Excel / refunds" },
-    ));
-  }
-  if (bridge.collected) {
-    rows.push(renderBridgeRow(
-      "Montant collecté (F livrées)",
-      bridge.collected.excel,
-      bridge.collected.missing,
-      bridge.collected.pdf,
-      { missingLabel: "F des commandes absentes Excel" },
-    ));
-  }
-  if (bridge.invoiceTtc) {
-    rows.push(renderBridgeRow(
-      "Facture TTC",
-      bridge.invoiceTtc.excel,
-      bridge.invoiceTtc.missing,
-      bridge.invoiceTtc.pdf,
-      { missingLabel: "TTC des lignes absentes Excel" },
-    ));
-  }
-  if (!rows.length) return "";
+  const hasOrderId = lines.some((line) => line.orderId);
+  const totalHt = lines.reduce((s, line) => s + (line.pdfFeeHt || 0), 0);
 
-  return `
-    <table class="bridge-table">
-      <thead>
-        <tr>
-          <th>Indicateur</th>
-          <th class="num">Excel</th>
-          <th class="num">+ écart expliqué</th>
-          <th class="num">= PDF</th>
-        </tr>
-      </thead>
-      <tbody>${rows.join("")}</tbody>
-    </table>
-    ${note || bridge.collected?.note ? `<p class="bridge-note">${escapeHtml(note || bridge.collected.note)}</p>` : ""}
-  `;
-}
-
-function renderPdfLinesTable(items) {
-  if (!items?.length) return "";
-  const hasOrderId = items.some((item) => item.orderId);
-  const totalHt = round2(items.reduce((s, item) => s + (item.pdfFeeHt || 0), 0));
-  const totalTva = round2(items.reduce((s, item) => s + (item.pdfTva || 0), 0));
-  const totalTtc = round2(items.reduce((s, item) => s + (item.pdfTtc || 0), 0));
+  if (!hasOrderId) {
+    return `
+      <table class="lines-table">
+        <thead><tr><th>Ligne PDF</th><th class="num">HT</th><th class="num">TVA</th><th class="num">TTC</th></tr></thead>
+        <tbody>
+          ${lines.map((line) => `
+            <tr>
+              <td>${escapeHtml(line.label || line.pdfLine || "—")}</td>
+              <td class="num">${escapeHtml(formatMad(line.pdfFeeHt))}</td>
+              <td class="num">${escapeHtml(formatMad(line.pdfTva))}</td>
+              <td class="num">${escapeHtml(formatMad(line.pdfTtc))}</td>
+            </tr>
+          `).join("")}
+          <tr class="lines-total">
+            <td><strong>Total</strong></td>
+            <td class="num"><strong>${escapeHtml(formatMad(totalHt))}</strong></td>
+            <td colspan="2"></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
 
   return `
     <table class="lines-table">
-      <thead>
-        <tr>
-          ${hasOrderId ? "<th>Order id</th><th>Date</th>" : "<th>Ligne PDF</th>"}
-          <th class="num">HT</th>
-          <th class="num">TVA</th>
-          <th class="num">TTC</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Order id</th><th>Date</th><th class="num">Frais HT (K)</th></tr></thead>
       <tbody>
-        ${items.map((item) => `
+        ${lines.map((line) => `
           <tr>
-            ${hasOrderId
-              ? `<td><code>${escapeHtml(item.orderId)}</code></td><td>${escapeHtml(item.serviceDate || "—")}</td>`
-              : `<td>${escapeHtml(item.pdfLine || "Refunds. On Demand")}</td>`}
-            <td class="num">${escapeHtml(formatMad(item.pdfFeeHt))}</td>
-            <td class="num">${escapeHtml(formatMad(item.pdfTva))}</td>
-            <td class="num">${escapeHtml(formatMad(item.pdfTtc))}</td>
+            <td><code>${escapeHtml(line.orderId)}</code></td>
+            <td>${escapeHtml(line.serviceDate || "—")}</td>
+            <td class="num">${escapeHtml(formatMad(line.pdfFeeHt))}</td>
           </tr>
         `).join("")}
         <tr class="lines-total">
-          ${hasOrderId ? "<td colspan=\"2\"><strong>Total lignes</strong></td>" : "<td><strong>Total</strong></td>"}
+          <td colspan="2"><strong>Total frais de ces commandes</strong></td>
           <td class="num"><strong>${escapeHtml(formatMad(totalHt))}</strong></td>
-          <td class="num"><strong>${escapeHtml(formatMad(totalTva))}</strong></td>
-          <td class="num"><strong>${escapeHtml(formatMad(totalTtc))}</strong></td>
         </tr>
       </tbody>
     </table>
   `;
 }
 
-function renderExplanation(explanation) {
-  const hasPdfLines = explanation.items?.some((item) => item.pdfFeeHt != null && (item.orderId || item.pdfLine));
-  const pdfLinesTable = hasPdfLines ? renderPdfLinesTable(explanation.items) : "";
-
-  const legacyItems = !hasPdfLines && explanation.items?.length
-    ? `<ul>${explanation.items.slice(0, 12).map((item) => {
-      if (item.orderId && item.deliveryFee != null) {
-        return `<li><code>${escapeHtml(item.orderId)}</code> — ${escapeHtml(item.status)} · K ${escapeHtml(formatMad(item.deliveryFee))} · F ${escapeHtml(formatMad(item.orderAmount || 0))}</li>`;
-      }
-      if (item.orderId && item.delta != null) {
-        return `<li><code>${escapeHtml(item.orderId)}</code> — Excel K ${escapeHtml(formatMad(item.excelK))} vs PDF ${escapeHtml(formatMad(item.pdfHt))} (Δ ${escapeHtml(formatMad(item.delta))})</li>`;
-      }
-      return `<li>${escapeHtml(JSON.stringify(item))}</li>`;
-    }).join("")}${explanation.items.length > 12 ? `<li>… et ${explanation.items.length - 12} autre(s)</li>` : ""}</ul>`
-    : "";
-
-  const bridgeTable = renderBridgeTable(explanation.bridge);
-
+function renderCause(cause) {
   return `
-    <article class="explain">
-      <h4>${escapeHtml(explanation.title)}</h4>
-      <p>${escapeHtml(explanation.detail)}</p>
-      ${pdfLinesTable}
-      ${bridgeTable}
-      ${legacyItems}
+    <article class="cause-card">
+      <h4>${escapeHtml(cause.title)}</h4>
+      <p>${escapeHtml(cause.subtitle)}</p>
+      ${renderCauseLines(cause)}
     </article>
   `;
 }
 
+function renderVirement(virement) {
+  return `
+    <div class="virement-box ${virement.ok ? "metric-ok" : "metric-warn"}">
+      <div class="metric-head">
+        <strong>Virement reçu</strong>
+        <span class="pill ${virement.match ? "ok" : "warn"}">${virement.match ? "Concordant" : "Écart"}</span>
+      </div>
+      <p class="virement-formula">${escapeHtml(virement.formula)}</p>
+      <p class="virement-calc">${escapeHtml(virement.excelCalc)}</p>
+      <p class="virement-pdf">Montant sur la facture PDF : <strong>${escapeHtml(formatMad(virement.pdfAmount))}</strong></p>
+      ${virement.note ? `<p class="step-note">${escapeHtml(virement.note)}</p>` : ""}
+    </div>
+  `;
+}
+
 function renderPeriod(report, invoice) {
-  const statusClass = report.ok ? "ok" : (report.explanations.some((e) => e.kind.includes("unexplained")) ? "bad" : "warn");
-  const statusLabel = report.ok ? "OK" : "Écarts à lire";
+  const { presentation: p } = report;
+  const statusClass = report.ok ? "ok" : "bad";
+  const statusLabel = report.ok ? "Rapproché" : "À vérifier";
 
   return `
     <section class="period card">
@@ -261,37 +211,41 @@ function renderPeriod(report, invoice) {
             <span class="pill ${statusClass}">${statusLabel}</span>
             <span class="pill neutral">Facture ${escapeHtml(invoice.invoiceNumber || "—")}</span>
             <span class="pill neutral">${report.excel.orderCount} lignes Excel · ${report.pdf.serviceCount} lignes PDF</span>
-            ${report.pdf.refundCount ? `<span class="pill warn">${report.pdf.refundCount} refund(s)</span>` : ""}
           </div>
         </div>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Indicateur</th>
-            <th class="num">Calcul Excel</th>
-            <th class="num">Facture PDF</th>
-            <th class="num">Écart</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${renderComparisonRow("Montant collecté (F des livrées)", report.excel.collected, report.pdf.collected, report.deltas.collected)}
-          ${renderComparisonRow("Frais livraison HT (K + refunds)", report.excel.feeHt, report.pdf.feeHt, report.deltas.feeHt)}
-          ${renderComparisonRow("Facture TTC", report.excel.invoiceTtcFromFees, report.pdf.invoiceTtc, round2((report.pdf.invoiceTtc || 0) - report.excel.invoiceTtcFromFees))}
-          ${renderComparisonRow("Virement attendu (collecté − TTC)", report.payoutExcel, report.pdf.payout, report.deltas.payout)}
-        </tbody>
-      </table>
-
-      <div class="explain-list">
-        ${report.explanations.length ? report.explanations.map(renderExplanation).join("") : `<p class="empty">Aucun écart particulier — les totaux concordent.</p>`}
+      <div class="headline ${report.ok ? "headline-ok" : "headline-warn"}">
+        ${escapeHtml(p.headline)}
       </div>
+
+      ${p.causes.length ? `
+        <section class="causes-section">
+          <h4 class="section-title">Pourquoi Excel et PDF diffèrent</h4>
+          ${p.causes.map(renderCause).join("")}
+        </section>
+      ` : ""}
+
+      <section class="metrics-section">
+        <h4 class="section-title">Calcul pas à pas</h4>
+        <p class="section-hint">Chaque bloc montre comment passer du total Excel au total facture PDF.</p>
+        ${p.metrics.map(renderMetricSteps).join("")}
+        ${renderVirement(p.virement)}
+      </section>
+
+      ${p.warnings.length ? `
+        <section class="warnings-section">
+          <h4 class="section-title">Points d’attention</h4>
+          ${p.warnings.map((w) => `
+            <article class="cause-card warn-card">
+              <h4>${escapeHtml(w.title)}</h4>
+              <p>${escapeHtml(w.detail)}</p>
+            </article>
+          `).join("")}
+        </section>
+      ` : ""}
     </section>
   `;
-}
-
-function round2(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
 }
 
 function render() {
@@ -312,8 +266,8 @@ function render() {
       <span class="pill neutral">Collecté ${escapeHtml(formatMad(monthExcel.collected))}</span>
       <span class="pill neutral">Frais HT ${escapeHtml(formatMad(monthExcel.feeHt))}</span>
     </div>
-    <p style="color:var(--muted); font-size:0.9rem; margin:0.75rem 0 0;">
-      Règle : livrée → F + K · retour / annulée → seulement K (F ignoré) · K = 0 → pas de ligne facture.
+    <p class="summary-hint">
+      Livrée → F + K · retour / annulée → K seulement · les refunds et certaines commandes n’apparaissent que sur le PDF.
     </p>
   `;
 
