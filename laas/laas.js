@@ -102,147 +102,151 @@ async function handlePdf(file, forcedFortnight) {
   }
 }
 
-function renderMetricSteps(metric) {
+function nearlyZero(value, tolerance = 0.02) {
+  return Math.abs(Number(value) || 0) <= tolerance;
+}
+
+function renderCalcLine(label, value, { minus = false, strong = false } = {}) {
+  const prefix = minus ? "−" : "+";
+  const cls = strong ? "calc-line calc-result" : "calc-line";
   return `
-    <div class="metric-block ${metric.ok ? "metric-ok" : "metric-warn"}">
-      <div class="metric-head">
-        <strong>${escapeHtml(metric.label)}</strong>
-        <span class="pill ${metric.ok ? "ok" : "warn"}">${metric.ok ? "OK" : "À vérifier"}</span>
-      </div>
-      <ol class="calc-steps">
-        ${metric.steps.map((step) => `
-          <li class="${step.highlight ? "step-adjust" : ""} ${step.result ? "step-result" : ""}">
-            <span class="step-label">${escapeHtml(step.text)}</span>
-            <span class="step-value">${escapeHtml(formatMad(step.value))}</span>
-            ${step.note ? `<span class="step-note">${escapeHtml(step.note)}</span>` : ""}
-          </li>
-        `).join("")}
-      </ol>
+    <div class="${cls}">
+      <span>${escapeHtml(label)}</span>
+      <span class="calc-amount">${minus ? `${prefix} ` : ""}${escapeHtml(formatMad(value))}</span>
     </div>
   `;
 }
 
-function renderCauseLines(cause) {
-  const lines = cause.lines || [];
+function renderPayoutSide(side, { isPdf = false } = {}) {
+  const payoutLabel = isPdf ? "Montant à payer au partenaire" : "Virement attendu";
+  const payoutNote = isPdf && side.payoutRaw != null && side.payoutRaw < 0
+    ? `<p class="pdf-raw">Sur la facture : ${escapeHtml(formatMad(side.payoutRaw))} (négatif = virement reçu)</p>`
+    : "";
+
+  return `
+    <div class="payout-side ${isPdf ? "payout-pdf" : "payout-excel"}">
+      <h4>${escapeHtml(side.title)}</h4>
+      <div class="calc-block">
+        ${renderCalcLine("Montant collecté (F des livrées)", side.collected)}
+        ${renderCalcLine(`Facture Glovo TTC (frais K HT × 1,20${isPdf ? "" : ""})`, side.feeTtc, { minus: true })}
+        <p class="calc-hint">Frais HT : ${escapeHtml(formatMad(side.feeHt))}</p>
+        ${renderCalcLine(payoutLabel, side.payout, { strong: true })}
+        ${payoutNote}
+      </div>
+    </div>
+  `;
+}
+
+function renderGap(p) {
+  const gap = p.payoutDelta;
+  const gapClass = p.gapExplained ? "gap-ok" : "gap-bad";
+  const gapSign = gap > 0 ? "+" : "";
+
+  return `
+    <div class="gap-box ${gapClass}">
+      <div class="gap-amount">
+        <span>Écart virement</span>
+        <strong>${gapSign}${escapeHtml(formatMad(gap))}</strong>
+      </div>
+      <p>${escapeHtml(p.gapReason)}</p>
+    </div>
+  `;
+}
+
+function renderDetailLines(detail) {
+  const lines = detail.lines || [];
   if (!lines.length) return "";
 
-  const hasOrderId = lines.some((line) => line.orderId);
-  const totalHt = lines.reduce((s, line) => s + (line.pdfFeeHt || 0), 0);
-
-  if (!hasOrderId) {
+  if (detail.type === "refunds") {
     return `
       <table class="lines-table">
-        <thead><tr><th>Ligne PDF</th><th class="num">HT</th><th class="num">TVA</th><th class="num">TTC</th></tr></thead>
+        <thead><tr><th>Ligne PDF</th><th class="num">HT</th><th class="num">TTC</th></tr></thead>
         <tbody>
           ${lines.map((line) => `
             <tr>
-              <td>${escapeHtml(line.label || line.pdfLine || "—")}</td>
+              <td>${escapeHtml(line.label || "Refunds. On Demand")}</td>
               <td class="num">${escapeHtml(formatMad(line.pdfFeeHt))}</td>
-              <td class="num">${escapeHtml(formatMad(line.pdfTva))}</td>
               <td class="num">${escapeHtml(formatMad(line.pdfTtc))}</td>
             </tr>
           `).join("")}
-          <tr class="lines-total">
-            <td><strong>Total</strong></td>
-            <td class="num"><strong>${escapeHtml(formatMad(totalHt))}</strong></td>
-            <td colspan="2"></td>
-          </tr>
         </tbody>
       </table>
     `;
   }
 
+  const totalHt = lines.reduce((s, line) => s + (line.pdfFeeHt || 0), 0);
   return `
     <table class="lines-table">
-      <thead><tr><th>Order id</th><th>Date</th><th class="num">Frais HT (K)</th></tr></thead>
+      <thead><tr><th>Order id</th><th>Date</th><th class="num">Frais K HT</th><th class="num">TTC (×1,20)</th></tr></thead>
       <tbody>
         ${lines.map((line) => `
           <tr>
             <td><code>${escapeHtml(line.orderId)}</code></td>
             <td>${escapeHtml(line.serviceDate || "—")}</td>
             <td class="num">${escapeHtml(formatMad(line.pdfFeeHt))}</td>
+            <td class="num">${escapeHtml(formatMad(line.pdfTtc))}</td>
           </tr>
         `).join("")}
         <tr class="lines-total">
-          <td colspan="2"><strong>Total frais de ces commandes</strong></td>
+          <td colspan="2"><strong>Total</strong></td>
           <td class="num"><strong>${escapeHtml(formatMad(totalHt))}</strong></td>
+          <td class="num"><strong>${escapeHtml(formatMad(lines.reduce((s, l) => s + (l.pdfTtc || 0), 0)))}</strong></td>
         </tr>
       </tbody>
     </table>
   `;
 }
 
-function renderCause(cause) {
-  return `
-    <article class="cause-card">
-      <h4>${escapeHtml(cause.title)}</h4>
-      <p>${escapeHtml(cause.subtitle)}</p>
-      ${renderCauseLines(cause)}
-    </article>
-  `;
-}
-
-function renderVirement(virement) {
-  return `
-    <div class="virement-box ${virement.ok ? "metric-ok" : "metric-warn"}">
-      <div class="metric-head">
-        <strong>Virement reçu</strong>
-        <span class="pill ${virement.match ? "ok" : "warn"}">${virement.match ? "Concordant" : "Écart"}</span>
-      </div>
-      <p class="virement-formula">${escapeHtml(virement.formula)}</p>
-      <p class="virement-calc">${escapeHtml(virement.excelCalc)}</p>
-      <p class="virement-pdf">Montant sur la facture PDF : <strong>${escapeHtml(formatMad(virement.pdfAmount))}</strong></p>
-      ${virement.note ? `<p class="step-note">${escapeHtml(virement.note)}</p>` : ""}
-    </div>
-  `;
-}
-
 function renderPeriod(report, invoice) {
-  const { presentation: p } = report;
+  const p = report.presentation;
   const statusClass = report.ok ? "ok" : "bad";
-  const statusLabel = report.ok ? "Rapproché" : "À vérifier";
+  const statusLabel = report.ok ? "OK" : "À vérifier";
 
   return `
     <section class="period card">
       <div class="period-head">
-        <div>
-          <h3>${escapeHtml(fortnightLabel(report.fortnight))}</h3>
-          <div class="status-bar">
-            <span class="pill ${statusClass}">${statusLabel}</span>
-            <span class="pill neutral">Facture ${escapeHtml(invoice.invoiceNumber || "—")}</span>
-            <span class="pill neutral">${report.excel.orderCount} lignes Excel · ${report.pdf.serviceCount} lignes PDF</span>
-          </div>
+        <h3>${escapeHtml(fortnightLabel(report.fortnight))}</h3>
+        <div class="status-bar">
+          <span class="pill ${statusClass}">${statusLabel}</span>
+          <span class="pill neutral">Facture ${escapeHtml(invoice.invoiceNumber || "—")}</span>
         </div>
       </div>
 
-      <div class="headline ${report.ok ? "headline-ok" : "headline-warn"}">
-        ${escapeHtml(p.headline)}
+      <p class="formula-banner">Virement = montant collecté − facture Glovo TTC</p>
+
+      <div class="payout-compare">
+        ${renderPayoutSide(p.excelSide)}
+        <div class="payout-vs">vs</div>
+        ${renderPayoutSide(p.pdfSide, { isPdf: true })}
       </div>
 
-      ${p.causes.length ? `
-        <section class="causes-section">
-          <h4 class="section-title">Pourquoi Excel et PDF diffèrent</h4>
-          ${p.causes.map(renderCause).join("")}
-        </section>
+      ${!nearlyZero(p.payoutDelta) || !p.gapExplained ? renderGap(p) : `
+        <div class="gap-box gap-ok">
+          <p>Le virement calculé depuis l’Excel correspond au montant indiqué en bas de la facture PDF.</p>
+        </div>
+      `}
+
+      ${p.details.length ? `
+        <details class="details-block">
+          <summary>Détail des lignes PDF absentes de l’Excel (${p.details.length})</summary>
+          ${p.details.map((detail) => `
+            <div class="detail-section">
+              <h5>${escapeHtml(detail.title)}</h5>
+              ${renderDetailLines(detail)}
+            </div>
+          `).join("")}
+        </details>
       ` : ""}
 
-      <section class="metrics-section">
-        <h4 class="section-title">Calcul pas à pas</h4>
-        <p class="section-hint">Chaque bloc montre comment passer du total Excel au total facture PDF.</p>
-        ${p.metrics.map(renderMetricSteps).join("")}
-        ${renderVirement(p.virement)}
-      </section>
-
       ${p.warnings.length ? `
-        <section class="warnings-section">
-          <h4 class="section-title">Points d’attention</h4>
+        <div class="warnings-section">
           ${p.warnings.map((w) => `
-            <article class="cause-card warn-card">
-              <h4>${escapeHtml(w.title)}</h4>
+            <article class="warn-card">
+              <strong>${escapeHtml(w.title)}</strong>
               <p>${escapeHtml(w.detail)}</p>
             </article>
           `).join("")}
-        </section>
+        </div>
       ` : ""}
     </section>
   `;
@@ -266,15 +270,12 @@ function render() {
       <span class="pill neutral">Collecté ${escapeHtml(formatMad(monthExcel.collected))}</span>
       <span class="pill neutral">Frais HT ${escapeHtml(formatMad(monthExcel.feeHt))}</span>
     </div>
-    <p class="summary-hint">
-      Livrée → F + K · retour / annulée → K seulement · les refunds et certaines commandes n’apparaissent que sur le PDF.
-    </p>
   `;
 
   if (!reports.length) {
     els.results.innerHTML = `
       <div class="empty card">
-        Ajoutez une ou deux factures PDF (quinzaine du 15 et fin de mois) pour le rapprochement détaillé.
+        Ajoutez une ou deux factures PDF pour comparer le virement attendu (Excel) au virement réel (PDF).
       </div>
     `;
     return;

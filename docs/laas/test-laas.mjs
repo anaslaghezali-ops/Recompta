@@ -54,7 +54,8 @@ function testJulyQ1Synthetic() {
 
   assert(report.ok, `q1 synthetic: expected ok, got ${report.ok}`);
   assert(Math.abs(report.deltas.collected) < 0.02, `collected delta ${report.deltas.collected}`);
-  assert(Math.abs(report.deltas.payout) < 0.02, `payout delta ${report.deltas.payout}`);
+  assert(Math.abs(report.deltas.payout - 136) < 0.02, `payout delta ${report.deltas.payout} (refunds)`);
+  assert(report.presentation.gapExplained, "gap should be explained by refunds");
   assert(inv.refunds.length === 2, "expected 2 refund lines");
   console.log("✓ juillet Q1 synthétique (refunds)");
 }
@@ -93,7 +94,7 @@ function testJulyQ2Synthetic() {
 
   assert(report.missingInExcel.length === 6, `expected 6 missing, got ${report.missingInExcel.length}`);
   assert(Math.abs(report.deltas.feeHtAfterMissing) < 0.02, `fee after missing ${report.deltas.feeHtAfterMissing}`);
-  assert(Math.abs(report.deltas.payout - report.deltas.collected) < 0.02, "payout delta should match collected delta");
+  assert(report.presentation.gapExplained, "gap should be explained by missing excel");
   assert(report.ok, `q2 synthetic: expected ok, got ${report.ok}`);
   console.log("✓ juillet Q2 synthétique (Excel incomplet)");
 }
