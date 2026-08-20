@@ -25,6 +25,10 @@
           </div>
         </div>
         <div class="dash-topbar-actions">
+          <span class="dash-credits-pill" id="topbarCredits" hidden title="Crédits scans IA ce mois (PDF natifs gratuits)">
+            <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
+            <span id="topbarCreditsText">—</span>
+          </span>
           <label class="dash-search">
             <i data-lucide="search"></i>
             <input id="searchInput" type="search" placeholder="Rechercher un client ou ICE…" />
@@ -193,8 +197,23 @@
 
     function updateCreditsBanner(credits) {
       const banner = document.getElementById("creditsBanner");
+      const topbar = document.getElementById("topbarCredits");
+      const topbarText = document.getElementById("topbarCreditsText");
       if (!credits?.cabinet_id) {
-        banner.hidden = true;
+        if (banner) banner.hidden = true;
+        if (topbar) topbar.hidden = true;
+        return;
+      }
+      const depleted = creditsDepleted(credits);
+      const pillLabel = `${credits.remaining}/${credits.quota} scans IA`;
+      if (topbar && topbarText) {
+        topbar.hidden = false;
+        topbarText.textContent = pillLabel;
+        topbar.classList.toggle("depleted", depleted);
+        topbar.title = formatCreditsLabel(credits) + " · PDF natifs gratuits";
+      }
+      if (!banner) {
+        initLucide();
         return;
       }
       banner.hidden = false;
@@ -211,6 +230,8 @@
         banner.style.background = "#eff6ff";
         banner.style.borderColor = "#bfdbfe";
         banner.style.color = "#1e3a8a";
+        document.getElementById("creditsBannerText").textContent = formatCreditsLabel(credits)
+          + " · PDF natifs et CSV banque = gratuits";
       }
       initLucide();
     }
