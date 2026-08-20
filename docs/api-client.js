@@ -334,9 +334,12 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
   });
 }
 
-export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "" } = {}) {
+export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "", maxDocuments = null } = {}) {
   if (!apiUrl) throw new Error("Renseignez l'URL du Codespace (port 8000) pour lancer l'analyse IA.");
   const params = new URLSearchParams({ doc_type: docType, client_ice: clientIce || "" });
+  if (maxDocuments != null && Number.isFinite(Number(maxDocuments))) {
+    params.set("max_documents", String(Math.max(0, Math.trunc(Number(maxDocuments)))));
+  }
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/dossiers/${dossierId}/analyze?${params}`,
     { method: "POST" },

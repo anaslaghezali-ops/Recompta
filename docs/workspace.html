@@ -597,8 +597,8 @@
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
       importJobPageUrl,
-    } from "./import-jobs-client.js?v=jobs28";
-    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
+    } from "./import-jobs-client.js?v=jobs29";
+    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api7";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace15";
     import {
       bindSidebarMobile,
@@ -651,6 +651,7 @@
     let analysisLaunchQueued = 0;
     let analysisProgress = null;
     let serverHealthOk = null;
+    let serverVisionCreditsOk = false;
     let bankMatchController = null;
     let bankMatchInFlight = false;
     let bankExtractInFlight = false;
@@ -755,10 +756,17 @@
       try {
         const health = await fetchServerHealth(apiUrl);
         serverHealthOk = true;
-        statusEl.textContent = health.ai_verified ? "Serveur connecté — IA active" : "Serveur connecté";
-        statusEl.dataset.tone = "ok";
+        serverVisionCreditsOk = health?.vision_credits_enforced === true;
+        if (!serverVisionCreditsOk) {
+          statusEl.textContent = "Serveur IA obsolète (crédits) — redéployez freemium";
+          statusEl.dataset.tone = "warn";
+        } else {
+          statusEl.textContent = health.ai_verified ? "Serveur connecté — IA + crédits" : "Serveur connecté — crédits OK";
+          statusEl.dataset.tone = "ok";
+        }
       } catch (error) {
         serverHealthOk = false;
+        serverVisionCreditsOk = false;
         statusEl.textContent = quiet
           ? "Connexion en attente — réessayez dans quelques secondes"
           : (error.message || "Serveur injoignable");
@@ -1400,6 +1408,17 @@
         return 0;
       }
 
+      if (!serverVisionCreditsOk) {
+        document.getElementById("analysisServerConfig")?.setAttribute("open", "");
+        showWorkspaceToast({
+          title: "Serveur IA obsolète",
+          message: "Les crédits scans ne sont pas appliqués. Sur le Codespace : git checkout freemium && git pull && redémarrez uvicorn. L'API /api/health doit renvoyer vision_credits_enforced: true.",
+          variant: "warn",
+          durationMs: 20000,
+        });
+        return 0;
+      }
+
       if (selectedDossierId) {
         try {
           await reconcileStaleImportJobs([selectedDossierId]);
@@ -1447,9 +1466,17 @@
           analysisProgress = { processed: 0, total: batchTotal };
         }
 
+        const creditsForCap = docType === "invoice"
+          ? await loadMyVisionCredits({ cabinetId })
+          : null;
+        const maxDocuments = creditsForCap?.cabinet_id != null
+          ? Math.max(0, Number(creditsForCap.remaining || 0))
+          : null;
+
         const result = await launchDossierAnalysis(apiUrl, selectedDossierId, {
           docType,
           clientIce: client?.ice || "",
+          maxDocuments,
         });
         const queuedJobs = result.queued_jobs || 0;
         const skippedInflight = result.skipped_inflight || 0;

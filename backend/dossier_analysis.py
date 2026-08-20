@@ -289,8 +289,11 @@ async def queue_dossier_analysis(
     *,
     doc_type: str = "invoice",
     client_ice: str = "",
+    max_documents: int | None = None,
 ) -> dict[str, Any]:
     """Crée des jobs d'import pour les documents stockés mais pas encore analysés."""
+    from vision_credits import cabinet_id_for_dossier, peek_cabinet_vision_credits
+
     async with SupabaseService() as db:
         workspace = await db.load_workspace(dossier_id)
         documents = await list_dossier_documents(db, dossier_id, doc_type=doc_type)
@@ -342,6 +345,46 @@ async def queue_dossier_analysis(
                 "skipped_inflight": 0,
                 "message": "Aucun document en attente d'analyse.",
             }
+
+        cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
+        credits = await peek_cabinet_vision_credits(cabinet_id, db.client) if cabinet_id else None
+        credits_remaining = int((credits or {}).get("remaining") or 0) if credits else None
+        skipped_credits = 0
+
+        # Freemium : ne jamais mettre en file plus de factures scannées que de crédits restants.
+        if doc_type == "invoice":
+            if cabinet_id is None or credits is None:
+                return {
+                    "queued_jobs": 0,
+                    "pending_documents": len(pending),
+                    "skipped_inflight": skipped_inflight,
+                    "credits_remaining": 0,
+                    "message": (
+                        "Impossible de vérifier les crédits vision IA pour ce cabinet. "
+                        "Vérifiez la migration crédits et SUPABASE_SERVICE_ROLE_KEY."
+                    ),
+                }
+            credit_cap = credits_remaining
+            if max_documents is not None:
+                credit_cap = min(credit_cap, max(0, int(max_documents)))
+            if credit_cap <= 0:
+                return {
+                    "queued_jobs": 0,
+                    "pending_documents": len(pending),
+                    "skipped_inflight": skipped_inflight,
+                    "credits_remaining": 0,
+                    "skipped_credits": len(to_queue),
+                    "message": (
+                        f"{len(to_queue)} scan(s) en attente — quota IA épuisé ce mois "
+                        f"({credits_remaining}/{(credits or {}).get('quota', 0)} restants)."
+                    ),
+                }
+            if len(to_queue) > credit_cap:
+                skipped_credits = len(to_queue) - credit_cap
+                to_queue = to_queue[:credit_cap]
+        elif max_documents is not None and len(to_queue) > max_documents:
+            skipped_credits = len(to_queue) - max_documents
+            to_queue = to_queue[: max(0, int(max_documents))]
 
         options = {"client_ice": client_ice, "analysis_from_documents": True}
         jobs: list[dict[str, Any]] = []
@@ -414,11 +457,18 @@ async def queue_dossier_analysis(
         message = f"{len(jobs)} analyse(s) mise(s) en file d'attente."
         if skipped_inflight:
             message += f" {skipped_inflight} déjà en cours."
+        if skipped_credits:
+            message += (
+                f" {skipped_credits} scan(s) reportés (quota IA : "
+                f"{credits_remaining} crédit(s) restant(s))."
+            )
 
         return {
             "queued_jobs": len(jobs),
             "pending_documents": len(pending),
             "skipped_inflight": skipped_inflight,
+            "skipped_credits": skipped_credits,
+            "credits_remaining": credits_remaining,
             "jobs": jobs,
             "message": message,
         }

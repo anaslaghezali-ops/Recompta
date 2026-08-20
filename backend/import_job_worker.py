@@ -523,6 +523,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         nonlocal processed, failed
         filename = item["filename"]
         source_id = item["source_id"]
+        item_token = set_active_cabinet_id(cabinet_id)
         async with semaphore:
             try:
                 result = await extract_invoice(filename, item["content"], item["mime_type"])
@@ -545,6 +546,8 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     lines=[],
                     warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
                 )
+            finally:
+                reset_active_cabinet_id(item_token)
 
     token = activate_client_ice_exclusions(client_ice)
     new_lines: list[dict[str, Any]] = []

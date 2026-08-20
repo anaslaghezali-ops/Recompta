@@ -1199,6 +1199,6 @@ export function countPendingAnalysis(documents, workspace) {
   };
 }
 
-export async function launchDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "" } = {}) {
-  return apiStartDossierAnalysis(apiUrl, dossierId, { docType, clientIce });
+export async function launchDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "", maxDocuments = null } = {}) {
+  return apiStartDossierAnalysis(apiUrl, dossierId, { docType, clientIce, maxDocuments });
 }

@@ -141,6 +141,9 @@ async def health(refresh: bool = False) -> dict:
         "tesseract_available": tesseract_available(),
         "import_worker_enabled": import_worker_enabled(),
         "import_worker_poll_seconds": float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8")),
+        # Le frontend Freemium refuse l'extraction IA si ce flag est absent (backend trop ancien).
+        "vision_credits_enforced": True,
+        "vision_credits_version": 2,
     }
 
 
@@ -312,6 +315,7 @@ async def analyze_dossier_documents(
     dossier_id: int,
     doc_type: str = "invoice",
     client_ice: str = "",
+    max_documents: int | None = None,
 ) -> dict:
     """Lance l'analyse IA en arrière-plan pour les documents stockés non encore traités."""
     if not import_worker_enabled():
@@ -322,11 +326,19 @@ async def analyze_dossier_documents(
     if doc_type not in {"invoice", "bank"}:
         raise HTTPException(status_code=400, detail="doc_type doit être invoice ou bank.")
 
+    limit = None
+    if max_documents is not None:
+        try:
+            limit = max(0, int(max_documents))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="max_documents invalide") from exc
+
     try:
         result = await queue_dossier_analysis(
             dossier_id,
             doc_type=doc_type,
             client_ice=client_ice.strip(),
+            max_documents=limit,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

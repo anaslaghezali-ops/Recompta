@@ -16,9 +16,13 @@ Exécuter aussi :
 
 ## Backend (obligatoire pour bloquer les scans)
 
-Le worker Python (`backend/import_job_worker.py`) consomme les crédits **avant chaque appel OpenAI Vision**. Il faut **redéployer le backend** (Render / Codespace) depuis la branche `freemium` après chaque changement crédits.
+Voir la checklist complète : [DEPLOY_CREDITS.md](./DEPLOY_CREDITS.md)
 
-Variables requises côté serveur : `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`.
+Le worker Python consomme les crédits **avant chaque appel OpenAI Vision**, et
+`/api/dossiers/{id}/analyze` ne met en file **que** `min(scans, crédits restants)`.
+
+GitHub Pages refuse l’extraction si `/api/health` ne contient pas
+`"vision_credits_enforced": true` (serveur trop ancien).
 
 ## GitHub Pages
 
