@@ -1487,6 +1487,9 @@
   max-width: 28rem;
   width: calc(100% - 2rem);
   box-shadow: var(--dash-shadow-lg);
+  font-family: var(--dash-font);
+  color: var(--dash-text);
+  background: var(--dash-surface);
 }
 
 .dash-modal-inner {
@@ -1496,9 +1499,22 @@
 .dash-modal h3 {
   margin: 0 0 0.25rem;
   font-size: 1.05rem;
+  font-weight: 700;
+  font-family: inherit;
 }
 
-.dash-modal .hint { font-size: 0.85rem; color: var(--dash-muted); margin: 0 0 1rem; }
+.dash-modal .hint {
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 400;
+  color: var(--dash-muted);
+  margin: 0 0 1rem;
+  font-family: inherit;
+}
+
+.dash-modal .dash-btn {
+  font-family: inherit;
+}
 
 .dash-form label {
   display: block;
