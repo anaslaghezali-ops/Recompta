@@ -234,10 +234,13 @@
         window.location.href = await redirectAfterLogin(result.user.id);
       } catch (err) {
         const msg = authErrorMessage(err);
-        if (/failed to fetch|network/i.test(msg)) {
-          showError(signUpError, "Service d'inscription indisponible. Vérifiez que l'Edge Function signup-cabinet est déployée.");
+        if (/SIGNUP_FUNCTION_UNAVAILABLE|failed to fetch|network/i.test(msg)) {
+          showError(
+            signUpError,
+            "Inscription pas encore activée côté serveur. Déployez l'Edge Function signup-cabinet sur Supabase (guide : docs/DEPLOY_SIGNUP.md).",
+          );
         } else {
-          showError(signUpError, msg);
+          showError(signUpError, msg.replace(/^SIGNUP_FUNCTION_UNAVAILABLE:\s*/i, ""));
         }
       } finally {
         signUpBtn.disabled = false;

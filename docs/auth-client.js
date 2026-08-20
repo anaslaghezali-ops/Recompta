@@ -106,19 +106,26 @@ export async function signUpCabinet({ email, password, cabinetName, displayName 
     throw new Error("Mot de passe requis (6 caractères minimum).");
   }
 
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/signup-cabinet`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      email: trimmedEmail,
-      password,
-      cabinet_name: trimmedCabinet,
-      display_name: trimmedDisplay,
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/signup-cabinet`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: trimmedEmail,
+        password,
+        cabinet_name: trimmedCabinet,
+        display_name: trimmedDisplay,
+      }),
+    });
+  } catch {
+    throw new Error(
+      "SIGNUP_FUNCTION_UNAVAILABLE: déployez signup-cabinet sur Supabase (voir docs/DEPLOY_SIGNUP.md).",
+    );
+  }
 
   let body = {};
   try {
@@ -127,8 +134,14 @@ export async function signUpCabinet({ email, password, cabinetName, displayName 
     body = {};
   }
 
+  if (response.status === 404) {
+    throw new Error(
+      "SIGNUP_FUNCTION_UNAVAILABLE: déployez signup-cabinet sur Supabase (voir docs/DEPLOY_SIGNUP.md).",
+    );
+  }
+
   if (!response.ok) {
-    throw new Error(body.error || `Inscription impossible (${response.status})`);
+    throw new Error(body.error || body.message || `Inscription impossible (${response.status})`);
   }
 
   return signIn(trimmedEmail, password);

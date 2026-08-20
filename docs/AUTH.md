@@ -30,13 +30,11 @@ Ne commitez **jamais** la clé `service_role`.
 
 ## 3. Déployer l'Edge Function `signup-cabinet`
 
-Inscription self-serve (Freemium) :
+Guide pas à pas : **[DEPLOY_SIGNUP.md](DEPLOY_SIGNUP.md)** (obligatoire — sans ça l'inscription affiche une erreur).
 
 ```bash
 supabase functions deploy signup-cabinet --project-ref pbyoxfxngfutoiqjirkx
 ```
-
-Variables automatiques : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`.
 
 La fonction crée en une transaction : compte Auth + cabinet (`signup_source = self_serve`) + membre `owner`.
 
