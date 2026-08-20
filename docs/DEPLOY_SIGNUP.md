@@ -41,6 +41,14 @@ Le code source est dans `supabase/functions/signup-cabinet/index.ts`.
 
 Les variables `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont injectées automatiquement.
 
+Option : déployer sans vérification JWT (appels publics sans header Authorization) :
+
+```bash
+supabase functions deploy signup-cabinet --no-verify-jwt --project-ref pbyoxfxngfutoiqjirkx
+```
+
+Sinon le frontend envoie `Authorization: Bearer <anon_key>` (déjà géré dans `auth-client.js`).
+
 ## Étape 3 — Vérifier
 
 ```bash
