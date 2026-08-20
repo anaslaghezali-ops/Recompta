@@ -8,6 +8,7 @@ Développement du modèle gratuit + crédits vision :
 
 - Branche longue durée : **`freemium`** (depuis `main`)
 - Spec produit : [FREEMIUM.md](../FREEMIUM.md) à la racine
+- **GitHub Pages** : déploie le dossier `docs/` depuis **`freemium`** (pas `main`)
 - Les PRs Freemium ciblent **`freemium`** jusqu’au merge final sur `main`
 
 ### Nommage des branches Freemium

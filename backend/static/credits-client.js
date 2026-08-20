@@ -4,13 +4,33 @@ export function isBillableVisionEngine(engine) {
   return engine === "scan" || engine === "ai";
 }
 
-export async function loadMyVisionCredits() {
+const DEFAULT_VISION_QUOTA = 10;
+
+export async function loadMyVisionCredits(options = {}) {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const { data, error } = await supabase.rpc("get_my_vision_credits");
-  if (error) throw error;
-  return data;
+  const sessionCabinetId = options.cabinetId ?? null;
+
+  try {
+    const { data, error } = await supabase.rpc("get_my_vision_credits");
+    if (error) throw error;
+    if (data?.cabinet_id) return data;
+  } catch (err) {
+    console.warn("[credits] get_my_vision_credits:", err?.message || err);
+  }
+
+  if (sessionCabinetId) {
+    return {
+      cabinet_id: sessionCabinetId,
+      quota: DEFAULT_VISION_QUOTA,
+      used: 0,
+      remaining: DEFAULT_VISION_QUOTA,
+      fallback: true,
+    };
+  }
+
+  return null;
 }
 
 export async function loadAdminVisionCreditsSettings() {
@@ -74,8 +94,9 @@ export async function listAdminCabinetVisionCredits() {
 
 export function formatCreditsLabel(credits) {
   if (!credits?.cabinet_id) return "";
-  const { remaining = 0, quota = 0, used = 0 } = credits;
-  return `${remaining}/${quota} crédits vision ce mois (${used} utilisés)`;
+  const { remaining = 0, quota = 0, used = 0, fallback = false } = credits;
+  const base = `${remaining}/${quota} crédits vision ce mois (${used} utilisés)`;
+  return fallback ? `${base} · estimation (migration crédits à appliquer)` : base;
 }
 
 export function creditsDepleted(credits) {

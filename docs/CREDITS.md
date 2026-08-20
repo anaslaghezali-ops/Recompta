@@ -6,6 +6,12 @@ Exécuter dans le SQL Editor Supabase :
 
 `supabase/migrations/20260820193000_vision_credits.sql`
 
+Sans cette migration, l’UI affiche quand même **10/10 scans IA** (estimation) mais la consommation backend ne fonctionne pas.
+
+## GitHub Pages
+
+Le déploiement Pages utilise le dossier **`docs/`** sur la branche **`freemium`** (voir `.github/workflows/pages.yml`). Après un push sur `freemium`, attendre ~1 min puis **Ctrl+Shift+R** sur le navigateur.
+
 ## Comportement
 
 | Élément | Détail |
