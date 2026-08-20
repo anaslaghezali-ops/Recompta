@@ -18,6 +18,7 @@ from normalize_results import (
 )
 from supabase_service import SupabaseService, _document_identity_keys
 from supplier_notebook import apply_official_supplier_names
+from vision_credits import cabinet_id_for_dossier, reset_active_cabinet_id, set_active_cabinet_id
 from zip_utils import iter_invoice_files, storage_path_for_zip_member
 
 IMPORT_QUEUE_BUCKET = "import-queue"
@@ -503,6 +504,8 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     failed = 0
     extraction_results: list[ExtractionResult] = []
     semaphore = asyncio.Semaphore(extraction_concurrency())
+    cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
+    credits_token = set_active_cabinet_id(cabinet_id)
 
     async def process_item(item: dict[str, Any]) -> ExtractionResult:
         nonlocal processed, failed
@@ -596,6 +599,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             )
     finally:
         deactivate_client_ice_exclusions(token)
+        reset_active_cabinet_id(credits_token)
 
     total = len(work_items)
     if processed == 0:

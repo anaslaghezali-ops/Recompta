@@ -55,6 +55,23 @@
     </section>
 
     <section class="card">
+      <h2>Crédits vision IA (Freemium)</h2>
+      <p class="hint">Quota mensuel de scans IA par cabinet. PDF natifs et CSV banque restent gratuits.</p>
+      <form id="creditsDefaultForm" class="admin-form">
+        <div class="grid two">
+          <label>Quota mensuel par défaut
+            <input id="defaultCreditsQuota" type="number" min="0" max="100000" step="1" required />
+          </label>
+          <div class="actions" style="align-self:end;">
+            <button class="primary" type="submit" id="saveDefaultCreditsBtn">Enregistrer le défaut</button>
+          </div>
+        </div>
+        <p class="hint error" id="creditsDefaultError" hidden></p>
+        <p class="hint success" id="creditsDefaultOk" hidden></p>
+      </form>
+    </section>
+
+    <section class="card">
       <div class="section-header">
         <h2>Cabinets existants</h2>
         <button type="button" class="secondary small" id="refreshBtn">Actualiser</button>
@@ -67,6 +84,7 @@
               <th>Cabinet</th>
               <th>Slug</th>
               <th>Responsable</th>
+              <th>Crédits IA</th>
               <th>Créé le</th>
             </tr>
           </thead>
@@ -84,7 +102,13 @@
       isValidSlug,
       listCabinetsWithOwners,
       slugify,
-    } from "./admin-client.js?v=admin1";
+    } from "./admin-client.js?v=admin2";
+    import {
+      listAdminCabinetVisionCredits,
+      loadAdminVisionCreditsSettings,
+      saveAdminCabinetVisionQuota,
+      saveAdminVisionCreditsDefault,
+    } from "./credits-client.js?v=credits1";
 
     const form = document.getElementById("createCabinetForm");
     const cabinetName = document.getElementById("cabinetName");
@@ -100,6 +124,13 @@
     const cabinetsBody = document.getElementById("cabinetsBody");
     const refreshBtn = document.getElementById("refreshBtn");
     const signOutBtn = document.getElementById("signOutBtn");
+    const creditsDefaultForm = document.getElementById("creditsDefaultForm");
+    const defaultCreditsQuota = document.getElementById("defaultCreditsQuota");
+    const creditsDefaultError = document.getElementById("creditsDefaultError");
+    const creditsDefaultOk = document.getElementById("creditsDefaultOk");
+    const saveDefaultCreditsBtn = document.getElementById("saveDefaultCreditsBtn");
+
+    let creditsByCabinet = {};
 
     let slugTouched = false;
 
@@ -134,6 +165,29 @@
       }
     }
 
+    function showCreditsDefaultError(message) {
+      creditsDefaultError.hidden = !message;
+      creditsDefaultError.textContent = message || "";
+      creditsDefaultOk.hidden = true;
+    }
+
+    function showCreditsDefaultOk(message) {
+      creditsDefaultOk.hidden = !message;
+      creditsDefaultOk.textContent = message || "";
+      creditsDefaultError.hidden = true;
+    }
+
+    async function loadCreditsSettings() {
+      try {
+        const settings = await loadAdminVisionCreditsSettings();
+        defaultCreditsQuota.value = String(settings?.default_monthly_quota ?? 10);
+        const rows = await listAdminCabinetVisionCredits();
+        creditsByCabinet = Object.fromEntries(rows.map((row) => [row.cabinet_id, row]));
+      } catch (err) {
+        showCreditsDefaultError(err.message || "Impossible de charger les crédits.");
+      }
+    }
+
     async function refreshList() {
       listHint.hidden = false;
       listHint.textContent = "Chargement…";
@@ -146,20 +200,66 @@
         }
         listHint.hidden = true;
         tableWrap.hidden = false;
-        cabinetsBody.innerHTML = rows.map((row) => `
-          <tr>
+        cabinetsBody.innerHTML = rows.map((row) => {
+          const credit = creditsByCabinet[row.id] || {};
+          const effective = credit.effective_quota ?? defaultCreditsQuota.value ?? 10;
+          const used = credit.used ?? 0;
+          const remaining = credit.remaining ?? Math.max(effective - used, 0);
+          const override = credit.monthly_quota_override;
+          return `
+          <tr data-cabinet-id="${row.id}">
             <td>${escapeHtml(row.name)}</td>
             <td><code>${escapeHtml(row.slug)}</code></td>
             <td>${escapeHtml(row.owner?.email || "—")}</td>
+            <td>
+              <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
+                <input type="number" min="0" max="100000" step="1" class="cabinet-quota-input" data-cabinet-id="${row.id}" value="${override ?? ""}" placeholder=" défaut (${effective})" style="width:7rem;" />
+                <span class="hint">${remaining}/${effective} restants</span>
+                <button type="button" class="secondary small save-cabinet-quota" data-cabinet-id="${row.id}">OK</button>
+              </div>
+            </td>
             <td>${escapeHtml(formatDate(row.created_at))}</td>
           </tr>
-        `).join("");
+        `;
+        }).join("");
+        document.querySelectorAll(".save-cabinet-quota").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const cabinetId = Number(btn.dataset.cabinetId);
+            const input = document.querySelector(`.cabinet-quota-input[data-cabinet-id="${cabinetId}"]`);
+            try {
+              await saveAdminCabinetVisionQuota(cabinetId, input?.value ?? "");
+              showCreditsDefaultOk(`Quota cabinet #${cabinetId} mis à jour.`);
+              await loadCreditsSettings();
+              await refreshList();
+            } catch (err) {
+              showCreditsDefaultError(err.message || "Échec de la mise à jour.");
+            }
+          });
+        });
       } catch (err) {
         listHint.textContent = err.message || "Impossible de charger la liste.";
       }
     }
 
     await guardSuperAdminPage();
+    await loadCreditsSettings();
+
+    creditsDefaultForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showCreditsDefaultError("");
+      showCreditsDefaultOk("");
+      saveDefaultCreditsBtn.disabled = true;
+      try {
+        await saveAdminVisionCreditsDefault(defaultCreditsQuota.value);
+        showCreditsDefaultOk("Quota mensuel par défaut enregistré.");
+        await loadCreditsSettings();
+        await refreshList();
+      } catch (err) {
+        showCreditsDefaultError(err.message || "Échec de l'enregistrement.");
+      } finally {
+        saveDefaultCreditsBtn.disabled = false;
+      }
+    });
 
     signOutBtn.addEventListener("click", async () => {
       await signOut();
@@ -175,7 +275,10 @@
       slugTouched = cabinetSlug.value.trim().length > 0;
     });
 
-    refreshBtn.addEventListener("click", refreshList);
+    refreshBtn.addEventListener("click", async () => {
+      await loadCreditsSettings();
+      await refreshList();
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -198,6 +301,7 @@
         showOk(`Cabinet « ${cabinetName.value.trim()} » créé. Le responsable peut se connecter sur login.html.`);
         form.reset();
         slugTouched = false;
+        await loadCreditsSettings();
         await refreshList();
       } catch (err) {
         let msg = err.message || "Échec de la création.";
@@ -210,6 +314,7 @@
       }
     });
 
+    await loadCreditsSettings();
     await refreshList();
   </script>
 </body>

@@ -9,7 +9,7 @@ Branche de travail longue durée : **`freemium`** (basée sur `main`).
 | Plateforme complète (dossiers, revue, banque, export DED) | Scans / photos au-delà du quota |
 | PDF natifs (couche texte) | 1 crédit = 1 document scanné (max 5 pages) |
 | Relevés CSV / Excel banque | Packs : 99 / 399 / 1 299 MAD |
-| **30 crédits vision / mois / cabinet** | |
+| **10 crédits vision / mois / cabinet** (défaut, modifiable super-admin) | |
 
 Phase 1 : **inscription self-serve** + **compteur crédits**.  
 Phase 2 (après masse de cabinets) : abonnement Pro récurrent, portail client, etc.
