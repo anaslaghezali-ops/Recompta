@@ -51,7 +51,13 @@ cd backend && python scripts/test_scan_routing.py
 1. Exposer côté API un champ **`billable: true|false`** par fichier extrait (`scan`/`ai` = true).
 2. Table Supabase `cabinet_credits` : quota mensuel, consommé, reset le 1er du mois.
 3. Bloquer l’envoi IA si `credits_remaining <= 0` (message + lien achat pack).
-4. Inscription self-serve (`signUp`) + création cabinet automatique (sans super-admin).
+
+## Inscription self-serve (implémenté)
+
+- UI : `login.html` → onglet **Créer un cabinet**
+- API : Edge Function **`signup-cabinet`** (`supabase/functions/signup-cabinet/`)
+- Migration : `20260820180000_self_serve_signup.sql` (`signup_source` sur `cabinets`)
+- Doc déploiement : [docs/AUTH.md](docs/AUTH.md)
 
 ## Branches
 

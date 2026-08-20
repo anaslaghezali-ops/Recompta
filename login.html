@@ -3,12 +3,48 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recompta — Connexion</title>
+  <title>Recompta — Connexion cabinet</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="landing.css?v=1" />
-  <link rel="stylesheet" href="styles.css?v=auth3" />
+  <link rel="stylesheet" href="styles.css?v=auth4" />
+  <style>
+    .auth-tabs {
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 1.25rem;
+      padding: 0.25rem;
+      background: var(--surface-2, #f1f5f9);
+      border-radius: 0.5rem;
+    }
+    .auth-tabs button {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.375rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--muted, #64748b);
+    }
+    .auth-tabs button[aria-selected="true"] {
+      background: #fff;
+      color: var(--text, #0f172a);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+    .auth-panel[hidden] { display: none !important; }
+    .auth-freemium-note {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      background: #eff6ff;
+      color: #1e40af;
+      font-size: 0.875rem;
+      line-height: 1.45;
+    }
+  </style>
 </head>
 <body>
   <nav class="lp-nav" aria-label="Navigation">
@@ -23,29 +59,67 @@
   <header class="hero" style="padding-top:2rem;">
     <div class="hero-content">
       <p class="eyebrow">Recompta</p>
-      <h1>Connexion</h1>
-      <p class="subtitle">Connectez-vous avec le compte fourni par votre cabinet. Les dossiers clients se gèrent depuis votre espace cabinet.</p>
+      <h1 id="pageTitle">Connexion cabinet</h1>
+      <p class="subtitle" id="pageSubtitle">Connectez-vous ou créez votre espace cabinet gratuitement.</p>
     </div>
   </header>
 
   <main class="container login-wrap">
     <section class="card login-card">
-      <h2>Se connecter</h2>
+      <div class="auth-tabs" role="tablist" aria-label="Connexion ou inscription">
+        <button type="button" role="tab" id="tabSignIn" aria-selected="true" aria-controls="panelSignIn">Connexion</button>
+        <button type="button" role="tab" id="tabSignUp" aria-selected="false" aria-controls="panelSignUp">Créer un cabinet</button>
+      </div>
+
       <p class="hint" id="configHint" hidden>
-        Un seul fichier : <code>docs/auth-client.js</code> (clé anon du projet <code>pbyoxfxngfutoiqjirkx</code>).
+        Configurez <code>auth-client.js</code> (clé anon du projet <code>pbyoxfxngfutoiqjirkx</code>).
       </p>
-      <form id="authForm">
-        <label>Email
-          <input id="email" type="email" autocomplete="username" required />
-        </label>
-        <label>Mot de passe
-          <input id="password" type="password" autocomplete="current-password" minlength="6" required />
-        </label>
-        <p class="hint error" id="authError" hidden></p>
-        <div class="actions">
-          <button id="submitBtn" class="primary" type="submit">Connexion</button>
-        </div>
-      </form>
+
+      <div id="panelSignIn" class="auth-panel" role="tabpanel" aria-labelledby="tabSignIn">
+        <h2>Se connecter</h2>
+        <form id="signInForm">
+          <label>Email
+            <input id="signInEmail" type="email" autocomplete="username" required />
+          </label>
+          <label>Mot de passe
+            <input id="signInPassword" type="password" autocomplete="current-password" minlength="6" required />
+          </label>
+          <p class="hint error" id="signInError" hidden></p>
+          <div class="actions">
+            <button id="signInBtn" class="primary" type="submit">Connexion</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="panelSignUp" class="auth-panel" role="tabpanel" aria-labelledby="tabSignUp" hidden>
+        <h2>Créer votre cabinet</h2>
+        <p class="hint">Gratuit — PDF natifs et export DED TVA illimités. Les scans consommeront des crédits vision (bientôt).</p>
+        <form id="signUpForm">
+          <label>Nom du cabinet
+            <input id="cabinetName" type="text" autocomplete="organization" minlength="2" maxlength="80" required placeholder="Ex. Cabinet Alami &amp; Associés" />
+          </label>
+          <label>Votre nom <span class="hint">(optionnel)</span>
+            <input id="displayName" type="text" autocomplete="name" maxlength="80" placeholder="Ex. Karim Alami" />
+          </label>
+          <label>Email professionnel
+            <input id="signUpEmail" type="email" autocomplete="email" required />
+          </label>
+          <label>Mot de passe
+            <input id="signUpPassword" type="password" autocomplete="new-password" minlength="6" required />
+          </label>
+          <label>Confirmer le mot de passe
+            <input id="signUpPasswordConfirm" type="password" autocomplete="new-password" minlength="6" required />
+          </label>
+          <p class="hint error" id="signUpError" hidden></p>
+          <div class="actions">
+            <button id="signUpBtn" class="primary" type="submit">Créer mon cabinet</button>
+          </div>
+        </form>
+        <p class="auth-freemium-note">
+          En créant un compte, vous obtenez un espace cabinet sécurisé pour gérer vos dossiers clients TVA.
+        </p>
+      </div>
+
       <p class="hint" style="margin-top:1rem;">
         <a href="index.html">Retour à l'accueil</a>
         <span id="adminLinkWrap" hidden>
@@ -61,26 +135,64 @@
       getSession,
       isSuperAdmin,
       signIn,
+      signUpCabinet,
       authErrorMessage,
       redirectAfterLogin,
-    } from "./auth-client.js?v=auth5";
+    } from "./auth-client.js?v=auth7";
 
-    const form = document.getElementById("authForm");
-    const submitBtn = document.getElementById("submitBtn");
-    const errorEl = document.getElementById("authError");
+    const tabSignIn = document.getElementById("tabSignIn");
+    const tabSignUp = document.getElementById("tabSignUp");
+    const panelSignIn = document.getElementById("panelSignIn");
+    const panelSignUp = document.getElementById("panelSignUp");
+    const pageTitle = document.getElementById("pageTitle");
+    const pageSubtitle = document.getElementById("pageSubtitle");
     const configHint = document.getElementById("configHint");
     const adminLinkWrap = document.getElementById("adminLinkWrap");
-    const email = document.getElementById("email");
-    const password = document.getElementById("password");
 
-    function showError(message) {
-      errorEl.hidden = !message;
-      errorEl.textContent = message || "";
+    const signInForm = document.getElementById("signInForm");
+    const signInBtn = document.getElementById("signInBtn");
+    const signInError = document.getElementById("signInError");
+    const signInEmail = document.getElementById("signInEmail");
+    const signInPassword = document.getElementById("signInPassword");
+
+    const signUpForm = document.getElementById("signUpForm");
+    const signUpBtn = document.getElementById("signUpBtn");
+    const signUpError = document.getElementById("signUpError");
+    const cabinetName = document.getElementById("cabinetName");
+    const displayName = document.getElementById("displayName");
+    const signUpEmail = document.getElementById("signUpEmail");
+    const signUpPassword = document.getElementById("signUpPassword");
+    const signUpPasswordConfirm = document.getElementById("signUpPasswordConfirm");
+
+    function showError(el, message) {
+      el.hidden = !message;
+      el.textContent = message || "";
+    }
+
+    function setAuthMode(mode) {
+      const signup = mode === "signup";
+      tabSignIn.setAttribute("aria-selected", signup ? "false" : "true");
+      tabSignUp.setAttribute("aria-selected", signup ? "true" : "false");
+      panelSignIn.hidden = signup;
+      panelSignUp.hidden = !signup;
+      pageTitle.textContent = signup ? "Créer un cabinet" : "Connexion cabinet";
+      pageSubtitle.textContent = signup
+        ? "Inscription gratuite — démarrez la production TVA de vos clients."
+        : "Connectez-vous à votre espace cabinet.";
+      history.replaceState(null, "", signup ? "login.html?mode=signup" : "login.html");
+    }
+
+    tabSignIn.addEventListener("click", () => setAuthMode("signin"));
+    tabSignUp.addEventListener("click", () => setAuthMode("signup"));
+
+    if (new URLSearchParams(window.location.search).get("mode") === "signup") {
+      setAuthMode("signup");
     }
 
     if (!isSupabaseConfigured()) {
       configHint.hidden = false;
-      form.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
+      signInForm.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
+      signUpForm.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
     } else {
       const session = await getSession();
       if (session?.user) {
@@ -88,22 +200,47 @@
       }
     }
 
-    form.addEventListener("submit", async (event) => {
+    signInForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      showError("");
-      submitBtn.disabled = true;
+      showError(signInError, "");
+      signInBtn.disabled = true;
       try {
-        const result = await signIn(email.value.trim(), password.value);
+        const result = await signIn(signInEmail.value.trim(), signInPassword.value);
+        window.location.href = await redirectAfterLogin(result.user.id);
+      } catch (err) {
+        showError(signInError, authErrorMessage(err));
+      } finally {
+        signInBtn.disabled = false;
+      }
+    });
+
+    signUpForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError(signUpError, "");
+
+      if (signUpPassword.value !== signUpPasswordConfirm.value) {
+        showError(signUpError, "Les mots de passe ne correspondent pas.");
+        return;
+      }
+
+      signUpBtn.disabled = true;
+      try {
+        const result = await signUpCabinet({
+          email: signUpEmail.value.trim(),
+          password: signUpPassword.value,
+          cabinetName: cabinetName.value.trim(),
+          displayName: displayName.value.trim(),
+        });
         window.location.href = await redirectAfterLogin(result.user.id);
       } catch (err) {
         const msg = authErrorMessage(err);
-        if (/signups not allowed|user registration/i.test(msg)) {
-          showError("Inscription fermée. Demandez vos identifiants à l’administrateur Recompta.");
+        if (/failed to fetch|network/i.test(msg)) {
+          showError(signUpError, "Service d'inscription indisponible. Vérifiez que l'Edge Function signup-cabinet est déployée.");
         } else {
-          showError(msg);
+          showError(signUpError, msg);
         }
       } finally {
-        submitBtn.disabled = false;
+        signUpBtn.disabled = false;
       }
     });
 
