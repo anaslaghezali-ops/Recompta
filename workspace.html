@@ -1545,6 +1545,28 @@
     async function handleLaunchExtraction() {
       if (!selectedDossierId || analysisInFlight || activeImportJob || bankExtractInFlight) return;
 
+      const credits = await loadMyVisionCredits({ cabinetId });
+      if (creditsDepleted(credits)) {
+        showWorkspaceToast({
+          title: "Quota épuisé",
+          message: "Plus de crédits scans IA ce mois. Contactez l'administrateur ou attendez le prochain mois.",
+          variant: "warn",
+          durationMs: 12000,
+        });
+        return;
+      }
+
+      await refreshPendingAnalysis({ forceDocuments: true });
+      if (credits && invoicePendingCount > Number(credits.remaining || 0)) {
+        showWorkspaceToast({
+          title: "Crédits insuffisants",
+          message: `${invoicePendingCount} scan(s) en attente pour ${credits.remaining} crédit(s) restant(s) ce mois.`,
+          variant: "warn",
+          durationMs: 12000,
+        });
+        return;
+      }
+
       analysisInFlight = true;
       analysisLaunchQueued = 0;
       renderProductionCard();

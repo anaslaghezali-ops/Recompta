@@ -238,6 +238,9 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
 
     await db.update_job_file(file_id, {"status": "processing"})
 
+    cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
+    credits_token = set_active_cabinet_id(cabinet_id)
+
     try:
         content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
 
@@ -324,6 +327,8 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
                 "processed_at": _iso_now(),
             },
         )
+    finally:
+        reset_active_cabinet_id(credits_token)
 
     await db.update_job(
         job_id,
@@ -505,6 +510,13 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     extraction_results: list[ExtractionResult] = []
     semaphore = asyncio.Semaphore(extraction_concurrency())
     cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
+    if cabinet_id is None:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "vision credits: cabinet_id introuvable pour dossier %s — extractions IA bloquées",
+            dossier_id,
+        )
     credits_token = set_active_cabinet_id(cabinet_id)
 
     async def process_item(item: dict[str, Any]) -> ExtractionResult:

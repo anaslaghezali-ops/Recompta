@@ -8,6 +8,18 @@ Exécuter dans le SQL Editor Supabase :
 
 Sans cette migration, l’UI affiche quand même **10/10 scans IA** (estimation) mais la consommation backend ne fonctionne pas.
 
+Exécuter aussi :
+
+`supabase/migrations/20260820194500_fix_consume_vision_credit_atomic.sql`
+
+(Corrige le dépassement de quota quand plusieurs scans sont extraits en parallèle.)
+
+## Backend (obligatoire pour bloquer les scans)
+
+Le worker Python (`backend/import_job_worker.py`) consomme les crédits **avant chaque appel OpenAI Vision**. Il faut **redéployer le backend** (Render / Codespace) depuis la branche `freemium` après chaque changement crédits.
+
+Variables requises côté serveur : `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`.
+
 ## GitHub Pages
 
 Le déploiement Pages utilise le dossier **`docs/`** sur la branche **`freemium`** (voir `.github/workflows/pages.yml`). Après un push sur `freemium`, attendre ~1 min puis **Ctrl+Shift+R** sur le navigateur.

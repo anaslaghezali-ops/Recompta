@@ -137,6 +137,15 @@ def _heuristic_from_text(text: str) -> list[BankTransaction]:
 
 
 async def _extract_with_ai(filename: str, images: list[tuple[bytes, str]]) -> BankStatementResult:
+    from vision_credits import ensure_vision_credit_available, get_active_cabinet_id
+
+    ok, credit_message = await ensure_vision_credit_available(get_active_cabinet_id())
+    if not ok:
+        return BankStatementResult(
+            filename=filename,
+            warnings=[credit_message],
+        )
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY non configurée")
