@@ -539,6 +539,17 @@
     </form>
   </dialog>
 
+  <dialog id="creditsInfoDialog" class="dash-modal">
+    <form method="dialog" class="dash-modal-inner" id="creditsInfoForm">
+      <h3 id="creditsInfoTitle">Crédits scans IA</h3>
+      <p id="creditsInfoMessage" class="hint" style="white-space:pre-line;"></p>
+      <div class="dash-form-actions">
+        <button type="submit" class="dash-btn" id="creditsInfoCancel" value="cancel" hidden>Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="creditsInfoConfirm" value="confirm">OK</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="reviewFieldBulkDialog" class="dash-modal">
     <form method="dialog" class="dash-modal-inner">
       <h3 id="reviewFieldBulkTitle">Valeur modifiée</h3>
@@ -626,6 +637,42 @@
     const periodError = document.getElementById("periodError");
     const periodSelect = document.getElementById("periodSelect");
     const periodBar = document.getElementById("periodBar");
+    const creditsInfoDialog = document.getElementById("creditsInfoDialog");
+    const creditsInfoTitle = document.getElementById("creditsInfoTitle");
+    const creditsInfoMessage = document.getElementById("creditsInfoMessage");
+    const creditsInfoCancel = document.getElementById("creditsInfoCancel");
+    const creditsInfoConfirm = document.getElementById("creditsInfoConfirm");
+
+    function openCreditsDialog({
+      title,
+      message,
+      confirmLabel = "OK",
+      cancelLabel = null,
+    } = {}) {
+      return new Promise((resolve) => {
+        if (!creditsInfoDialog) {
+          resolve(Boolean(cancelLabel ? window.confirm(`${title}\n\n${message}`) : (window.alert(`${title}\n\n${message}`), true)));
+          return;
+        }
+        creditsInfoTitle.textContent = title || "Crédits scans IA";
+        creditsInfoMessage.textContent = message || "";
+        creditsInfoConfirm.textContent = confirmLabel;
+        if (cancelLabel) {
+          creditsInfoCancel.hidden = false;
+          creditsInfoCancel.textContent = cancelLabel;
+        } else {
+          creditsInfoCancel.hidden = true;
+        }
+
+        const onClose = () => {
+          creditsInfoDialog.removeEventListener("close", onClose);
+          resolve(creditsInfoDialog.returnValue === "confirm");
+        };
+        creditsInfoDialog.addEventListener("close", onClose);
+        creditsInfoDialog.returnValue = "";
+        creditsInfoDialog.showModal();
+      });
+    }
 
     let cabinetId = null;
     let client = null;
@@ -1395,7 +1442,7 @@
       }
     }
 
-    async function queueServerExtraction({ docType, emptyMessage }) {
+    async function queueServerExtraction({ docType, emptyMessage, expectedExtractCount = null }) {
       persistAnalysisApiSettings();
       const apiUrl = await refreshAnalysisServerStatus({ quiet: false });
       if (!apiUrl) {
@@ -1462,7 +1509,10 @@
         }
 
         if (round === 0) {
-          batchTotal = pendingAtLaunch;
+          const capped = expectedExtractCount != null
+            ? Math.min(pendingAtLaunch, Math.max(0, Number(expectedExtractCount) || 0))
+            : pendingAtLaunch;
+          batchTotal = capped || pendingAtLaunch;
           analysisProgress = { processed: 0, total: batchTotal };
         }
 
@@ -1582,23 +1632,29 @@
 
       const credits = await loadMyVisionCredits({ cabinetId });
       if (creditsDepleted(credits)) {
-        showWorkspaceToast({
+        await openCreditsDialog({
           title: "Quota épuisé",
-          message: "Plus de crédits scans IA ce mois. Contactez l'administrateur ou attendez le prochain mois.",
-          variant: "warn",
-          durationMs: 12000,
+          message: "Plus de crédits scans IA ce mois.\n\nContactez l'administrateur ou attendez le prochain mois.",
+          confirmLabel: "Compris",
         });
         return;
       }
 
       const remainingCredits = Number(credits?.remaining || 0);
       if (credits?.cabinet_id && pendingBefore > remainingCredits) {
-        showWorkspaceToast({
-          title: "Extraction partielle",
-          message: `${remainingCredits} crédit(s) disponible(s) pour ${pendingBefore} scan(s). Les documents restants resteront en attente.`,
-          variant: "info",
-          durationMs: 10000,
+        const accepted = await openCreditsDialog({
+          title: "Crédits insuffisants",
+          message: (
+            `Vous avez ${remainingCredits} crédit${remainingCredits > 1 ? "s" : ""} IA `
+            + `pour ${pendingBefore} scan${pendingBefore > 1 ? "s" : ""} en attente.\n\n`
+            + `Seul${remainingCredits > 1 ? "s" : ""} ${remainingCredits} document${remainingCredits > 1 ? "s" : ""} `
+            + `sera${remainingCredits > 1 ? "ont" : ""} extrait${remainingCredits > 1 ? "s" : ""}. `
+            + `Les ${pendingBefore - remainingCredits} autres resteront en attente faute de crédits.`
+          ),
+          confirmLabel: `Extraire ${remainingCredits} scan${remainingCredits > 1 ? "s" : ""}`,
+          cancelLabel: "Annuler",
         });
+        if (!accepted) return;
       }
 
       analysisInFlight = true;
@@ -1610,6 +1666,7 @@
         queuedJobs = await queueServerExtraction({
           docType: "invoice",
           emptyMessage: "Toutes les factures importées ont déjà été extraites.",
+          expectedExtractCount: credits?.cabinet_id != null ? remainingCredits : null,
         });
       } catch (error) {
         if (queuedJobs > 0) {
@@ -1653,13 +1710,12 @@
               durationMs: 10000,
             });
           } else if (stoppedByCredits) {
-            showWorkspaceToast({
-              title: extractedDocs > 0 ? "Extraction partielle" : "Quota épuisé",
+            await openCreditsDialog({
+              title: extractedDocs > 0 ? "Extraction partielle terminée" : "Quota épuisé",
               message: extractedDocs > 0
-                ? `${extractedDocs} facture(s) extraite(s) — ${pendingAfter} scan(s) non extraits (quota IA épuisé ce mois).`
+                ? `${extractedDocs} facture(s) extraite(s).\n\n${pendingAfter} scan(s) non extraits — quota IA épuisé ce mois.`
                 : `${pendingAfter} scan(s) non extraits — plus de crédits IA ce mois.`,
-              variant: "warn",
-              durationMs: 16000,
+              confirmLabel: "Compris",
             });
           } else {
             showWorkspaceToast({
