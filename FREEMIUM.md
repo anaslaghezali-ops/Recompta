@@ -64,8 +64,19 @@ cd backend && python scripts/test_scan_routing.py
 | Branche | Rôle |
 |---------|------|
 | `main` | Production stable (hors freemium tant que non mergé) |
-| `freemium` | Développement Freemium ; PRs feature → `freemium` puis merge `freemium` → `main` quand prêt |
-| `cursor/*-7cb5` | Branches courtes par PR (depuis `freemium` pendant cette phase) |
+| `freemium` | Ligne de développement Freemium (intégration) |
+| `freemium-<changement>` | **Une branche par feature** — ex. `freemium-credits-counter`, `freemium-stripe-packs` |
+
+### Convention
+
+```
+git checkout freemium && git pull
+git checkout -b freemium-credits-counter
+# … travail …
+# PR → freemium → merge
+```
+
+Ne pas utiliser le préfixe `cursor/` pour les nouvelles features Freemium.
 
 ## Déploiement
 

@@ -10,14 +10,23 @@ Développement du modèle gratuit + crédits vision :
 - Spec produit : [FREEMIUM.md](../FREEMIUM.md) à la racine
 - Les PRs Freemium ciblent **`freemium`** jusqu’au merge final sur `main`
 
-## Règles
+### Nommage des branches Freemium
+
+Pendant cette phase, **chaque changement** part d’une branche dédiée :
+
+- Format : **`freemium-<description-courte>`** (minuscules, tirets)
+- Exemples : `freemium-self-serve-signup`, `freemium-credits-counter`, `freemium-stripe-packs`
+- Toujours créer la branche depuis **`freemium`** à jour (pas depuis `main`)
+- Une PR par branche → merge dans **`freemium`**
+
+Les anciennes branches `cursor/*-7cb5` restent des snapshots historiques ; ne plus en créer pour le travail Freemium.
+
+## Règles (hors phase Freemium / historique)
 
 ### 1. Branche de travail (avant merge)
 
-- Format : `cursor/<description-courte>-7cb5`
-- Exemples : `cursor/fix-upload-filelist-7cb5`, `cursor/import-achats-only-7cb5`
-- Toujours créer la branche depuis `main` à jour
-- Une PR par branche de travail
+- Format historique : `cursor/<description-courte>-7cb5`
+- **Phase Freemium** : utiliser `freemium-<description-courte>` (voir ci-dessus)
 
 ### 2. Branche snapshot (après merge)
 
