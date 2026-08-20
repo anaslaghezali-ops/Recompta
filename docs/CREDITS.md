@@ -32,6 +32,7 @@ Le déploiement Pages utilise le dossier **`docs/`** sur la branche **`freemium`
 | **PDF natifs** | 0 crédit |
 | **CSV/Excel banque** | 0 crédit |
 | **1 crédit** | 1 document scanné traité par OpenAI Vision |
+| **Extraction partielle** | Si N scans et M crédits (M < N) : M extraits, N−M restent en attente avec message explicite |
 
 ## Super-admin
 
