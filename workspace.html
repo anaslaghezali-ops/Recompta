@@ -563,7 +563,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
-    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits2";
+    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
     import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist4";
     import {
       DOC_TYPE_ICONS,
@@ -2618,20 +2618,15 @@
 
     async function refreshTopbarCredits() {
       try {
-        updateTopbarCredits(await loadMyVisionCredits({ cabinetId }));
-      } catch (err) {
-        console.warn("[credits] refreshTopbarCredits:", err?.message || err);
-        if (cabinetId) {
-          updateTopbarCredits({
-            cabinet_id: cabinetId,
-            quota: 10,
-            used: 0,
-            remaining: 10,
-            fallback: true,
-          });
+        const credits = await loadMyVisionCredits({ cabinetId });
+        if (credits) {
+          updateTopbarCredits(credits);
         } else {
           document.getElementById("topbarCredits")?.setAttribute("hidden", "");
         }
+      } catch (err) {
+        console.warn("[credits] refreshTopbarCredits:", err?.message || err);
+        document.getElementById("topbarCredits")?.setAttribute("hidden", "");
       }
     }
 

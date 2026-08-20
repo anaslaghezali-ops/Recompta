@@ -165,7 +165,7 @@
       showImportCompletionToast,
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs13";
-    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits2";
+    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
 
     const portfolioRows = document.getElementById("portfolioRows");
     const portfolioList = document.getElementById("portfolioList");
@@ -238,21 +238,17 @@
 
     async function refreshCreditsBanner() {
       try {
-        updateCreditsBanner(await loadMyVisionCredits({ cabinetId }));
-      } catch (err) {
-        console.warn("[credits] refreshCreditsBanner:", err?.message || err);
-        if (cabinetId) {
-          updateCreditsBanner({
-            cabinet_id: cabinetId,
-            quota: 10,
-            used: 0,
-            remaining: 10,
-            fallback: true,
-          });
+        const credits = await loadMyVisionCredits({ cabinetId });
+        if (credits) {
+          updateCreditsBanner(credits);
         } else {
           document.getElementById("creditsBanner")?.setAttribute("hidden", "");
           document.getElementById("topbarCredits")?.setAttribute("hidden", "");
         }
+      } catch (err) {
+        console.warn("[credits] refreshCreditsBanner:", err?.message || err);
+        document.getElementById("creditsBanner")?.setAttribute("hidden", "");
+        document.getElementById("topbarCredits")?.setAttribute("hidden", "");
       }
     }
 
