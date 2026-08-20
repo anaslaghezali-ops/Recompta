@@ -614,6 +614,14 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         reset_active_cabinet_id(credits_token)
 
     total = len(work_items)
+    credit_blocked = 0
+    for result in extraction_results:
+        for warning in result.warnings or []:
+            text = str(warning or "").lower()
+            if "quota" in text and ("crédit" in text or "credit" in text):
+                credit_blocked += 1
+                break
+
     if processed == 0:
         final_status = "failed"
         warning_bits = []
@@ -621,10 +629,27 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             for warning in (result.warnings or [])[:2]:
                 if warning and warning not in warning_bits:
                     warning_bits.append(warning)
-        error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
+        if credit_blocked > 0:
+            error_summary = (
+                f"{credit_blocked} scan(s) non extraits — quota IA épuisé ce mois."
+            )
+        else:
+            error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
     elif failed > 0 or archive_failures > 0:
         final_status = "completed"
-        error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
+        other_failed = max(failed + archive_failures - credit_blocked, 0)
+        if credit_blocked > 0 and other_failed == 0:
+            error_summary = (
+                f"{processed} extrait(s) — {credit_blocked} scan(s) non extraits "
+                f"(quota IA épuisé)."
+            )
+        elif credit_blocked > 0:
+            error_summary = (
+                f"{failed + archive_failures} fichier(s) en erreur sur {total} "
+                f"dont {credit_blocked} faute de crédits."
+            )
+        else:
+            error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
     else:
         final_status = "completed"
         error_summary = None

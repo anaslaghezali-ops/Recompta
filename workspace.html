@@ -1437,6 +1437,11 @@
           break;
         }
 
+        if (round > 0 && docType === "invoice") {
+          const creditsNow = await loadMyVisionCredits({ cabinetId });
+          if (creditsDepleted(creditsNow)) break;
+        }
+
         if (round === 0) {
           batchTotal = pendingAtLaunch;
           analysisProgress = { processed: 0, total: batchTotal };
@@ -1545,6 +1550,9 @@
     async function handleLaunchExtraction() {
       if (!selectedDossierId || analysisInFlight || activeImportJob || bankExtractInFlight) return;
 
+      await refreshPendingAnalysis({ forceDocuments: true });
+      const pendingBefore = invoicePendingCount;
+
       const credits = await loadMyVisionCredits({ cabinetId });
       if (creditsDepleted(credits)) {
         showWorkspaceToast({
@@ -1556,15 +1564,14 @@
         return;
       }
 
-      await refreshPendingAnalysis({ forceDocuments: true });
-      if (credits && invoicePendingCount > Number(credits.remaining || 0)) {
+      const remainingCredits = Number(credits?.remaining || 0);
+      if (credits?.cabinet_id && pendingBefore > remainingCredits) {
         showWorkspaceToast({
-          title: "Crédits insuffisants",
-          message: `${invoicePendingCount} scan(s) en attente pour ${credits.remaining} crédit(s) restant(s) ce mois.`,
-          variant: "warn",
-          durationMs: 12000,
+          title: "Extraction partielle",
+          message: `${remainingCredits} crédit(s) disponible(s) pour ${pendingBefore} scan(s). Les documents restants resteront en attente.`,
+          variant: "info",
+          durationMs: 10000,
         });
-        return;
       }
 
       analysisInFlight = true;
@@ -1602,21 +1609,39 @@
         await reloadCockpit(selectedDossierId);
         await refreshPendingAnalysis({ forceDocuments: true });
         await refreshPendingAnalysis({ forceDocuments: true });
+        await refreshTopbarCredits();
         await renderProductionCard();
-        if (queuedJobs > 0 && invoicePendingCount === 0 && cockpit?.lineCount > 0) {
-          showWorkspaceToast({
-            title: "Extraction terminée",
-            message: `${cockpit.lineCount} ligne(s) disponibles en revue.`,
-            variant: "success",
-            durationMs: 10000,
-          });
-        } else if (queuedJobs > 0 && invoicePendingCount > 0) {
-          showWorkspaceToast({
-            title: "Extraction incomplète",
-            message: `${invoicePendingCount} document(s) n'ont pas pu être extraits. Vérifiez les scans ou relancez l'extraction.`,
-            variant: "warn",
-            durationMs: 14000,
-          });
+
+        if (queuedJobs > 0) {
+          const pendingAfter = invoicePendingCount;
+          const extractedDocs = Math.max(0, pendingBefore - pendingAfter);
+          const creditsAfter = await loadMyVisionCredits({ cabinetId });
+          const stoppedByCredits = pendingAfter > 0 && creditsDepleted(creditsAfter);
+
+          if (pendingAfter === 0) {
+            showWorkspaceToast({
+              title: "Extraction terminée",
+              message: `${cockpit?.lineCount || extractedDocs} ligne(s) disponibles en revue.`,
+              variant: "success",
+              durationMs: 10000,
+            });
+          } else if (stoppedByCredits) {
+            showWorkspaceToast({
+              title: extractedDocs > 0 ? "Extraction partielle" : "Quota épuisé",
+              message: extractedDocs > 0
+                ? `${extractedDocs} facture(s) extraite(s) — ${pendingAfter} scan(s) non extraits (quota IA épuisé ce mois).`
+                : `${pendingAfter} scan(s) non extraits — plus de crédits IA ce mois.`,
+              variant: "warn",
+              durationMs: 16000,
+            });
+          } else {
+            showWorkspaceToast({
+              title: "Extraction incomplète",
+              message: `${pendingAfter} document(s) n'ont pas pu être extraits. Vérifiez les scans ou relancez l'extraction.`,
+              variant: "warn",
+              durationMs: 14000,
+            });
+          }
         }
       }
     }
