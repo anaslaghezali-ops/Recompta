@@ -563,6 +563,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
+    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits1";
     import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist4";
     import {
       DOC_TYPE_ICONS,
@@ -2601,6 +2602,28 @@
       newPeriodDialog.showModal();
     }
 
+    function updateTopbarCredits(credits) {
+      const topbar = document.getElementById("topbarCredits");
+      const topbarText = document.getElementById("topbarCreditsText");
+      if (!topbar || !topbarText || !credits?.cabinet_id) {
+        if (topbar) topbar.hidden = true;
+        return;
+      }
+      topbar.hidden = false;
+      topbarText.textContent = `${credits.remaining}/${credits.quota} scans IA`;
+      topbar.classList.toggle("depleted", creditsDepleted(credits));
+      topbar.title = formatCreditsLabel(credits) + " · PDF natifs gratuits";
+      initLucide();
+    }
+
+    async function refreshTopbarCredits() {
+      try {
+        updateTopbarCredits(await loadMyVisionCredits());
+      } catch {
+        document.getElementById("topbarCredits")?.setAttribute("hidden", "");
+      }
+    }
+
     periodMonth.innerHTML = MONTH_LABELS.map((label, i) =>
       `<option value="${i + 1}">${label}</option>`,
     ).join("");
@@ -2620,6 +2643,7 @@
             active: "portfolio",
           });
           bindSidebarMobile();
+          await refreshTopbarCredits();
           document.getElementById("signOutBtn")?.addEventListener("click", async () => {
             await signOut();
             window.location.href = "login.html";
