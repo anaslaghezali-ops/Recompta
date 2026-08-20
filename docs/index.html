@@ -25,7 +25,7 @@
       </div>
       <div class="lp-nav-actions">
         <a href="login.html" class="lp-btn lp-btn-ghost">Connexion</a>
-        <a href="login.html?mode=signup" class="lp-btn lp-btn-primary" id="navCta">Créer un cabinet</a>
+        <a href="login.html?mode=signup" class="lp-btn lp-btn-primary" id="navCta">Inscription</a>
         <button type="button" class="lp-mobile-toggle" id="mobileToggle" aria-label="Menu">
           <i data-lucide="menu"></i>
         </button>
@@ -42,10 +42,10 @@
         et produire des déclarations fiables — du relevé bancaire à l'export Excel DED TVA.
       </p>
       <div class="lp-hero-cta">
-        <a href="login.html?mode=signup" class="lp-btn lp-btn-primary">Créer un cabinet — gratuit</a>
+        <a href="login.html?mode=signup" class="lp-btn lp-btn-primary" id="heroSignupCta">Inscription gratuite</a>
         <a href="login.html" class="lp-btn lp-btn-outline">Connexion</a>
       </div>
-      <p class="lp-hero-note">Inscription self-serve · PDF natifs gratuits · Scans IA facturés plus tard</p>
+      <p class="lp-hero-note">Créez votre cabinet en 2 minutes · PDF natifs gratuits · Scans IA facturés plus tard</p>
     </div>
     <div class="lp-hero-visual" aria-hidden="true">
       <div class="lp-preview">
@@ -150,8 +150,11 @@
   <section class="lp-cta">
     <div class="lp-cta-box">
       <h2>Prêt à structurer votre production TVA ?</h2>
-      <p>Connectez-vous avec le compte de votre cabinet pour accéder au portefeuille clients.</p>
-      <a href="login.html" class="lp-btn lp-btn-primary">Se connecter</a>
+      <p>Inscrivez votre cabinet gratuitement ou connectez-vous à votre espace.</p>
+      <div class="lp-cta-actions">
+        <a href="login.html?mode=signup" class="lp-btn lp-btn-primary">Inscription</a>
+        <a href="login.html" class="lp-btn lp-btn-outline">Connexion</a>
+      </div>
     </div>
   </section>
 
@@ -159,6 +162,7 @@
     <div class="lp-footer-inner">
       <span>© 2026 Recompta</span>
       <div class="lp-footer-links">
+        <a href="login.html?mode=signup">Inscription</a>
         <a href="login.html">Connexion</a>
         <a href="production.html">Outil TVA solo</a>
         <a href="https://github.com/anaslaghezali-ops/Recompta" target="_blank" rel="noopener">GitHub</a>
@@ -181,7 +185,7 @@
         const admin = await isSuperAdmin(session.user.id);
         const membership = admin ? null : await getUserCabinetMembership();
         const cta = document.getElementById("navCta");
-        const heroCta = document.querySelector(".lp-hero-cta .lp-btn-primary");
+        const heroCta = document.getElementById("heroSignupCta");
 
         if (admin) {
           cta.textContent = "Administration";
@@ -191,9 +195,6 @@
           cta.textContent = "Mon portefeuille";
           cta.href = "dossiers.html";
           if (heroCta) { heroCta.textContent = "Mon portefeuille"; heroCta.href = "dossiers.html"; }
-        } else {
-          cta.textContent = "Outil TVA";
-          cta.href = "production.html";
         }
       }
     } catch { /* visiteur non connecté */ }
