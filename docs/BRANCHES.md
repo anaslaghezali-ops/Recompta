@@ -2,6 +2,14 @@
 
 Chaque modification doit vivre sur **sa propre branche**, pour pouvoir revenir à une version précédente sans perdre l'historique.
 
+## Branche Freemium (phase actuelle)
+
+Développement du modèle gratuit + crédits vision :
+
+- Branche longue durée : **`freemium`** (depuis `main`)
+- Spec produit : [FREEMIUM.md](../FREEMIUM.md) à la racine
+- Les PRs Freemium ciblent **`freemium`** jusqu’au merge final sur `main`
+
 ## Règles
 
 ### 1. Branche de travail (avant merge)
