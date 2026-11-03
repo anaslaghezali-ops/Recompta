@@ -713,6 +713,9 @@ function finalizeSanitize(line, before) {
 }
 
 export function sanitizeImpossibleAmounts(line, isAvoir = false) {
+  // TTC illisible : le reconstituer d'abord, sinon le HT est pris pour un TTC
+  // (HT 300 / TVA 30 / TTC vide devenait 272,73 / 27,27 / 300).
+  line = fillMissingTtc(line);
   const before = [line.m_ht, line.tva, line.m_ttc, line.taux];
   const sign = isAvoir ? -1 : 1;
   const ht = Math.abs(Number(line.m_ht) || 0) * sign;

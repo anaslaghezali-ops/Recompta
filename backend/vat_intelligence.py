@@ -347,6 +347,10 @@ def sanitize_impossible_amounts(line: InvoiceLine, is_avoir: bool = False) -> In
     Ne touche pas une ligne déjà cohérente (ex. Carrefour 150/30/180) ni une
     facture multi-taux résumée (taux global entre 10 % et 20 %).
     """
+    # TTC illisible : le reconstituer d'abord. Sinon HT + TVA ≠ 0 passe pour
+    # une incohérence et le HT est réinterprété à tort comme un TTC
+    # (HT 300 / TVA 30 / TTC vide devenait 272,73 / 27,27 / 300).
+    line = fill_missing_ttc(line)
     before = (line.m_ht, line.tva, line.m_ttc, line.taux)
     sign = -1 if is_avoir else 1
     ht, tva, ttc = abs(line.m_ht) * sign, abs(line.tva) * sign, abs(line.m_ttc) * sign

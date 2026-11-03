@@ -248,20 +248,22 @@ class SupabaseService:
         self,
         dossier_id: int,
         *,
-        lines: list[dict[str, Any]],
+        lines: list[dict[str, Any]] | None,
         bank_transactions: list[dict[str, Any]] | None = None,
         bank_meta: dict[str, Any] | None = None,
     ) -> None:
+        """Upsert du workspace. ``lines=None`` laisse la colonne lines intacte."""
         existing = await self.load_workspace(dossier_id)
-        payload = {
+        payload: dict[str, Any] = {
             "dossier_id": dossier_id,
-            "lines": lines,
             "bank_transactions": bank_transactions
             if bank_transactions is not None
             else existing.get("bank_transactions") or [],
             "bank_meta": bank_meta if bank_meta is not None else existing.get("bank_meta") or {},
             "updated_at": _iso_now(),
         }
+        if lines is not None:
+            payload["lines"] = lines
         response = await self.client.post(
             f"{self.base}/rest/v1/dossier_workspaces",
             headers={**service_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
@@ -351,7 +353,7 @@ class SupabaseService:
                 params={
                     "dossier_id": f"eq.{dossier_id}",
                     "source_id": f"eq.{source_id}",
-                    "select": "id, storage_path, source_id, original_filename",
+                    "select": "id, storage_path, source_id, original_filename, size_bytes",
                     "limit": "1",
                 },
                 headers=service_headers(),

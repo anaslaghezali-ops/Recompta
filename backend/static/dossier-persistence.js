@@ -105,7 +105,7 @@ export async function loadDossierWorkspaceSummary(dossierId) {
     };
   }
 
-  const full = await loadDossierWorkspace(dossierId);
+  const full = await loadDossierWorkspace(dossierId, { adopt: false });
   if (!full) return null;
   const lines = full.lines || [];
   const storedAnomalies = summary.data?.anomaly_count;
@@ -125,7 +125,62 @@ export async function loadDossierWorkspaceSummary(dossierId) {
   };
 }
 
-export async function loadDossierWorkspace(dossierId) {
+// ── Écritures concurrentes ────────────────────────────────────────────────
+// Le serveur (import en arrière-plan) et chaque page ouverte réécrivent le
+// tableau `lines` entier. Sans précaution, une page restée ouverte efface à
+// sa prochaine sauvegarde les lignes ajoutées entre-temps par un import.
+//
+// Règle : une page ne peut avoir supprimé que des documents qu'elle a vus.
+// On retient donc, par dossier, les source_id que la page a adoptés
+// (chargés puis affichés). À la sauvegarde, toute ligne serveur dont le
+// source_id n'a jamais été vu par la page est conservée.
+const seenSourceIds = new Map();
+
+function sourceIdOf(line) {
+  return String(line?.source_id || "").trim();
+}
+
+function rememberSourceIds(dossierId, lines) {
+  if (!dossierId) return;
+  let seen = seenSourceIds.get(dossierId);
+  if (!seen) {
+    seen = new Set();
+    seenSourceIds.set(dossierId, seen);
+  }
+  for (const line of lines || []) {
+    const sid = sourceIdOf(line);
+    if (sid) seen.add(sid);
+  }
+}
+
+/**
+ * Lignes locales + lignes serveur de documents jamais vus localement.
+ * Fonction pure (testée dans test-concurrent-lines.mjs).
+ */
+export function mergeConcurrentLines(localLines, serverLines, seen) {
+  const local = Array.isArray(localLines) ? localLines : [];
+  if (!seen) return { lines: local, added: 0 };
+  const localSources = new Set(local.map(sourceIdOf).filter(Boolean));
+  const extra = (serverLines || []).filter((line) => {
+    const sid = sourceIdOf(line);
+    return sid && !seen.has(sid) && !localSources.has(sid);
+  });
+  if (!extra.length) return { lines: local, added: 0 };
+  return { lines: [...local, ...extra], added: extra.length };
+}
+
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.adopt=true] false quand la page ne reprend pas
+ *   ces lignes (ex. relecture du relevé juste avant une sauvegarde).
+ */
+export async function loadDossierWorkspace(dossierId, { adopt = true } = {}) {
+  const result = await fetchDossierWorkspace(dossierId);
+  if (result && adopt) rememberSourceIds(dossierId, result.lines);
+  return result;
+}
+
+async function fetchDossierWorkspace(dossierId) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return null;
 
@@ -153,13 +208,27 @@ export async function loadDossierWorkspace(dossierId) {
   };
 }
 
+/**
+ * Retourne `{ dossier_id, updated_at, lines, added }`. Si `added > 0`, des
+ * lignes importées entre-temps ont été conservées : l'appelant doit reprendre
+ * `lines` comme nouvel état local.
+ */
 export async function saveDossierWorkspace(dossierId, { lines, bankTransactions, bankMeta }) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return null;
 
+  let finalLines = lines || [];
+  let added = 0;
+  const seen = seenSourceIds.get(dossierId);
+  if (seen) {
+    const server = await fetchDossierWorkspace(dossierId);
+    ({ lines: finalLines, added } = mergeConcurrentLines(finalLines, server?.lines, seen));
+  }
+  rememberSourceIds(dossierId, finalLines);
+
   const payload = {
     dossier_id: dossierId,
-    lines: lines || [],
+    lines: finalLines,
     bank_transactions: bankTransactions || [],
     bank_meta: bankMeta || DEFAULT_BANK_META,
     updated_at: new Date().toISOString(),
@@ -181,7 +250,7 @@ export async function saveDossierWorkspace(dossierId, { lines, bankTransactions,
   if (dossierError) throw dossierError;
 
   if (dossier?.status !== "exported") {
-    const lineCount = (lines || []).length;
+    const lineCount = finalLines.length;
     let status = "draft";
     if (lineCount > 0) status = "in_review";
 
@@ -192,7 +261,7 @@ export async function saveDossierWorkspace(dossierId, { lines, bankTransactions,
     if (statusError) throw statusError;
   }
 
-  return data;
+  return { ...data, lines: finalLines, added };
 }
 
 export async function markDossierExported(dossierId) {

@@ -171,10 +171,31 @@ def _workspace_line_dedup_key(line: dict[str, Any]) -> tuple:
 
 
 def _merge_workspace_lines(existing: list[dict[str, Any]], new_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ajoute les lignes d'un import au dossier.
+
+    La déduplication se fait au niveau du document (source_id) : si le document
+    est déjà dans le dossier (job relancé), toutes ses nouvelles lignes sont
+    ignorées ; sinon elles sont toutes ajoutées. Deux lignes d'un même document
+    avec le même numéro et le même taux (plusieurs factures sans numéro lisible
+    dans un lot scanné, détail produit au même taux) ne sont donc jamais
+    fusionnées en silence.
+    """
     merged = list(existing)
+    existing_sources = {
+        str(line.get("source_id") or "").strip()
+        for line in existing
+        if str(line.get("source_id") or "").strip()
+    }
     seen_keys = {_workspace_line_dedup_key(line) for line in existing}
 
     for line in new_lines:
+        source_id = str(line.get("source_id") or "").strip()
+        if source_id:
+            if source_id in existing_sources:
+                continue
+            merged.append(line)
+            continue
+        # Sans source_id : ancienne clé, faute de mieux.
         key = _workspace_line_dedup_key(line)
         if key in seen_keys:
             continue
@@ -270,12 +291,11 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
         if not transactions:
             raise RuntimeError(warnings[0] if warnings else "Aucun mouvement détecté dans le relevé.")
 
-        workspace = await db.load_workspace(dossier_id)
-        lines = list(workspace.get("lines") or [])
-
+        # Ne pas réécrire les lignes : une relecture puis réécriture effacerait
+        # les modifications faites entre-temps dans la revue.
         await db.save_workspace(
             dossier_id,
-            lines=lines,
+            lines=None,
             bank_transactions=transactions,
             bank_meta=bank_meta,
         )

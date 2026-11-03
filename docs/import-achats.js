@@ -19,7 +19,7 @@ import {
   getApiUrl,
   saveApiUrl,
 } from "./api-client.js?v=api7";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist4";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,

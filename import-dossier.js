@@ -4,7 +4,7 @@ import {
   loadDossierWorkspace,
   logDossierActivity,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist1";
+} from "./dossier-persistence.js?v=persist5";
 import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
 
 export function shortFilename(name) {
@@ -81,11 +81,13 @@ export function renderImportContextBar(session, mount) {
 export function createWorkspaceSaver(session, onStatus) {
   return createDebouncedSaver(async ({ eventType, summary, meta }) => {
     onStatus?.("Enregistrement…", "pending");
-    await saveDossierWorkspace(session.dossierId, {
+    const saved = await saveDossierWorkspace(session.dossierId, {
       lines: session.lines,
       bankTransactions: session.bankTransactions,
       bankMeta: session.bankMeta,
     });
+    // Lignes importées par le serveur pendant que la page était ouverte.
+    if (saved?.added) session.lines = saved.lines;
     if (eventType) {
       await logDossierActivity(session.dossierId, eventType, summary, meta);
     }
@@ -95,11 +97,12 @@ export function createWorkspaceSaver(session, onStatus) {
 
 export async function persistWorkspaceNow(session, onStatus, eventType, summary, meta = {}) {
   onStatus?.("Enregistrement…", "pending");
-  await saveDossierWorkspace(session.dossierId, {
+  const saved = await saveDossierWorkspace(session.dossierId, {
     lines: session.lines,
     bankTransactions: session.bankTransactions,
     bankMeta: session.bankMeta,
   });
+  if (saved?.added) session.lines = saved.lines;
   if (eventType) {
     await logDossierActivity(session.dossierId, eventType, summary, meta);
   }

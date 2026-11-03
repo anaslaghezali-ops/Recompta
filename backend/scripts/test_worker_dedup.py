@@ -88,11 +88,34 @@ def test_merge_skips_exact_duplicate_line() -> None:
     assert len(merged) == 1
 
 
+def test_merge_keeps_same_rate_lines_of_one_document() -> None:
+    """Lot scanné : 2 factures sans numéro lisible, même taux, même PDF."""
+    new_lines = [
+        {"source_file": "lot.pdf", "source_id": "src-lot", "fact_num": "", "taux": 0.2, "m_ht": 10.0},
+        {"source_file": "lot.pdf", "source_id": "src-lot", "fact_num": "", "taux": 0.2, "m_ht": 30.0},
+    ]
+    merged = _merge_workspace_lines([], new_lines)
+    assert len(merged) == 2, merged
+    assert sum(line["m_ht"] for line in merged) == 40.0
+
+
+def test_merge_skips_whole_document_already_imported() -> None:
+    """Job relancé : le document est déjà dans le dossier, rien n'est doublé."""
+    existing = [
+        {"source_file": "f.pdf", "source_id": "src-f", "fact_num": "F1", "taux": 0.2, "m_ht": 100.0},
+        {"source_file": "f.pdf", "source_id": "src-f", "fact_num": "F1", "taux": 0.1, "m_ht": 50.0},
+    ]
+    merged = _merge_workspace_lines(existing, [dict(line) for line in existing])
+    assert len(merged) == 2
+
+
 def main() -> int:
     test_same_basename_different_source_ids()
     test_merge_preserves_distinct_lines()
     test_merge_keeps_multi_vat_same_source_id()
     test_merge_skips_exact_duplicate_line()
+    test_merge_keeps_same_rate_lines_of_one_document()
+    test_merge_skips_whole_document_already_imported()
     test_analysis_jobs_do_not_rewrite_source_documents()
     print("OK test_worker_dedup")
     return 0
