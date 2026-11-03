@@ -1,5 +1,5 @@
 import { getSupabase } from "./auth-client.js?v=auth6";
-import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs13";
+import { fetchActiveImportMap } from "./import-jobs-client.js?v=jobs30";
 import {
   computeProgress,
   workspaceSummaryFromRow,

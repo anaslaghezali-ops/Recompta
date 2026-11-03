@@ -3821,3 +3821,92 @@ body.ws-review-detail-open {
     order: 1;
   }
 }
+
+/* Factures non lues (extraction échouée ou pas encore lancée) */
+.ws-unread {
+  margin-top: 0.85rem;
+  border: 1px solid #fecaca;
+  background: var(--dash-danger-soft);
+  border-radius: var(--dash-radius);
+  padding: 0.75rem 0.85rem;
+}
+
+.ws-unread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--dash-danger);
+  font-size: 0.88rem;
+}
+
+.ws-unread-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ws-unread-head .lucide {
+  width: 16px;
+  height: 16px;
+}
+
+.ws-unread .hint {
+  margin: 0.35rem 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--dash-text);
+}
+
+.ws-unread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.ws-unread-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.ws-unread-item.is-ignored {
+  opacity: 0.75;
+}
+
+.ws-unread-text {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.ws-unread-text strong {
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-unread-text span {
+  font-size: 0.76rem;
+  color: var(--dash-muted);
+}
+
+.ws-unread-ignored {
+  margin-top: 0.55rem;
+  font-size: 0.8rem;
+  color: var(--dash-muted);
+}
+
+.ws-unread-ignored summary {
+  cursor: pointer;
+  margin-bottom: 0.4rem;
+}

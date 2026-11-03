@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=carnet-load1" />
+  <link rel="stylesheet" href="dashboard.css?v=unread1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -164,6 +164,7 @@
                       <i data-lucide="table-2"></i> Voir la revue
                     </button>
                   </div>
+                  <div class="ws-unread" id="unreadDocsPanel" hidden></div>
                 </article>
 
                 <article class="ws-production-step" id="bankMatchStep">
@@ -573,7 +574,8 @@
       listDossierDocuments,
       partitionDocumentsForDisplay,
       countInvoiceDocuments,
-    } from "./dossier-documents.js?v=doc19";
+      setDocumentExtractionStatus,
+    } from "./dossier-documents.js?v=doc20";
     import { formatFileSize } from "./import-dossier.js?v=imp1";
     import {
       formatActiveImportLabel,
@@ -592,7 +594,7 @@
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
       importJobPageUrl,
-    } from "./import-jobs-client.js?v=jobs28";
+    } from "./import-jobs-client.js?v=jobs30";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace15";
     import {
@@ -641,6 +643,10 @@
     let bankPendingCount = 0;
     let invoicePendingCount = 0;
     let invoiceDocumentCount = 0;
+    // Factures non lues (jamais lues ou lecture échouée) : bloquent la déclaration.
+    let unreadInvoiceDocs = [];
+    let ignoredInvoiceDocs = [];
+    let invoiceFailedCount = 0;
     let reviewController = null;
     let analysisInFlight = false;
     let analysisLaunchQueued = 0;
@@ -867,6 +873,7 @@
         periodMonth: cockpit.dossier.period_month,
         periodStatus: cockpit.dossier.status,
         periodLabel: cockpit.periodLabel,
+        unreadDocuments: unreadInvoiceDocs,
       };
     }
 
@@ -1003,7 +1010,7 @@
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
       if (!reviewModulePromise) {
-        reviewModulePromise = import("./workspace-review.js?v=review16");
+        reviewModulePromise = import("./workspace-review.js?v=review17");
       }
       const { createWorkspaceReview } = await reviewModulePromise;
       reviewController = createWorkspaceReview({
@@ -1016,6 +1023,9 @@
     }
 
     async function openDeclarePeriod() {
+      // État de lecture à jour : la déclaration est bloquée s'il reste des
+      // factures non lues.
+      await refreshPendingAnalysis({ forceDocuments: true });
       const review = await ensureReviewController();
       await review?.load();
       review?.openDeclareDialog?.();
@@ -1268,10 +1278,20 @@
       } else {
         renderAnalysisStatusPanel();
         if (invoicePendingCount > 0) {
-          extractionHint.textContent = `${invoicePendingCount} facture(s) prête(s) à extraire.`;
-          extractionMeta.textContent = "Génère les lignes HT / TVA / TTC à partir des documents importés.";
+          const neverRead = invoicePendingCount - invoiceFailedCount;
+          if (invoiceFailedCount > 0) {
+            extractionHint.textContent = neverRead > 0
+              ? `${invoiceFailedCount} facture(s) non lue(s) et ${neverRead} à extraire.`
+              : `${invoiceFailedCount} facture(s) non lue(s) — relancez ou écartez-les.`;
+            extractionMeta.textContent = "Détail et raison de chaque échec ci-dessous.";
+          } else {
+            extractionHint.textContent = `${invoicePendingCount} facture(s) prête(s) à extraire.`;
+            extractionMeta.textContent = "Génère les lignes HT / TVA / TTC à partir des documents importés.";
+          }
           launchBtn.disabled = false;
-          launchBtn.innerHTML = '<i data-lucide="play"></i> Lancer l\'extraction';
+          launchBtn.innerHTML = neverRead > 0
+            ? '<i data-lucide="play"></i> Lancer l\'extraction'
+            : '<i data-lucide="rotate-ccw"></i> Relancer la lecture';
         } else if (hasLines) {
           extractionHint.textContent = "Extraction à jour — vous pouvez ajouter d'autres factures.";
           extractionMeta.textContent = cockpit.anomalyCount > 0
@@ -1350,12 +1370,104 @@
 
     const renderAnalysisCard = renderProductionCard;
 
+    function applyPendingAnalysis(pending) {
+      pendingAnalysisCount = pending?.total || 0;
+      bankPendingCount = pending?.bankPending || 0;
+      invoicePendingCount = pending?.invoicePending || 0;
+      invoiceFailedCount = pending?.invoiceFailed || 0;
+      unreadInvoiceDocs = pending?.unreadDocuments || [];
+      ignoredInvoiceDocs = pending?.ignoredDocuments || [];
+      invoiceDocumentCount = pending ? countInvoiceDocuments(documentsCache) : 0;
+      renderUnreadPanel();
+    }
+
+    function unreadReason(doc) {
+      if (doc.extraction_status === "failed") {
+        return doc.extraction_error || "Lecture échouée.";
+      }
+      return "Pas encore lue — lancez l'extraction.";
+    }
+
+    function renderUnreadPanel() {
+      const panel = document.getElementById("unreadDocsPanel");
+      if (!panel) return;
+      const unread = unreadInvoiceDocs;
+      const ignored = ignoredInvoiceDocs;
+      const isDeclared = cockpit?.statusKey === "exported";
+      if (!unread.length && !ignored.length) {
+        panel.hidden = true;
+        panel.innerHTML = "";
+        return;
+      }
+      panel.hidden = false;
+      const title = unread.length
+        ? `${unread.length} facture(s) non lue(s)`
+        : "Toutes les factures sont lues";
+      const intro = unread.length
+        ? "Elles ne sont pas dans la déclaration. Relancez la lecture (bouton ci-dessus), ou écartez celles qui ne sont pas des factures. La déclaration reste bloquée d'ici là."
+        : "";
+      const items = unread.map((doc) => {
+        const name = doc.original_filename || "document";
+        const attempts = Number(doc.extraction_attempts) || 0;
+        const attemptsLabel = attempts > 1 ? ` · ${attempts} tentatives` : "";
+        return `<li class="ws-unread-item">
+          <div class="ws-unread-text">
+            <strong title="${escapeHtml(name)}">${escapeHtml(name.split("/").pop())}</strong>
+            <span>${escapeHtml(unreadReason(doc))}${attemptsLabel}</span>
+          </div>
+          ${isDeclared ? "" : `<button type="button" class="dash-btn dash-btn-sm" data-unread-ignore="${doc.id}" title="Ce document n'est pas une facture d'achat : ne plus le compter">Pas une facture</button>`}
+        </li>`;
+      }).join("");
+      const ignoredItems = ignored.map((doc) => {
+        const name = doc.original_filename || "document";
+        return `<li class="ws-unread-item is-ignored">
+          <div class="ws-unread-text"><strong title="${escapeHtml(name)}">${escapeHtml(name.split("/").pop())}</strong><span>Écarté : pas une facture</span></div>
+          ${isDeclared ? "" : `<button type="button" class="dash-btn dash-btn-sm" data-unread-restore="${doc.id}">Rétablir</button>`}
+        </li>`;
+      }).join("");
+      panel.innerHTML = `
+        ${unread.length ? `<div class="ws-unread-head">
+          <strong><i data-lucide="file-warning"></i> ${escapeHtml(title)}</strong>
+        </div>
+        <p class="hint">${escapeHtml(intro)}</p>
+        <ul class="ws-unread-list">${items}</ul>` : ""}
+        ${ignored.length ? `<details class="ws-unread-ignored"><summary>${ignored.length} document(s) écarté(s)</summary><ul class="ws-unread-list">${ignoredItems}</ul></details>` : ""}
+      `;
+      window.lucide?.createIcons?.();
+    }
+
+    async function setUnreadDocumentStatus(docId, status) {
+      const doc = [...unreadInvoiceDocs, ...ignoredInvoiceDocs].find((item) => String(item.id) === String(docId));
+      if (!doc) return;
+      try {
+        await setDocumentExtractionStatus(doc, status);
+        if (selectedDossierId) {
+          await logDossierActivity(
+            selectedDossierId,
+            status === "ignored" ? "document_ignored" : "document_restored",
+            status === "ignored"
+              ? `${doc.original_filename} écarté (pas une facture)`
+              : `${doc.original_filename} rétabli`,
+            { document_id: doc.id },
+          );
+        }
+        await refreshPendingAnalysis({ forceDocuments: true });
+        await renderProductionCard();
+      } catch (error) {
+        showWorkspaceToast({ title: "Action impossible", message: error.message, variant: "warn" });
+      }
+    }
+
+    document.getElementById("unreadDocsPanel")?.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target) return;
+      if (target.dataset.unreadIgnore) setUnreadDocumentStatus(target.dataset.unreadIgnore, "ignored");
+      else if (target.dataset.unreadRestore) setUnreadDocumentStatus(target.dataset.unreadRestore, null);
+    });
+
     async function refreshPendingAnalysis({ forceDocuments = false } = {}) {
       if (!selectedDossierId) {
-        pendingAnalysisCount = 0;
-        bankPendingCount = 0;
-        invoicePendingCount = 0;
-        invoiceDocumentCount = 0;
+        applyPendingAnalysis(null);
         return;
       }
       const generation = documentsListGeneration;
@@ -1368,17 +1480,10 @@
         const workspace = await loadDossierWorkspaceSummary(selectedDossierId);
         if (generation !== documentsListGeneration) return;
         workspaceSnapshot = mergeWorkspaceSnapshot(workspaceSnapshot, workspace);
-        const pending = countPendingAnalysis(documentsCache, workspaceSnapshot);
-        pendingAnalysisCount = pending.total;
-        bankPendingCount = pending.bankPending;
-        invoicePendingCount = pending.invoicePending;
-        invoiceDocumentCount = countInvoiceDocuments(documentsCache);
+        applyPendingAnalysis(countPendingAnalysis(documentsCache, workspaceSnapshot));
       } catch {
         if (generation !== documentsListGeneration) return;
-        pendingAnalysisCount = 0;
-        bankPendingCount = 0;
-        invoicePendingCount = 0;
-        invoiceDocumentCount = 0;
+        applyPendingAnalysis(null);
       }
     }
 
@@ -1586,7 +1691,7 @@
         } else if (queuedJobs > 0 && invoicePendingCount > 0) {
           showWorkspaceToast({
             title: "Extraction incomplète",
-            message: `${invoicePendingCount} document(s) n'ont pas pu être extraits. Vérifiez les scans ou relancez l'extraction.`,
+            message: `${invoicePendingCount} facture(s) non lue(s) — la raison est affichée dans « Extraction factures ». Relancez ou écartez-les avant de déclarer.`,
             variant: "warn",
             durationMs: 14000,
           });
@@ -2530,27 +2635,17 @@
           if (!stillCurrent()) return;
           documentsCache = docs;
           workspaceSnapshot = mergeWorkspaceSnapshot(workspaceSnapshot, workspace);
-          const pending = countPendingAnalysis(documentsCache, workspaceSnapshot);
-          pendingAnalysisCount = pending.total;
-          bankPendingCount = pending.bankPending;
-          invoicePendingCount = pending.invoicePending;
-          invoiceDocumentCount = countInvoiceDocuments(documentsCache);
+          applyPendingAnalysis(countPendingAnalysis(documentsCache, workspaceSnapshot));
         } catch {
           if (!stillCurrent()) return;
           documentsCache = [];
           workspaceSnapshot = null;
-          pendingAnalysisCount = 0;
-          bankPendingCount = 0;
-          invoicePendingCount = 0;
-          invoiceDocumentCount = 0;
+          applyPendingAnalysis(null);
         }
       } else {
         documentsCache = [];
         workspaceSnapshot = null;
-        pendingAnalysisCount = 0;
-        bankPendingCount = 0;
-        invoicePendingCount = 0;
-        invoiceDocumentCount = 0;
+        applyPendingAnalysis(null);
       }
 
       cockpit = await loadWorkspaceCockpit(client, dossierId, {

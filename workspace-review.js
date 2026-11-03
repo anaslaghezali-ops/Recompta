@@ -31,7 +31,7 @@ import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
   listDossierDocuments,
-} from "./dossier-documents.js?v=doc15";
+} from "./dossier-documents.js?v=doc20";
 import {
   bindPreviewControls,
   clearSourceFiles,
@@ -62,6 +62,7 @@ export function createWorkspaceReview({
   const notifyWorkspaceSaved = onWorkspaceSaved || onStateChange;
   let lines = [];
   let saver = null;
+  let declareBlocked = false;
   // Documents repris par la revue (fusion des imports concurrents).
   let tracker = createWorkspaceTracker();
   let anomaliesOnly = false;
@@ -729,17 +730,34 @@ export function createWorkspaceReview({
   function openDeclareDialog() {
     if (!lines.length) return;
     const { periodLabel } = ctx();
+    const unread = unreadDocuments();
     refreshConfidence();
     const issues = collectExportReview(lines, {
       clientIce: ctx().clientIce || "",
       duplicateIndexes: findDuplicateLineIndexes(lines),
     });
-    if (els.declareIntro) {
-      els.declareIntro.textContent = periodLabel
-        ? `Confirmez que la déclaration TVA de ${periodLabel} a bien été effectuée (télédéclaration ou dépôt validé).`
-        : "Confirmez que la déclaration TVA de cette période a bien été effectuée.";
+    // Factures non lues : absentes de la déclaration → blocage, pas un avertissement.
+    declareBlocked = unread.length > 0;
+    if (els.declareConfirm) {
+      els.declareConfirm.disabled = declareBlocked;
+      els.declareConfirm.title = declareBlocked
+        ? "Relancez ou écartez d'abord les factures non lues (onglet Période active)."
+        : "";
     }
-    if (els.declareWarnings) {
+    if (els.declareIntro) {
+      els.declareIntro.textContent = declareBlocked
+        ? `Déclaration impossible : ${unread.length} facture(s) non lue(s) ne sont pas dans les lignes. Relancez leur lecture ou écartez celles qui ne sont pas des factures (onglet « Période active »).`
+        : periodLabel
+          ? `Confirmez que la déclaration TVA de ${periodLabel} a bien été effectuée (télédéclaration ou dépôt validé).`
+          : "Confirmez que la déclaration TVA de cette période a bien été effectuée.";
+    }
+    if (declareBlocked && els.declareWarnings) {
+      els.declareWarnings.hidden = false;
+      els.declareWarnings.innerHTML = unread
+        .slice(0, 12)
+        .map((doc) => `<li class="review-error">${escapeHtml((doc.original_filename || "document").split("/").pop())} — ${escapeHtml(doc.extraction_error || "pas encore lue")}</li>`)
+        .join("") + (unread.length > 12 ? `<li class="review-error">… et ${unread.length - 12} autre(s)</li>` : "");
+    } else if (els.declareWarnings) {
       if (issues.length) {
         els.declareWarnings.hidden = false;
         els.declareWarnings.innerHTML = issues
@@ -753,9 +771,15 @@ export function createWorkspaceReview({
     els.declareDialog?.showModal();
   }
 
+  function unreadDocuments() {
+    const docs = ctx().unreadDocuments;
+    return Array.isArray(docs) ? docs : [];
+  }
+
   async function confirmDeclarePeriod() {
     const { dossierId, periodLabel } = ctx();
     if (!dossierId) return;
+    if (declareBlocked || unreadDocuments().length) return;
     try {
       saver?.cancel?.();
       await markDossierExported(dossierId);
@@ -1018,6 +1042,17 @@ export function createWorkspaceReview({
       clientIce: ctx().clientIce || "",
       duplicateIndexes: findDuplicateLineIndexes(lines),
     });
+    const unread = unreadDocuments();
+    if (unread.length) {
+      // Export autorisé (brouillon), mais jamais sans le savoir.
+      issues.unshift({
+        level: "error",
+        text: `${unread.length} facture(s) non lue(s) ne sont pas dans ce fichier : ${unread
+          .slice(0, 5)
+          .map((doc) => (doc.original_filename || "document").split("/").pop())
+          .join(", ")}${unread.length > 5 ? "…" : ""}`,
+      });
+    }
     if (!issues.length) {
       downloadExcel();
       return;

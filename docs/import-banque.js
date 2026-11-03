@@ -18,7 +18,7 @@ import {
   showImportCompletionToast,
   startBankImportUpload,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs12";
+} from "./import-jobs-client.js?v=jobs30";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
 import {
   createWorkspaceSaver,
@@ -29,7 +29,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { uploadDossierDocument } from "./dossier-documents.js?v=doc1";
+import { uploadDossierDocument } from "./dossier-documents.js?v=doc20";
 
 const els = {};
 let session = null;

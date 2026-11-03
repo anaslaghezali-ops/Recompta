@@ -628,7 +628,9 @@ export async function listDossierDocuments(dossierId, { docType = null } = {}) {
 
   let query = supabase
     .from("dossier_documents")
-    .select("id, dossier_id, doc_type, original_filename, storage_path, mime_type, size_bytes, source_id, created_at")
+    // « * » : inclut le statut de lecture quand la migration est passée,
+    // sans casser la liste quand elle ne l'est pas encore.
+    .select("*")
     .eq("dossier_id", dossierId)
     .order("created_at", { ascending: false });
 
@@ -637,6 +639,26 @@ export async function listDossierDocuments(dossierId, { docType = null } = {}) {
   const { data, error } = await query;
   if (error) throw error;
   return dedupeDocuments(data || []);
+}
+
+/**
+ * Écarte un document de la lecture (« ce n'est pas une facture ») ou le
+ * rétablit (status null). Nécessite la migration 20261103040000.
+ */
+export async function setDocumentExtractionStatus(doc, status) {
+  const supabase = getSupabase();
+  if (!supabase || !doc?.id) throw new Error("Document introuvable.");
+  if (status !== "ignored" && status !== null) throw new Error("Statut non autorisé.");
+  const { error } = await supabase
+    .from("dossier_documents")
+    .update({ extraction_status: status, extraction_error: null })
+    .eq("id", doc.id);
+  if (error) {
+    if (/extraction_status|column/i.test(error.message || "")) {
+      throw new Error("Mise à jour de la base requise (migration « statut de lecture »). Voir DOSSIERS.md.");
+    }
+    throw error;
+  }
 }
 
 export async function getDocumentDownloadUrl(storagePath, expiresIn = 3600) {

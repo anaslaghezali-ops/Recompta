@@ -6,7 +6,7 @@ import {
   partitionDocumentsForDisplay,
   shouldSkipZipForAnalysis,
   sourceIdsWithLines,
-} from "./dossier-documents.js?v=doc19";
+} from "./dossier-documents.js?v=doc20";
 import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
@@ -1159,13 +1159,23 @@ export function startImportJobPolling(dossierId, onUpdate, intervalMs = 5000) {
   };
 }
 
-export function countPendingAnalysis(documents, workspace) {
+/**
+ * État de lecture des factures d'un dossier.
+ *
+ * - pending  : jamais lues (ou statut inconnu) → « Lancer l'extraction »
+ * - failed   : lecture tentée, aucune ligne → doivent être relancées ou ignorées
+ * - ignored  : écartées par l'utilisateur (pas une facture)
+ * - settled  : lues puis lignes supprimées volontairement
+ *
+ * pending + failed = factures non lues : elles bloquent la déclaration.
+ * Sans la migration du statut (extraction_status absent), tout document sans
+ * ligne est « pending », comme avant.
+ */
+export function classifyInvoiceDocuments(documents, workspace) {
   const lines = (workspace?.lines?.length ? workspace.lines : null)
     || workspace?.lineRefs
     || [];
-  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
   const processedKeys = new Set();
-
   for (const line of lines) {
     for (const key of documentIdentityKeys(line.source_file || "")) {
       processedKeys.add(key);
@@ -1173,27 +1183,44 @@ export function countPendingAnalysis(documents, workspace) {
     if (line.source_id) processedKeys.add(`sid:${line.source_id}`);
   }
 
-  const { workingDocs } = partitionDocumentsForDisplay(dedupeDocuments(documents));
-  let invoicePending = 0;
-  let bankPending = 0;
+  const { workingDocs } = partitionDocumentsForDisplay(dedupeDocuments(documents || []));
   const withLines = sourceIdsWithLines(lines);
+  const result = { pending: [], failed: [], ignored: [], settled: [], read: [] };
 
   for (const doc of workingDocs) {
-    if (doc.doc_type === "invoice") {
-      if (shouldSkipZipForAnalysis(doc, documents, processedKeys, withLines)) continue;
-      const sid = doc.source_id ? `sid:${doc.source_id}` : null;
-      const keys = documentIdentityKeys(doc.original_filename || "");
-      const processed = sid
-        ? withLines.has(doc.source_id)
-        : [...keys].some((key) => processedKeys.has(key));
-      if (!processed) invoicePending += 1;
-    } else if (doc.doc_type === "bank" && bankCount === 0) {
-      bankPending += 1;
-    }
+    if (doc.doc_type !== "invoice") continue;
+    if (shouldSkipZipForAnalysis(doc, documents, processedKeys, withLines)) continue;
+    const keys = documentIdentityKeys(doc.original_filename || "");
+    const hasLines = doc.source_id
+      ? withLines.has(doc.source_id)
+      : [...keys].some((key) => processedKeys.has(key));
+    const status = String(doc.extraction_status || "");
+    if (status === "ignored") result.ignored.push(doc);
+    else if (hasLines) result.read.push(doc);
+    else if (status === "failed") result.failed.push(doc);
+    else if (status === "done") result.settled.push(doc);
+    else result.pending.push(doc);
   }
+  return result;
+}
 
+export function countPendingAnalysis(documents, workspace) {
+  const bankCount = workspace?.bankCount ?? workspace?.bank_transactions?.length ?? 0;
+  const invoices = classifyInvoiceDocuments(documents, workspace);
+  const { workingDocs } = partitionDocumentsForDisplay(dedupeDocuments(documents || []));
+  const bankPending = bankCount === 0
+    ? workingDocs.filter((doc) => doc.doc_type === "bank").length
+    : 0;
+  // invoicePending inclut les échecs : ce sont des documents à (re)lancer.
+  const invoicePending = invoices.pending.length + invoices.failed.length;
   return {
     invoicePending,
+    invoiceNeverRead: invoices.pending.length,
+    invoiceFailed: invoices.failed.length,
+    invoiceIgnored: invoices.ignored.length,
+    unreadDocuments: [...invoices.failed, ...invoices.pending],
+    failedDocuments: invoices.failed,
+    ignoredDocuments: invoices.ignored,
     bankPending,
     total: invoicePending + bankPending,
   };
