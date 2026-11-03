@@ -52,6 +52,15 @@ def _is_invoice_processed(
     return bool(doc_keys & processed_keys)
 
 
+def _extraction_settled(doc: dict[str, Any]) -> bool:
+    """Document à ne pas relire automatiquement.
+
+    ignored : écarté par l'utilisateur. done sans ligne : lu, puis ses lignes
+    ont été supprimées volontairement — le relire les ferait revenir.
+    """
+    return (doc.get("extraction_status") or "") in {"ignored", "done"}
+
+
 def _is_bank_processed(doc: dict[str, Any], workspace: dict[str, Any]) -> bool:
     bank = workspace.get("bank_transactions") or []
     if not bank:
@@ -268,7 +277,7 @@ def _dedupe_documents(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_type: str | None = None) -> list[dict[str, Any]]:
     params: dict[str, str] = {
         "dossier_id": f"eq.{dossier_id}",
-        "select": "id, dossier_id, doc_type, original_filename, storage_path, mime_type, size_bytes, source_id, created_at",
+        "select": "*",
         "order": "created_at.asc",
         "limit": "500",
     }
@@ -302,6 +311,7 @@ async def queue_dossier_analysis(
             pending = [
                 doc for doc in _working_documents(documents)
                 if (doc.get("doc_type") or "") != "archive"
+                and not _extraction_settled(doc)
                 and not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
                 and not _should_skip_zip_for_analysis(
                     doc, documents, processed_keys, source_ids_with_lines,
@@ -343,10 +353,14 @@ async def queue_dossier_analysis(
                 "message": "Aucun document en attente d'analyse.",
             }
 
-        options = {"client_ice": client_ice, "analysis_from_documents": True}
         jobs: list[dict[str, Any]] = []
 
         for doc in to_queue:
+            options = {
+                "client_ice": client_ice,
+                "analysis_from_documents": True,
+                "document_id": doc.get("id"),
+            }
             content = await db.download_storage_file(DOCUMENTS_BUCKET, doc["storage_path"])
             filename = doc.get("original_filename") or "document"
             mime_type = doc.get("mime_type") or "application/octet-stream"

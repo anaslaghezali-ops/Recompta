@@ -204,6 +204,63 @@ def _merge_workspace_lines(existing: list[dict[str, Any]], new_lines: list[dict[
     return merged
 
 
+def failure_reason(result: ExtractionResult | None, exc: BaseException | None = None) -> str:
+    """Raison lisible par un comptable, pas une trace technique."""
+    if exc is not None:
+        name = type(exc).__name__
+        if "Timeout" in name:
+            return "Le service de lecture n'a pas répondu à temps — relancez."
+        if "HTTP" in name or "Connect" in name:
+            return "Le service de lecture IA est indisponible — relancez dans quelques minutes."
+        return f"Erreur pendant la lecture ({name}) — relancez ; si elle persiste, saisissez la facture à la main."
+    for warning in (result.warnings if result else []) or []:
+        text = str(warning or "").strip()
+        if not text:
+            continue
+        if text.startswith("Extraction échouée"):
+            if "Timeout" in text:
+                return "Le service de lecture n'a pas répondu à temps — relancez."
+            return "Le service de lecture IA a renvoyé une erreur — relancez."
+        if "Aucune ligne extraite" in text:
+            break
+        return text[:300]
+    return "Aucune facture reconnue : scan illisible, page blanche ou document qui n'est pas une facture."
+
+
+def extraction_marks(
+    work_items: list[dict[str, Any]],
+    results_by_source: dict[str, ExtractionResult],
+    errors_by_source: dict[str, BaseException],
+    *,
+    document_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Statut de lecture à enregistrer, par document.
+
+    Un job d'analyse porte sur un document précis (document_id) : ses éléments
+    (un PDF, ou les fichiers d'un ZIP) forment un seul résultat — lu si au moins
+    une ligne a été extraite. Sinon chaque fichier est son propre document.
+    """
+    groups: dict[tuple, list[dict[str, Any]]] = {}
+    for item in work_items:
+        target = ("doc", document_id) if document_id else ("sid", item["source_id"])
+        groups.setdefault(target, []).append(item)
+
+    marks: list[dict[str, Any]] = []
+    for (kind, ref), items in groups.items():
+        line_count = sum(len((results_by_source.get(i["source_id"]) or ExtractionResult(filename="", lines=[])).lines or []) for i in items)
+        if line_count:
+            marks.append({"kind": kind, "ref": ref, "status": "done", "error": None})
+            continue
+        first = items[0]["source_id"]
+        marks.append({
+            "kind": kind,
+            "ref": ref,
+            "status": "failed",
+            "error": failure_reason(results_by_source.get(first), errors_by_source.get(first)),
+        })
+    return marks
+
+
 def extraction_concurrency() -> int:
     try:
         value = int(os.getenv("EXTRACTION_CONCURRENCY", "4"))
@@ -522,6 +579,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     processed = 0
     failed = 0
     extraction_results: list[ExtractionResult] = []
+    extraction_errors: dict[str, BaseException] = {}
     semaphore = asyncio.Semaphore(extraction_concurrency())
 
     async def process_item(item: dict[str, Any]) -> ExtractionResult:
@@ -543,6 +601,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 return result
             except Exception as exc:  # noqa: BLE001
                 failed += 1
+                extraction_errors[source_id] = exc
                 await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
                 return ExtractionResult(
                     filename=filename,
@@ -575,6 +634,27 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                         extraction_engine=result.engine,
                     )
                 )
+
+        # Statut de lecture par document : une facture non lue doit rester
+        # visible (et bloquer la déclaration) tant qu'elle n'est pas traitée.
+        results_by_source = {str(r.source_id): r for r in normalized}
+        document_id = options.get("document_id")
+        for mark in extraction_marks(
+            work_items,
+            results_by_source,
+            extraction_errors,
+            document_id=int(document_id) if document_id else None,
+        ):
+            try:
+                await db.mark_document_extraction(
+                    dossier_id,
+                    status=mark["status"],
+                    error=mark["error"],
+                    document_id=mark["ref"] if mark["kind"] == "doc" else None,
+                    source_id=mark["ref"] if mark["kind"] == "sid" else None,
+                )
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
 
         if new_lines:
             try:
@@ -651,15 +731,25 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     )
 
     done_parents = {item["parent_file_id"] for item in work_items}
+    lines_by_source: dict[str, int] = {}
+    for line in new_lines:
+        key = str(line.get("source_id") or "")
+        lines_by_source[key] = lines_by_source.get(key, 0) + 1
     for file_id in done_parents:
-        count = sum(1 for item in work_items if item["parent_file_id"] == file_id)
+        children = [item for item in work_items if item["parent_file_id"] == file_id]
+        count = sum(lines_by_source.get(str(item["source_id"]), 0) for item in children)
+        unread = sum(1 for item in children if not lines_by_source.get(str(item["source_id"])))
         await db.update_job_file(
             file_id,
             {
-                "status": "done",
+                # Un fichier dont rien n'a été lu est un échec, pas « terminé ».
+                "status": "done" if count else "failed",
                 "line_count": count,
                 "processed_at": _iso_now(),
-                "error_message": None,
+                "error_message": (
+                    None if not unread
+                    else f"{unread} document(s) non lu(s) sur {len(children)}."
+                ),
             },
         )
 

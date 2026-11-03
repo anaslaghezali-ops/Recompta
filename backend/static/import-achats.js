@@ -32,7 +32,7 @@ import {
   listImportJobs,
   startImportJobPolling,
   startInvoiceImportUpload,
-} from "./import-jobs-client.js?v=jobs28";
+} from "./import-jobs-client.js?v=jobs30";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -42,7 +42,7 @@ import {
   shortFilename,
   workspaceBackHref,
 } from "./import-dossier.js?v=imp1";
-import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc19";
+import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc20";
 
 const els = {};
 let session = null;

@@ -57,6 +57,20 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_EXTRACTION_STATUS_SUPPORTED = True
+
+
+def _is_missing_column_error(response: httpx.Response) -> bool:
+    """PostgREST : colonne inconnue (migration pas encore exécutée)."""
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    code = str(body.get("code") or "")
+    message = str(body.get("message") or "")
+    return code in {"42703", "PGRST204"} or ("column" in message and "does not exist" in message)
+
+
 def _next_updated_at(previous: str | None) -> str:
     """Horodatage strictement postérieur au précédent (jeton de version)."""
     now = datetime.now(timezone.utc)
@@ -414,6 +428,69 @@ class SupabaseService:
             return []
         response.raise_for_status()
         return response.json() or []
+
+    async def mark_document_extraction(
+        self,
+        dossier_id: int,
+        *,
+        status: str,
+        source_id: str | None = None,
+        document_id: int | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Enregistre le résultat de lecture d'un document (done / failed).
+
+        Sans la migration 20261103040000, les colonnes n'existent pas : on
+        l'ignore (le reste de l'import ne doit pas échouer pour autant).
+        """
+        global _EXTRACTION_STATUS_SUPPORTED
+        if not _EXTRACTION_STATUS_SUPPORTED:
+            return False
+        if document_id:
+            params = {"id": f"eq.{document_id}"}
+        elif source_id:
+            params = {"dossier_id": f"eq.{dossier_id}", "source_id": f"eq.{source_id}"}
+        else:
+            return False
+
+        current = await self.client.get(
+            f"{self.base}/rest/v1/dossier_documents",
+            params={**params, "select": "id, extraction_attempts, extraction_status"},
+            headers=service_headers(),
+        )
+        if current.status_code >= 400:
+            if _is_missing_column_error(current):
+                _EXTRACTION_STATUS_SUPPORTED = False
+                return False
+            current.raise_for_status()
+        rows = current.json()
+        if not rows:
+            return False
+
+        ok = False
+        for row in rows:
+            # Un document écarté par l'utilisateur reste écarté.
+            if row.get("extraction_status") == "ignored":
+                continue
+            patch = {
+                "extraction_status": status,
+                "extraction_error": ((error or "")[:300] or None) if status == "failed" else None,
+                "extraction_attempts": int(row.get("extraction_attempts") or 0) + 1,
+                "extracted_at": _iso_now(),
+            }
+            response = await self.client.patch(
+                f"{self.base}/rest/v1/dossier_documents",
+                params={"id": f"eq.{row['id']}"},
+                headers=service_headers(prefer="return=minimal"),
+                json=patch,
+            )
+            if response.status_code >= 400:
+                if _is_missing_column_error(response):
+                    _EXTRACTION_STATUS_SUPPORTED = False
+                    return False
+                response.raise_for_status()
+            ok = True
+        return ok
 
     async def find_dossier_document(
         self,
