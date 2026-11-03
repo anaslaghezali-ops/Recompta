@@ -499,7 +499,7 @@ function startJobsPolling() {
 }
 
 async function reloadSessionLines() {
-  const workspace = await loadDossierWorkspace(session.dossierId);
+  const workspace = await loadDossierWorkspace(session.dossierId, { tracker: session.tracker });
   session.lines = workspace?.lines || [];
   session.updatedAt = workspace?.updated_at || session.updatedAt;
   renderLinesTable();

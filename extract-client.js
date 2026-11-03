@@ -527,18 +527,40 @@ function convertTtcAmountToHtLine(line, ttcValue) {
   };
 }
 
-function isTtcMislabeledAsHt(mHt, tva, taux) {
+const AMOUNT_TOKEN = /(?<![\d.,])(?:\d{1,3}(?:[ \u00a0.,]\d{3})+|\d+)(?:[.,]\d{1,2})?(?!\d)/g;
+
+// Le montant figure-t-il sur la pièce (1 800,00 / 1.800,00 / 1800.00…) ?
+function amountInText(text, amount) {
+  const target = Math.round(Math.abs(Number(amount)) * 100) / 100;
+  if (!text || target < 0.01) return false;
+  for (const match of String(text).matchAll(AMOUNT_TOKEN)) {
+    const value = parseAmount(match[0]);
+    if (value !== null && Math.abs(Math.abs(value) - target) <= 0.01) return true;
+  }
+  return false;
+}
+
+// Miroir de vat_intelligence._is_ttc_mislabeled_as_ht : preuve arithmétique
+// au centime près, et contre-preuve par un TTC lu distinct du HT.
+function isTtcMislabeledAsHt(mHt, tva, taux, mTtc = 0, ttcReconstructed = false, text = "") {
   const ht = Math.abs(Number(mHt));
   const tv = Math.abs(Number(tva));
   const rate = Number(taux);
   if (ht < 0.01 || tv < 0.01 || (rate !== 0.1 && rate !== 0.2)) return false;
-  const ratio = tv / ht;
-  const asHtRate = Math.abs(ratio - rate) <= 0.025;
-  const asTtcRate = Math.abs(ratio - rate / (1 + rate)) <= 0.025;
-  if (!asTtcRate || asHtRate) return false;
-  const recomputedHt = ht - tv;
-  if (recomputedHt <= 0) return false;
-  return Math.abs(tv / recomputedHt - rate) <= 0.025;
+  if (Math.abs(tv - Math.round(ht * rate * 100) / 100) <= 0.05) return false;
+  const tolerance = Math.max(0.05, tv * 0.002);
+  if (Math.abs(tv - Math.round((ht * rate / (1 + rate)) * 100) / 100) > tolerance) return false;
+
+  const ttc = Math.abs(Number(mTtc) || 0);
+  const ttcRead = ttc > 0.01 && !ttcReconstructed;
+  if (ttcRead && Math.abs(ttc - ht) > 0.05 && Math.abs(ttc - (ht + tv)) <= 0.05) {
+    if (String(text || "").trim()) {
+      if (amountInText(text, ttc)) return false;
+      if (amountInText(text, ht - tv)) return true;
+    }
+    return false;
+  }
+  return true;
 }
 
 // Ne corrige que sur preuve : « HT=150, TVA=30 » (correct) et « TTC=150 pris
@@ -552,7 +574,7 @@ function fixTtcMislabeledLine(line, text = "", footerHt = null) {
     return line;
   }
   if (amountLabeledTtcInText(text, line.m_ht)) return convertTtcAmountToHtLine(line, line.m_ht);
-  if (isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux)) {
+  if (isTtcMislabeledAsHt(line.m_ht, line.tva, line.taux, line.m_ttc, line.ttc_reconstructed, text)) {
     return convertTtcAmountToHtLine(line, line.m_ht);
   }
   return line;

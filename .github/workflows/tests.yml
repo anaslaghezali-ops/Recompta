@@ -1,0 +1,64 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Dépendances
+        run: pip install -r backend/requirements.txt
+
+      - name: Tests Python
+        working-directory: backend
+        run: |
+          set -e
+          for t in scripts/test_*.py; do
+            case "$t" in
+              # Besoin de scans réels absents du dépôt.
+              *test_scan_routing.py|*test_upload_folder.py) continue ;;
+            esac
+            echo "::group::$t"
+            python "$t"
+            echo "::endgroup::"
+          done
+
+      - name: Tests JS
+        run: |
+          set -e
+          for t in test-*.mjs docs/test-*.mjs; do
+            echo "::group::$t"
+            node "$t"
+            echo "::endgroup::"
+          done
+
+      - name: Copies docs/ et backend/static/ identiques à la racine
+        run: |
+          status=0
+          for f in docs/*.js docs/*.html docs/*.css backend/static/*.js backend/static/*.html backend/static/*.css; do
+            [ -f "$f" ] || continue
+            root="$(basename "$f")"
+            [ -f "$root" ] || continue
+            if ! cmp -s "$f" "$root"; then
+              echo "::error file=$f::diffère de $root à la racine"
+              status=1
+            fi
+          done
+          exit $status

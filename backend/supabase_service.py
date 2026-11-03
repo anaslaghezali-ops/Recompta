@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import os
-from datetime import datetime, timezone
-from typing import Any
+import random
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 from urllib.parse import quote
 
 import httpx
@@ -53,6 +55,19 @@ def service_headers(*, prefer: str | None = None) -> dict[str, str]:
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _next_updated_at(previous: str | None) -> str:
+    """Horodatage strictement postérieur au précédent (jeton de version)."""
+    now = datetime.now(timezone.utc)
+    if previous:
+        try:
+            prev = datetime.fromisoformat(str(previous).replace("Z", "+00:00"))
+            if prev >= now:
+                now = prev + timedelta(milliseconds=1)
+        except ValueError:
+            pass
+    return now.isoformat()
 
 
 class SupabaseService:
@@ -251,25 +266,85 @@ class SupabaseService:
         lines: list[dict[str, Any]] | None,
         bank_transactions: list[dict[str, Any]] | None = None,
         bank_meta: dict[str, Any] | None = None,
-    ) -> None:
-        """Upsert du workspace. ``lines=None`` laisse la colonne lines intacte."""
-        existing = await self.load_workspace(dossier_id)
-        payload: dict[str, Any] = {
-            "dossier_id": dossier_id,
-            "bank_transactions": bank_transactions
-            if bank_transactions is not None
-            else existing.get("bank_transactions") or [],
-            "bank_meta": bank_meta if bank_meta is not None else existing.get("bank_meta") or {},
-            "updated_at": _iso_now(),
-        }
-        if lines is not None:
-            payload["lines"] = lines
-        response = await self.client.post(
-            f"{self.base}/rest/v1/dossier_workspaces",
-            headers={**service_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
-            json=payload,
+    ) -> dict[str, Any]:
+        """Remplace les colonnes fournies (``None`` = colonne laissée intacte).
+
+        Écriture conditionnelle : voir ``update_workspace``.
+        """
+
+        def mutate(_current: dict[str, Any]) -> dict[str, Any]:
+            patch: dict[str, Any] = {}
+            if lines is not None:
+                patch["lines"] = lines
+            if bank_transactions is not None:
+                patch["bank_transactions"] = bank_transactions
+            if bank_meta is not None:
+                patch["bank_meta"] = bank_meta
+            return patch
+
+        return await self.update_workspace(dossier_id, mutate)
+
+    async def update_workspace(
+        self,
+        dossier_id: int,
+        mutate: Callable[[dict[str, Any]], dict[str, Any]],
+        *,
+        attempts: int = 6,
+    ) -> dict[str, Any]:
+        """Lit, applique ``mutate`` à l'état courant, écrit si personne n'a écrit
+        entre-temps (compare-and-swap sur updated_at), sinon recommence.
+
+        Les pages ouvertes écrivent la même ligne : une écriture aveugle
+        effacerait leurs modifications (ou elles les nôtres). ``mutate`` doit
+        donc être pure et rejouable sur l'état relu.
+        """
+        for attempt in range(1, attempts + 1):
+            response = await self.client.get(
+                f"{self.base}/rest/v1/dossier_workspaces",
+                params={"dossier_id": f"eq.{dossier_id}", "select": "*"},
+                headers=service_headers(),
+            )
+            response.raise_for_status()
+            rows = response.json()
+            current = rows[0] if rows else {
+                "dossier_id": dossier_id,
+                "lines": [],
+                "bank_transactions": [],
+                "bank_meta": {},
+                "updated_at": None,
+            }
+            patch = dict(mutate(current))
+            patch["updated_at"] = _next_updated_at(current.get("updated_at"))
+
+            if rows:
+                write = await self.client.patch(
+                    f"{self.base}/rest/v1/dossier_workspaces",
+                    params={
+                        "dossier_id": f"eq.{dossier_id}",
+                        "updated_at": f"eq.{current['updated_at']}",
+                    },
+                    headers=service_headers(prefer="return=representation"),
+                    json=patch,
+                )
+                write.raise_for_status()
+                if write.json():
+                    return {**current, **patch}
+            else:
+                write = await self.client.post(
+                    f"{self.base}/rest/v1/dossier_workspaces",
+                    headers=service_headers(prefer="return=minimal"),
+                    json={"dossier_id": dossier_id, **patch},
+                )
+                if write.status_code < 400:
+                    return {**current, **patch}
+                if write.status_code != 409:
+                    write.raise_for_status()
+
+            await asyncio.sleep(0.08 * attempt + random.random() * 0.12)
+
+        raise RuntimeError(
+            f"Dossier {dossier_id} modifié en continu : écriture abandonnée après {attempts} essais."
         )
-        response.raise_for_status()
 
     async def log_activity(
         self,

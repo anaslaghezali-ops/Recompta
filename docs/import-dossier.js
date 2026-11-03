@@ -1,6 +1,7 @@
 import { requireCabinetSession, formatMonthLabel, loadDossierContext } from "./dossiers-client.js?v=dash2";
 import {
   createDebouncedSaver,
+  createWorkspaceTracker,
   loadDossierWorkspace,
   logDossierActivity,
   saveDossierWorkspace,
@@ -40,8 +41,10 @@ export async function initDossierImportPage() {
     return null;
   }
 
-  const workspace = await loadDossierWorkspace(dossierId);
+  const tracker = createWorkspaceTracker();
+  const workspace = await loadDossierWorkspace(dossierId, { tracker, adoptBank: true });
   const session = {
+    tracker,
     membership,
     context,
     dossierId,
@@ -78,6 +81,17 @@ export function renderImportContextBar(session, mount) {
   `;
 }
 
+// Données importées par le serveur pendant que la page était ouverte : la
+// sauvegarde les a conservées, la page les reprend.
+function adoptSavedWorkspace(session, saved) {
+  if (!saved) return;
+  if (saved.added) session.lines = saved.lines;
+  if (saved.bankChanged) {
+    session.bankTransactions = saved.bank_transactions;
+    session.bankMeta = { ...session.bankMeta, ...saved.bank_meta };
+  }
+}
+
 export function createWorkspaceSaver(session, onStatus) {
   return createDebouncedSaver(async ({ eventType, summary, meta }) => {
     onStatus?.("Enregistrement…", "pending");
@@ -85,9 +99,9 @@ export function createWorkspaceSaver(session, onStatus) {
       lines: session.lines,
       bankTransactions: session.bankTransactions,
       bankMeta: session.bankMeta,
+      tracker: session.tracker,
     });
-    // Lignes importées par le serveur pendant que la page était ouverte.
-    if (saved?.added) session.lines = saved.lines;
+    adoptSavedWorkspace(session, saved);
     if (eventType) {
       await logDossierActivity(session.dossierId, eventType, summary, meta);
     }
@@ -101,8 +115,9 @@ export async function persistWorkspaceNow(session, onStatus, eventType, summary,
     lines: session.lines,
     bankTransactions: session.bankTransactions,
     bankMeta: session.bankMeta,
+    tracker: session.tracker,
   });
-  if (saved?.added) session.lines = saved.lines;
+  adoptSavedWorkspace(session, saved);
   if (eventType) {
     await logDossierActivity(session.dossierId, eventType, summary, meta);
   }

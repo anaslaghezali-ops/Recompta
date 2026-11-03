@@ -137,6 +137,22 @@ def try_apply_ventilation_from_text(
     return result, True
 
 
+def blended_split_hint(ht: float, tva: float) -> str:
+    """Ventilation unique si seuls 10 % et 20 % s'appliquent (aide à la revue).
+
+    Non appliquée automatiquement : une part exonérée (0 %) donne le même taux
+    moyen avec une autre répartition.
+    """
+    ht20 = round(10 * tva - ht, 2)
+    ht10 = round(ht - ht20, 2)
+    if ht10 < 0.01 or ht20 < 0.01:
+        return ""
+    return (
+        f" Si seuls 10 % et 20 % s'appliquent : {ht10:.2f} HT à 10 % "
+        f"+ {ht20:.2f} HT à 20 %."
+    )
+
+
 def append_blended_warnings(result: ExtractionResult) -> ExtractionResult:
     """Avertit seulement si une ligne reste à taux moyen après ventilation."""
     for line in result.lines:
@@ -145,7 +161,9 @@ def append_blended_warnings(result: ExtractionResult) -> ExtractionResult:
         ht, tva = abs(line.m_ht), abs(line.tva)
         rate = (tva / ht * 100) if ht > 0.01 else 0.0
         label = line.fact_num or "cette pièce"
-        result.warnings.append(MULTI_RATE_WARNING.format(rate=rate, label=label))
+        result.warnings.append(
+            MULTI_RATE_WARNING.format(rate=rate, label=label) + blended_split_hint(ht, tva)
+        )
         break
     return result
 

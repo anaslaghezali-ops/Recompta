@@ -21,6 +21,7 @@ import {
 } from "./field-confidence.js";
 import {
   createDebouncedSaver,
+  createWorkspaceTracker,
   loadDossierWorkspace,
   logDossierActivity,
   markDossierExported,
@@ -61,6 +62,8 @@ export function createWorkspaceReview({
   const notifyWorkspaceSaved = onWorkspaceSaved || onStateChange;
   let lines = [];
   let saver = null;
+  // Documents repris par la revue (fusion des imports concurrents).
+  let tracker = createWorkspaceTracker();
   let anomaliesOnly = false;
   let pendingFieldBulk = null;
   let previewOpen = false;
@@ -519,11 +522,18 @@ export function createWorkspaceReview({
     if (!dossierId) return;
     setStatus("Enregistrement…");
     try {
-      const workspace = await loadDossierWorkspace(dossierId, { adopt: false });
+      // La revue ne modifie pas le relevé : elle reprend celui du serveur, et
+      // la sauvegarde gardera un relevé importé entre-temps.
+      const workspace = await loadDossierWorkspace(dossierId, {
+        tracker,
+        adoptLines: false,
+        adoptBank: true,
+      });
       const saved = await saveDossierWorkspace(dossierId, {
         lines,
         bankTransactions: workspace?.bank_transactions || [],
         bankMeta: workspace?.bank_meta || {},
+        tracker,
       });
       if (saved?.added) {
         // Un import s'est terminé pendant la revue : ses lignes sont gardées.
@@ -531,7 +541,10 @@ export function createWorkspaceReview({
         render();
       }
       if (eventType) await logDossierActivity(dossierId, eventType, summary, meta);
-      setStatus("Enregistré", "success");
+      setStatus(
+        saved?.added ? `Enregistré — ${saved.added} ligne(s) importée(s) entre-temps ajoutée(s)` : "Enregistré",
+        "success",
+      );
       notifyWorkspaceSaved?.();
     } catch (error) {
       setStatus(`Erreur : ${error.message}`, "error");
@@ -969,7 +982,8 @@ export function createWorkspaceReview({
     }
     setStatus("Chargement…");
     try {
-      const data = await loadDossierWorkspace(dossierId);
+      tracker = createWorkspaceTracker();
+      const data = await loadDossierWorkspace(dossierId, { tracker });
       lines = [...(data?.lines || [])];
       documentsCache = [];
       clearSourceFiles();

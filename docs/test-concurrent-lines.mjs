@@ -1,6 +1,6 @@
-// Test : une page ouverte ne doit pas effacer les lignes ajoutées par un import
-// serveur pendant qu'elle était ouverte (dossier-persistence.js réel, Supabase
-// simulé en mémoire).
+// Test : aucune page ouverte ne doit effacer ce qu'un import serveur a écrit
+// pendant qu'elle était ouverte (dossier-persistence.js réel, Supabase simulé
+// en mémoire, avec écritures concurrentes injectées au pire moment).
 //
 //   node test-concurrent-lines.mjs
 import assert from "node:assert/strict";
@@ -8,8 +8,9 @@ import { register } from "node:module";
 
 // Remplace les imports CDN (supabase-js) par une fausse base en mémoire.
 const stub = `
-export const db = { workspaces: new Map(), dossiers: new Map() };
+export const db = { workspaces: new Map(), dossiers: new Map(), beforeWrite: null, writes: 0 };
 globalThis.__fakeDb = db;
+const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 function table(name) {
   if (name === "dossier_workspaces") return db.workspaces;
   if (name === "client_dossiers") return db.dossiers;
@@ -17,38 +18,54 @@ function table(name) {
 }
 function query(name) {
   const filters = [];
-  let pendingUpsert = null;
-  let pendingUpdate = null;
+  let op = "select";
+  let body = null;
   const api = {
     select() { return api; },
     eq(col, val) { filters.push([col, val]); return api; },
-    upsert(payload) { pendingUpsert = payload; return api; },
-    update(patch) { pendingUpdate = patch; return api; },
-    insert() { return Promise.resolve({ error: null }); },
+    update(patch) { op = "update"; body = patch; return api; },
+    insert(row) { op = "insert"; body = row; return api; },
+    upsert(row) { op = "upsert"; body = row; return api; },
     order() { return api; },
     limit() { return api; },
     in() { return api; },
-    async maybeSingle() { return { data: find() || null, error: null }; },
-    async single() { return run(); },
-    then(resolve) { return Promise.resolve(run()).then(resolve); },
+    async maybeSingle() { return run(true); },
+    async single() { return run(true); },
+    then(resolve, reject) { return Promise.resolve().then(() => run(false)).then(resolve, reject); },
   };
-  function key() { return filters.length ? filters[0][1] : null; }
-  function find() {
-    const t = table(name);
-    const row = t.get(key());
-    return row ? JSON.parse(JSON.stringify(row)) : null;
+  const idCol = () => (name === "client_dossiers" ? "id" : "dossier_id");
+  function key() {
+    const f = filters.find(([c]) => c === idCol());
+    return f ? f[1] : body?.dossier_id;
   }
-  function run() {
+  function matches(row) {
+    return row && filters.every(([c, v]) => String(row[c]) === String(v));
+  }
+  function run(single) {
     const t = table(name);
-    if (pendingUpsert) {
-      t.set(pendingUpsert.dossier_id, { ...(t.get(pendingUpsert.dossier_id) || {}), ...JSON.parse(JSON.stringify(pendingUpsert)) });
-      return { data: { dossier_id: pendingUpsert.dossier_id, updated_at: pendingUpsert.updated_at }, error: null };
+    if (op === "select") {
+      const row = t.get(key());
+      return { data: matches(row) ? clone(row) : null, error: null };
     }
-    if (pendingUpdate) {
-      t.set(key(), { ...(t.get(key()) || {}), ...pendingUpdate });
-      return { data: null, error: null };
+    if (db.beforeWrite && name === "dossier_workspaces") {
+      const hook = db.beforeWrite;
+      db.beforeWrite = null;
+      hook();
     }
-    return { data: find(), error: null };
+    if (op === "insert") {
+      if (t.has(body.dossier_id)) return { data: null, error: { code: "23505", message: "duplicate" } };
+      t.set(body.dossier_id, clone(body));
+      db.writes += 1;
+      return { data: [clone(body)], error: null };
+    }
+    if (op === "update") {
+      const row = t.get(key());
+      if (!matches(row)) return { data: [], error: null };
+      t.set(key(), { ...row, ...clone(body) });
+      if (name === "dossier_workspaces") db.writes += 1;
+      return { data: [clone(t.get(key()))], error: null };
+    }
+    return { data: null, error: null };
   }
   return api;
 }
@@ -68,81 +85,157 @@ register(
     `),
 );
 
-const persistence = await import("./dossier-persistence.js");
 const {
+  createWorkspaceTracker,
   loadDossierWorkspace,
   saveDossierWorkspace,
   mergeConcurrentLines,
-} = persistence;
+  resolveConcurrentBank,
+} = await import("./dossier-persistence.js");
 const db = globalThis.__fakeDb;
 assert.ok(db, "fausse base non chargée");
 
+let clock = 0;
+const stamp = () => new Date(Date.UTC(2026, 10, 3, 3, 0, 0, ++clock)).toISOString();
 const line = (sid, extra = {}) => ({ source_id: sid, source_file: `${sid}.pdf`, m_ht: 100, ...extra });
 const sids = (lines) => lines.map((l) => l.source_id).sort();
+const stored = (D) => db.workspaces.get(D);
+function seed(D, lines, bank = []) {
+  db.dossiers.set(D, { id: D, status: "in_review" });
+  db.workspaces.set(D, { dossier_id: D, lines, bank_transactions: bank, bank_meta: {}, updated_at: stamp() });
+}
+// Écriture « serveur » (worker) : nouvelle valeur + nouvel updated_at.
+function serverWrite(D, patch) {
+  const row = stored(D);
+  db.workspaces.set(D, { ...row, ...patch(row), updated_at: stamp() });
+}
 
-// ── Fonction pure ────────────────────────────────────────────────────────
+// ── Fonctions pures ──────────────────────────────────────────────────────
 {
-  const seen = new Set(["a", "b"]);
-  const { lines, added } = mergeConcurrentLines([line("a")], [line("a"), line("b"), line("c")], seen);
+  const { lines, added } = mergeConcurrentLines([line("a")], [line("a"), line("b"), line("c")], new Set(["a", "b"]));
   assert.deepEqual(sids(lines), ["a", "c"], "b supprimé localement, c nouveau");
   assert.equal(added, 1);
-  assert.equal(mergeConcurrentLines([line("a")], [line("z")], null).added, 0, "sans historique : comportement inchangé");
-  const noSid = mergeConcurrentLines([], [{ m_ht: 5 }], new Set());
-  assert.equal(noSid.added, 0, "ligne sans source_id ignorée");
+  assert.equal(mergeConcurrentLines([line("a")], [line("z")], null).added, 0, "sans tracker : pas de fusion");
+  assert.equal(mergeConcurrentLines([], [{ m_ht: 5 }], new Set()).added, 0, "ligne sans source_id ignorée");
+
+  const local = { bank_transactions: [1], bank_meta: { a: 1 } };
+  const server = { bank_transactions: [2], bank_meta: { a: 1 } };
+  const adopted = JSON.stringify([[1], { a: 1 }]);
+  assert.equal(resolveConcurrentBank(local, server, adopted).changed, true, "relevé non modifié localement : serveur");
+  assert.equal(resolveConcurrentBank({ ...local, bank_transactions: [9] }, server, adopted).changed, false, "modifié : local");
+  assert.equal(resolveConcurrentBank(local, server, null).changed, false, "sans tracker : local");
 }
 
-// ── Scénario : revue ouverte pendant un import serveur ───────────────────
+// ── 1. Revue ouverte pendant un import ───────────────────────────────────
 {
   const D = 1;
-  db.dossiers.set(D, { id: D, status: "in_review" });
-  db.workspaces.set(D, { dossier_id: D, lines: [line("a"), line("b")], bank_transactions: [], bank_meta: {} });
+  seed(D, [line("a"), line("b")]);
+  const tracker = createWorkspaceTracker();
+  let page = (await loadDossierWorkspace(D, { tracker })).lines;
 
-  // La page charge le dossier (a, b).
-  const loaded = await loadDossierWorkspace(D);
-  let pageLines = loaded.lines;
+  serverWrite(D, (row) => ({ lines: [...row.lines, line("c", { taux: 0.2 }), line("c", { taux: 0.1 })] }));
 
-  // Le serveur ajoute c (2 lignes : facture multi-taux) pendant ce temps.
-  const ws = db.workspaces.get(D);
-  ws.lines = [...ws.lines, line("c", { taux: 0.2 }), line("c", { taux: 0.1 })];
-
-  // L'utilisateur supprime b et modifie a, puis la page sauvegarde.
-  pageLines = pageLines.filter((l) => l.source_id !== "b").map((l) => ({ ...l, m_ht: 999 }));
-  const pre = await loadDossierWorkspace(D, { adopt: false }); // relecture du relevé
-  const saved = await saveDossierWorkspace(D, {
-    lines: pageLines,
-    bankTransactions: pre.bank_transactions,
-    bankMeta: pre.bank_meta,
-  });
-
-  const stored = db.workspaces.get(D).lines;
-  assert.deepEqual(sids(stored), ["a", "c", "c"], "c conservé (2 lignes), b reste supprimé");
-  assert.equal(stored.find((l) => l.source_id === "a").m_ht, 999, "modification locale conservée");
+  page = page.filter((l) => l.source_id !== "b").map((l) => ({ ...l, m_ht: 999 }));
+  const saved = await saveDossierWorkspace(D, { lines: page, tracker });
+  assert.deepEqual(sids(stored(D).lines), ["a", "c", "c"], "c conservé (2 lignes), b reste supprimé");
+  assert.equal(stored(D).lines.find((l) => l.source_id === "a").m_ht, 999, "modification locale conservée");
   assert.equal(saved.added, 2);
-  pageLines = saved.lines;
+  page = saved.lines;
 
-  // Sauvegarde suivante après adoption : rien n'est dupliqué ni ressuscité.
-  const again = await saveDossierWorkspace(D, { lines: pageLines, bankTransactions: [], bankMeta: {} });
-  assert.equal(again.added, 0);
-  assert.deepEqual(sids(db.workspaces.get(D).lines), ["a", "c", "c"]);
+  const again = await saveDossierWorkspace(D, { lines: page, tracker });
+  assert.equal(again.added, 0, "pas de doublon après reprise");
 
-  // L'utilisateur supprime c après l'avoir vu : il ne revient pas.
-  pageLines = pageLines.filter((l) => l.source_id !== "c");
-  await saveDossierWorkspace(D, { lines: pageLines, bankTransactions: [], bankMeta: {} });
-  assert.deepEqual(sids(db.workspaces.get(D).lines), ["a"]);
+  page = page.filter((l) => l.source_id !== "c");
+  await saveDossierWorkspace(D, { lines: page, tracker });
+  assert.deepEqual(sids(stored(D).lines), ["a"], "c supprimé après avoir été vu : ne revient pas");
 
-  // « Réinitialiser le dossier » vide bien tout.
-  await saveDossierWorkspace(D, { lines: [], bankTransactions: [], bankMeta: {} });
-  assert.deepEqual(db.workspaces.get(D).lines, []);
+  await saveDossierWorkspace(D, { lines: [], tracker });
+  assert.deepEqual(stored(D).lines, [], "réinitialisation du dossier");
 }
 
-// ── Page qui n'a jamais chargé le dossier : comportement inchangé ────────
+// ── 2. Course : l'import écrit entre la relecture et l'écriture ──────────
 {
   const D = 2;
+  seed(D, [line("a")]);
+  const tracker = createWorkspaceTracker();
+  const page = (await loadDossierWorkspace(D, { tracker })).lines;
+  db.beforeWrite = () => serverWrite(D, (row) => ({ lines: [...row.lines, line("late")] }));
+  const saved = await saveDossierWorkspace(D, { lines: page.map((l) => ({ ...l, m_ht: 5 })), tracker });
+  assert.deepEqual(sids(stored(D).lines), ["a", "late"], "écriture concurrente détectée, relue et fusionnée");
+  assert.equal(saved.added, 1);
+}
+
+// ── 3. Sans tracker : jamais d'écrasement d'une écriture intermédiaire ───
+{
+  const D = 3;
+  seed(D, [line("x")]);
+  const before = db.writes;
+  db.beforeWrite = () => serverWrite(D, () => ({ lines: [line("x"), line("y")] }));
+  await saveDossierWorkspace(D, { lines: [line("z")] });
+  assert.deepEqual(sids(stored(D).lines), ["z"], "dernier mot à la page, mais après relecture");
+  assert.equal(db.writes - before, 1, "une seule écriture effective");
+}
+
+// ── 4. Relevé importé pendant qu'une page d'import achats est ouverte ────
+{
+  const D = 4;
+  seed(D, [line("a")], []);
+  const tracker = createWorkspaceTracker();
+  const ws = await loadDossierWorkspace(D, { tracker, adoptBank: true });
+  serverWrite(D, () => ({ bank_transactions: [{ id: 1, amount: 50 }], bank_meta: { filename: "releve.pdf" } }));
+  const saved = await saveDossierWorkspace(D, {
+    lines: ws.lines.map((l) => ({ ...l, lib_frss: "X" })),
+    bankTransactions: ws.bank_transactions,
+    bankMeta: ws.bank_meta,
+    tracker,
+  });
+  assert.equal(stored(D).bank_transactions.length, 1, "relevé importé conservé");
+  assert.equal(saved.bankChanged, true);
+  assert.equal(stored(D).lines[0].lib_frss, "X", "modification des lignes conservée");
+
+  // La page modifie ensuite elle-même le relevé : sa version gagne.
+  await saveDossierWorkspace(D, {
+    lines: saved.lines,
+    bankTransactions: [],
+    bankMeta: saved.bank_meta,
+    tracker,
+  });
+  assert.equal(stored(D).bank_transactions.length, 0, "suppression locale du relevé respectée");
+}
+
+// ── 5. Deux composants sur la même page + une simple lecture ─────────────
+{
+  const D = 5;
+  seed(D, [line("a")]);
+  const review = createWorkspaceTracker();
+  let reviewLines = (await loadDossierWorkspace(D, { tracker: review })).lines;
+
+  serverWrite(D, (row) => ({ lines: [...row.lines, line("b")] }));
+
+  // Onglet Documents : lecture sans tracker, ne doit rien « marquer vu ».
+  await loadDossierWorkspace(D);
+  // Rapprochement : reprend a + b et sauvegarde.
+  const bank = createWorkspaceTracker();
+  const bm = (await loadDossierWorkspace(D, { tracker: bank })).lines;
+  await saveDossierWorkspace(D, { lines: bm.map((l) => ({ ...l, date_paie: "2026-11-01" })), tracker: bank });
+
+  // La revue (qui n'a jamais vu b) sauvegarde ensuite : b doit survivre.
+  reviewLines = reviewLines.map((l) => ({ ...l, m_ht: 7 }));
+  const saved = await saveDossierWorkspace(D, { lines: reviewLines, tracker: review });
+  assert.deepEqual(sids(stored(D).lines), ["a", "b"], "b conservé malgré la revue périmée");
+  assert.equal(saved.added, 1);
+}
+
+// ── 6. Premier enregistrement concurrent (ligne absente puis créée) ──────
+{
+  const D = 6;
   db.dossiers.set(D, { id: D, status: "draft" });
-  db.workspaces.set(D, { dossier_id: D, lines: [line("x")], bank_transactions: [], bank_meta: {} });
-  const saved = await saveDossierWorkspace(D, { lines: [line("y")], bankTransactions: [], bankMeta: {} });
-  assert.equal(saved.added, 0);
-  assert.deepEqual(sids(db.workspaces.get(D).lines), ["y"]);
+  const tracker = createWorkspaceTracker();
+  await loadDossierWorkspace(D, { tracker });
+  db.beforeWrite = () =>
+    db.workspaces.set(D, { dossier_id: D, lines: [line("w")], bank_transactions: [], bank_meta: {}, updated_at: stamp() });
+  await saveDossierWorkspace(D, { lines: [line("p")], tracker });
+  assert.deepEqual(sids(stored(D).lines), ["p", "w"], "conflit à l'insertion : relu et fusionné");
 }
 
 console.log("OK test-concurrent-lines");
