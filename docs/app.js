@@ -64,7 +64,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist1";
+} from "./dossier-persistence.js?v=persist5";
 
 const dossierState = {
   mode: "solo",
@@ -100,7 +100,14 @@ async function persistWorkspaceNow(eventType, summary, meta = {}) {
   const dossierId = dossierState.context.dossierId;
   setSaveStatus("Enregistrement…");
   try {
-    await saveDossierWorkspace(dossierId, getWorkspacePayload());
+    const saved = await saveDossierWorkspace(dossierId, getWorkspacePayload());
+    if (saved?.added) {
+      // Lignes importées par le serveur pendant que la page était ouverte.
+      state.lines = saved.lines;
+      refreshAllFieldConfidence();
+      renderTable();
+      updateButtons();
+    }
     if (eventType) {
       await logDossierActivity(dossierId, eventType, summary, meta);
     }

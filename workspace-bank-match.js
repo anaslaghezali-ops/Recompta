@@ -12,7 +12,7 @@ import {
   loadDossierWorkspace,
   logDossierActivity,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist1";
+} from "./dossier-persistence.js?v=persist5";
 import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
 
 function formatMad(amount) {
@@ -158,12 +158,13 @@ export function createWorkspaceBankMatch({
   async function persistLines(summary, eventType = "bank_match") {
     const { dossierId } = getContext() || {};
     if (!dossierId) return;
-    const workspace = await loadDossierWorkspace(dossierId);
-    await saveDossierWorkspace(dossierId, {
+    const workspace = await loadDossierWorkspace(dossierId, { adopt: false });
+    const saved = await saveDossierWorkspace(dossierId, {
       lines,
       bankTransactions: workspace?.bank_transactions || bankTransactions,
       bankMeta: workspace?.bank_meta || {},
     });
+    if (saved?.added) lines = [...saved.lines];
     await logDossierActivity(dossierId, eventType, summary, lastStats || {});
     onComplete?.();
   }

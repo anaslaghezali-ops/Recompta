@@ -134,12 +134,23 @@ doit **converger vers ce comportement**, pas l'inverse.
 | Persistance | `state.lines` direct (pas de merge) | `_merge_workspace_lines()` + Supabase |
 | Déduplication | Aucune à l'import | `_work_item_already_processed()`, ZIP parent/enfants |
 
-### Où le workspace peut perdre des lignes (suspects prioritaires)
+### Où le workspace perdait des lignes (diagnostic novembre 2026)
 
-1. **`_work_item_already_processed`** — skip silencieux avant extraction (`source_id` / basename)
-2. **`_merge_workspace_lines`** — dédup à la sauvegarde
-3. **`dossier_analysis`** — ZIP ignoré, enfants mal rattachés, file d'attente
-4. **Absence de la 2e passe JS** — écarts multi-TVA / ventilation vs production
+| Suspect | Verdict |
+|---------|---------|
+| **Écritures concurrentes** | **Cause principale.** Chaque page réécrit le tableau `lines` entier. Une revue ouverte pendant un import serveur effaçait les lignes importées à sa sauvegarde suivante. Corrigé dans `saveDossierWorkspace()` : les lignes serveur de documents jamais vus par la page sont conservées (`test-concurrent-lines.mjs`). |
+| **`_merge_workspace_lines`** | **Cause confirmée.** La clé (source_id, n° facture, taux) fusionnait deux factures sans numéro lisible d'un même lot scanné, ou deux lignes d'une facture au même taux. Dédup désormais par document. |
+| **Absence de la 2e passe JS** | **Écarté.** Sur 19 cas (PDF réels + cas limites), la 2e passe JS ne change rien au résultat Python et les deux implémentations sont identiques. Garde-fou : `backend/scripts/test_normalize_parity.py`. |
+| **Import du relevé par le worker** | Relisait puis réécrivait `lines` : ne touche plus que les colonnes banque. |
+| **`_work_item_already_processed`** | Skip voulu (même document réimporté). Risque résiduel faible : deux fichiers de même nom et même taille. |
+| `dossier_analysis` | Non audité. |
+
+Bug corrigé au passage dans les deux pipelines : un TTC illisible faisait
+prendre le HT pour un TTC (HT 300 / TVA 30 → 272,73 / 27,27).
+
+Limite connue : la fusion côté page se fait entre une relecture et un upsert
+(fenêtre de quelques millisecondes). La solution définitive est une ligne par
+enregistrement en base, au lieu d'un tableau JSON réécrit en entier.
 
 ### Stratégie de convergence
 

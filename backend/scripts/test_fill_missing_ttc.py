@@ -43,6 +43,16 @@ def main() -> int:
     mixed_fill = fill_missing_ttc(line(m_ht=-686.44, tva=969.44, m_ttc=0.0))
     assert mixed_fill.m_ttc == 0.0, mixed_fill.m_ttc
 
+    # TTC illisible : HT et TVA cohérents ne doivent pas être réinterprétés.
+    no_ttc = sanitize_impossible_amounts(line(m_ht=300.0, tva=30.0, m_ttc=0.0, taux=0.1))
+    assert (no_ttc.m_ht, no_ttc.tva, no_ttc.m_ttc) == (300.0, 30.0, 330.0), no_ttc
+    assert no_ttc.ttc_reconstructed and not no_ttc.amounts_sanitized
+
+    no_ttc_avoir = sanitize_impossible_amounts(
+        line(m_ht=-1905.0, tva=-381.0, m_ttc=0.0), is_avoir=True
+    )
+    assert (no_ttc_avoir.m_ht, no_ttc_avoir.m_ttc) == (-1905.0, -2286.0), no_ttc_avoir
+
     rate_as_ht = sanitize_impossible_amounts(
         line(m_ht=-20.0, tva=-1134.0, m_ttc=-5670.0),
         is_avoir=True,

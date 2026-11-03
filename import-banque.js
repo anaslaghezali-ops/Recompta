@@ -10,7 +10,7 @@ import {
   saveBankAlias,
 } from "./bank-match-client.js";
 import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=api8";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist1";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
 import {
   JOB_STATUS_LABELS,
   jobProgressPercent,
@@ -235,7 +235,8 @@ async function renderJobsPanel() {
 }
 
 async function reloadSessionBank() {
-  const workspace = await loadDossierWorkspace(session.dossierId);
+  // Seul le relevé est repris : ne pas marquer les lignes comme vues.
+  const workspace = await loadDossierWorkspace(session.dossierId, { adopt: false });
   session.bankTransactions = workspace?.bank_transactions || [];
   session.bankMeta = {
     filename: "",

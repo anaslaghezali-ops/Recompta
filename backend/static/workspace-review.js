@@ -25,7 +25,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist1";
+} from "./dossier-persistence.js?v=persist5";
 import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
@@ -519,12 +519,17 @@ export function createWorkspaceReview({
     if (!dossierId) return;
     setStatus("Enregistrement…");
     try {
-      const workspace = await loadDossierWorkspace(dossierId);
-      await saveDossierWorkspace(dossierId, {
+      const workspace = await loadDossierWorkspace(dossierId, { adopt: false });
+      const saved = await saveDossierWorkspace(dossierId, {
         lines,
         bankTransactions: workspace?.bank_transactions || [],
         bankMeta: workspace?.bank_meta || {},
       });
+      if (saved?.added) {
+        // Un import s'est terminé pendant la revue : ses lignes sont gardées.
+        lines = [...saved.lines];
+        render();
+      }
       if (eventType) await logDossierActivity(dossierId, eventType, summary, meta);
       setStatus("Enregistré", "success");
       notifyWorkspaceSaved?.();
