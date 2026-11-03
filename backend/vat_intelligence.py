@@ -154,20 +154,63 @@ def _amount_labeled_ttc_in_text(text: str, amount: float) -> bool:
     return False
 
 
-def _is_ttc_mislabeled_as_ht(m_ht: float, tva: float, taux: float) -> bool:
+_AMOUNT_TOKEN = re.compile(
+    r"(?<![\d.,])(?:\d{1,3}(?:[ \u00a0.,]\d{3})+|\d+)(?:[.,]\d{1,2})?(?![\d])"
+)
+
+
+def _amount_in_text(text: str, amount: float) -> bool:
+    """Le montant figure-t-il sur la pièce (1 800,00 / 1.800,00 / 1800.00…) ?"""
+    target = round(abs(amount), 2)
+    if not text or target < 0.01:
+        return False
+    for match in _AMOUNT_TOKEN.finditer(text):
+        value = _parse_amount(match.group(0))
+        if value is not None and abs(abs(value) - target) <= 0.01:
+            return True
+    return False
+
+
+def _is_ttc_mislabeled_as_ht(
+    m_ht: float,
+    tva: float,
+    taux: float,
+    m_ttc: float = 0.0,
+    ttc_reconstructed: bool = False,
+    text: str = "",
+) -> bool:
+    """Le « HT » est-il en réalité un TTC ? Seulement sur preuve.
+
+    Preuve arithmétique : la TVA vaut, au centime près, la TVA contenue dans
+    ce montant pris comme TTC (HT × taux/(1+taux)). Une tolérance large
+    attrapait les factures multi-taux (10 % + 20 % donnent un taux moyen entre
+    les deux) et faussait leur HT.
+
+    Contre-preuve : un TTC lu sur la pièce, distinct du HT et égal à HT + TVA.
+    Les deux lectures restent alors possibles (1 800 HT à taux mixte, ou 1 800
+    TTC à 20 %) : le texte du document tranche ; sans texte, on ne touche à
+    rien et la ligne est signalée comme multi-taux.
+    """
     ht = abs(m_ht)
     tv = abs(tva)
     if ht < 0.01 or tv < 0.01 or taux not in (0.1, 0.2):
         return False
-    ratio = tv / ht
-    as_ht_rate = abs(ratio - taux) <= 0.025
-    as_ttc_rate = abs(ratio - taux / (1 + taux)) <= 0.025
-    if not as_ttc_rate or as_ht_rate:
+    if abs(tv - round(ht * taux, 2)) <= 0.05:
         return False
-    recomputed_ht = ht - tv
-    if recomputed_ht <= 0:
+    tolerance = max(0.05, tv * 0.002)
+    if abs(tv - round(ht * taux / (1 + taux), 2)) > tolerance:
         return False
-    return abs(tv / recomputed_ht - taux) <= 0.025
+
+    ttc = abs(m_ttc)
+    ttc_read = ttc > 0.01 and not ttc_reconstructed
+    if ttc_read and abs(ttc - ht) > 0.05 and abs(ttc - (ht + tv)) <= 0.05:
+        if text.strip():
+            if _amount_in_text(text, ttc):
+                return False
+            if _amount_in_text(text, ht - tv):
+                return True
+        return False
+    return True
 
 
 def _convert_ttc_amount_to_ht_line(line: InvoiceLine, ttc_value: float) -> InvoiceLine:
@@ -205,7 +248,9 @@ def reconcile_line_amounts(
         return line
     if _amount_labeled_ttc_in_text(text, line.m_ht):
         return _convert_ttc_amount_to_ht_line(line, line.m_ht)
-    if _is_ttc_mislabeled_as_ht(line.m_ht, line.tva, line.taux):
+    if _is_ttc_mislabeled_as_ht(
+        line.m_ht, line.tva, line.taux, line.m_ttc, line.ttc_reconstructed, text
+    ):
         return _convert_ttc_amount_to_ht_line(line, line.m_ht)
     return line
 

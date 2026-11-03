@@ -105,7 +105,7 @@ export async function loadDossierWorkspaceSummary(dossierId) {
     };
   }
 
-  const full = await loadDossierWorkspace(dossierId, { adopt: false });
+  const full = await loadDossierWorkspace(dossierId);
   if (!full) return null;
   const lines = full.lines || [];
   const storedAnomalies = summary.data?.anomaly_count;
@@ -126,31 +126,47 @@ export async function loadDossierWorkspaceSummary(dossierId) {
 }
 
 // ── Écritures concurrentes ────────────────────────────────────────────────
-// Le serveur (import en arrière-plan) et chaque page ouverte réécrivent le
-// tableau `lines` entier. Sans précaution, une page restée ouverte efface à
-// sa prochaine sauvegarde les lignes ajoutées entre-temps par un import.
+// Le serveur (imports en arrière-plan) et chaque page ouverte écrivent la même
+// ligne dossier_workspaces. Deux protections :
 //
-// Règle : une page ne peut avoir supprimé que des documents qu'elle a vus.
-// On retient donc, par dossier, les source_id que la page a adoptés
-// (chargés puis affichés). À la sauvegarde, toute ligne serveur dont le
-// source_id n'a jamais été vu par la page est conservée.
-const seenSourceIds = new Map();
+// 1. Écriture conditionnelle (compare-and-swap sur updated_at) : on relit,
+//    on fusionne, on écrit seulement si personne n'a écrit entre-temps, sinon
+//    on recommence. Aucune écriture concurrente n'est écrasée en aveugle.
+// 2. Fusion, via un « tracker » propre à chaque composant qui détient des
+//    lignes (revue, rapprochement, page d'import…) : un composant ne peut
+//    avoir supprimé que des documents qu'il a repris dans son état. Toute
+//    ligne serveur d'un document jamais repris est donc conservée. Idem pour
+//    le relevé : si le composant n'a pas modifié le relevé qu'il a repris,
+//    celui du serveur (importé entre-temps) est conservé.
+//
+// Sans tracker : écriture conditionnelle seule (dernier état écrasé, mais
+// jamais une écriture intermédiaire).
+const SAVE_ATTEMPTS = 5;
 
 function sourceIdOf(line) {
   return String(line?.source_id || "").trim();
 }
 
-function rememberSourceIds(dossierId, lines) {
-  if (!dossierId) return;
-  let seen = seenSourceIds.get(dossierId);
-  if (!seen) {
-    seen = new Set();
-    seenSourceIds.set(dossierId, seen);
-  }
+function bankKey(transactions, meta) {
+  const sortedMeta = Object.fromEntries(Object.entries(meta || {}).sort(([a], [b]) => a.localeCompare(b)));
+  return JSON.stringify([transactions || [], sortedMeta]);
+}
+
+/** Un tracker par composant qui garde des lignes en mémoire et les sauvegarde. */
+export function createWorkspaceTracker() {
+  return { seen: new Set(), bank: null };
+}
+
+export function trackerAdoptLines(tracker, lines) {
+  if (!tracker) return;
   for (const line of lines || []) {
     const sid = sourceIdOf(line);
-    if (sid) seen.add(sid);
+    if (sid) tracker.seen.add(sid);
   }
+}
+
+export function trackerAdoptBank(tracker, transactions, meta) {
+  if (tracker) tracker.bank = bankKey(transactions, meta);
 }
 
 /**
@@ -169,14 +185,33 @@ export function mergeConcurrentLines(localLines, serverLines, seen) {
   return { lines: [...local, ...extra], added: extra.length };
 }
 
+/** Relevé à écrire : celui du serveur si le composant n'a pas touché au sien. */
+export function resolveConcurrentBank(local, server, adoptedKey) {
+  const localKey = bankKey(local.bank_transactions, local.bank_meta);
+  const serverKey = bankKey(server.bank_transactions, server.bank_meta);
+  if (adoptedKey != null && localKey === adoptedKey && serverKey !== adoptedKey) {
+    return {
+      bank_transactions: server.bank_transactions,
+      bank_meta: server.bank_meta,
+      changed: true,
+    };
+  }
+  return { bank_transactions: local.bank_transactions, bank_meta: local.bank_meta, changed: false };
+}
+
 /**
  * @param {object} [options]
- * @param {boolean} [options.adopt=true] false quand la page ne reprend pas
- *   ces lignes (ex. relecture du relevé juste avant une sauvegarde).
+ * @param {object} [options.tracker] tracker du composant qui reprend ces
+ *   données comme état local. Ne pas le passer pour une simple lecture.
+ * @param {boolean} [options.adoptLines=true] le composant reprend les lignes.
+ * @param {boolean} [options.adoptBank=false] le composant reprend le relevé.
  */
-export async function loadDossierWorkspace(dossierId, { adopt = true } = {}) {
+export async function loadDossierWorkspace(dossierId, { tracker = null, adoptLines = true, adoptBank = false } = {}) {
   const result = await fetchDossierWorkspace(dossierId);
-  if (result && adopt) rememberSourceIds(dossierId, result.lines);
+  if (result && tracker) {
+    if (adoptLines) trackerAdoptLines(tracker, result.lines);
+    if (adoptBank) trackerAdoptBank(tracker, result.bank_transactions, result.bank_meta);
+  }
   return result;
 }
 
@@ -193,6 +228,7 @@ async function fetchDossierWorkspace(dossierId) {
   if (error) throw error;
   if (!data) {
     return {
+      exists: false,
       lines: [],
       bank_transactions: [],
       bank_meta: { ...DEFAULT_BANK_META },
@@ -201,6 +237,7 @@ async function fetchDossierWorkspace(dossierId) {
   }
 
   return {
+    exists: true,
     lines: Array.isArray(data.lines) ? data.lines : [],
     bank_transactions: Array.isArray(data.bank_transactions) ? data.bank_transactions : [],
     bank_meta: { ...DEFAULT_BANK_META, ...(data.bank_meta || {}) },
@@ -208,39 +245,76 @@ async function fetchDossierWorkspace(dossierId) {
   };
 }
 
+function nextUpdatedAt(previous) {
+  const now = Date.now();
+  const prev = previous ? Date.parse(previous) : NaN;
+  return new Date(Number.isFinite(prev) && prev >= now ? prev + 1 : now).toISOString();
+}
+
 /**
- * Retourne `{ dossier_id, updated_at, lines, added }`. Si `added > 0`, des
- * lignes importées entre-temps ont été conservées : l'appelant doit reprendre
- * `lines` comme nouvel état local.
+ * Retourne `{ dossier_id, updated_at, lines, added, bank_transactions,
+ * bank_meta, bankChanged }`. Si `added > 0` ou `bankChanged`, des données
+ * importées entre-temps ont été conservées : l'appelant doit reprendre
+ * `lines` (et le relevé) comme nouvel état local.
  */
-export async function saveDossierWorkspace(dossierId, { lines, bankTransactions, bankMeta }) {
+export async function saveDossierWorkspace(dossierId, { lines, bankTransactions, bankMeta, tracker = null }) {
   const supabase = getSupabase();
   if (!supabase || !dossierId) return null;
 
-  let finalLines = lines || [];
-  let added = 0;
-  const seen = seenSourceIds.get(dossierId);
-  if (seen) {
-    const server = await fetchDossierWorkspace(dossierId);
-    ({ lines: finalLines, added } = mergeConcurrentLines(finalLines, server?.lines, seen));
-  }
-  rememberSourceIds(dossierId, finalLines);
-
-  const payload = {
-    dossier_id: dossierId,
-    lines: finalLines,
+  const local = {
+    lines: lines || [],
     bank_transactions: bankTransactions || [],
     bank_meta: bankMeta || DEFAULT_BANK_META,
-    updated_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabase
-    .from("dossier_workspaces")
-    .upsert(payload, { onConflict: "dossier_id" })
-    .select("dossier_id, updated_at")
-    .single();
+  let data = null;
+  let finalLines = local.lines;
+  let added = 0;
+  let bank = { bank_transactions: local.bank_transactions, bank_meta: local.bank_meta, changed: false };
 
-  if (error) throw error;
+  for (let attempt = 1; ; attempt += 1) {
+    const server = await fetchDossierWorkspace(dossierId);
+    ({ lines: finalLines, added } = mergeConcurrentLines(local.lines, server.lines, tracker?.seen));
+    bank = resolveConcurrentBank(local, server, tracker?.bank);
+
+    const payload = {
+      lines: finalLines,
+      bank_transactions: bank.bank_transactions,
+      bank_meta: bank.bank_meta,
+      updated_at: nextUpdatedAt(server.updated_at),
+    };
+
+    let result;
+    if (server.exists) {
+      // N'écrit que si personne n'a écrit depuis la relecture.
+      result = await supabase
+        .from("dossier_workspaces")
+        .update(payload)
+        .eq("dossier_id", dossierId)
+        .eq("updated_at", server.updated_at)
+        .select("dossier_id, updated_at");
+    } else {
+      result = await supabase
+        .from("dossier_workspaces")
+        .insert({ dossier_id: dossierId, ...payload })
+        .select("dossier_id, updated_at");
+    }
+
+    const conflict = result.error?.code === "23505";
+    if (result.error && !conflict) throw result.error;
+    const rows = Array.isArray(result.data) ? result.data : result.data ? [result.data] : [];
+    if (!conflict && rows.length) {
+      data = rows[0];
+      break;
+    }
+    if (attempt >= SAVE_ATTEMPTS) {
+      throw new Error("Enregistrement impossible : le dossier est modifié ailleurs en continu. Réessayez.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80 * attempt + Math.random() * 120));
+  }
+
+  trackerAdoptLines(tracker, finalLines);
+  trackerAdoptBank(tracker, bank.bank_transactions, bank.bank_meta);
 
   const { data: dossier, error: dossierError } = await supabase
     .from("client_dossiers")
@@ -261,7 +335,14 @@ export async function saveDossierWorkspace(dossierId, { lines, bankTransactions,
     if (statusError) throw statusError;
   }
 
-  return { ...data, lines: finalLines, added };
+  return {
+    ...data,
+    lines: finalLines,
+    added,
+    bank_transactions: bank.bank_transactions,
+    bank_meta: bank.bank_meta,
+    bankChanged: bank.changed,
+  };
 }
 
 export async function markDossierExported(dossierId) {

@@ -100,6 +100,15 @@ export function tryApplyVentilationFromText(result, text, helpers) {
   };
 }
 
+// Ventilation unique si seuls 10 % et 20 % s'appliquent (aide à la revue,
+// non appliquée : une part exonérée donne le même taux moyen).
+export function blendedSplitHint(ht, tva) {
+  const ht20 = Math.round((10 * tva - ht) * 100) / 100;
+  const ht10 = Math.round((ht - ht20) * 100) / 100;
+  if (ht10 < 0.01 || ht20 < 0.01) return "";
+  return ` Si seuls 10 % et 20 % s'appliquent : ${ht10.toFixed(2)} HT à 10 % + ${ht20.toFixed(2)} HT à 20 %.`;
+}
+
 export function appendBlendedWarnings(result) {
   const warnings = [...(result.warnings || [])];
   for (const line of result.lines || []) {
@@ -109,7 +118,7 @@ export function appendBlendedWarnings(result) {
     const rate = ht > 0.01 ? (tva / ht) * 100 : 0;
     const label = line.fact_num || "cette pièce";
     warnings.push(
-      `Taux TVA global de ${rate.toFixed(1)} % sur ${label} : facture à plusieurs taux — ventiler en lignes 0 / 10 / 20 % (tableau de ventilation du document).`,
+      `Taux TVA global de ${rate.toFixed(1)} % sur ${label} : facture à plusieurs taux — ventiler en lignes 0 / 10 / 20 % (tableau de ventilation du document).${blendedSplitHint(ht, tva)}`,
     );
     break;
   }

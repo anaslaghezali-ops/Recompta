@@ -87,6 +87,19 @@ def synthetic() -> list[ExtractionResult]:
         R(filename="mu.pdf", engine="text",
           raw_text="1100,00 TTC 10% 100,00\n1200,00 TTC 20% 200,00\nTotal TTC 2300,00",
           lines=[L(fact_num="MU1", m_ht=2000, tva=300, m_ttc=2300, taux=0.2, lib_frss="MU")]),
+        # TTC lu comme HT vs multi-taux (preuve stricte + texte)
+        R(filename="omi1.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="O1", m_ht=1800, tva=300, m_ttc=1800, taux=0.2, lib_frss="OMI")]),
+        R(filename="omi2.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="O2", m_ht=1800, tva=300, m_ttc=2100, taux=0.2, lib_frss="OMI")]),
+        R(filename="omi3.pdf", engine="text", raw_text="Total HT 1.500,00 TVA 300,00 Net 1 800,00",
+          lines=[L(fact_num="O3", m_ht=1800, tva=300, m_ttc=2100, taux=0.2, lib_frss="OMI")]),
+        R(filename="omi4.pdf", engine="text", raw_text="Total TTC 2 100,00",
+          lines=[L(fact_num="O4", m_ht=1800, tva=300, m_ttc=2100, taux=0.2, lib_frss="OMI")]),
+        R(filename="omi5.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="O5", m_ht=2000, tva=300, m_ttc=2300, taux=0.2, lib_frss="OMI")]),
+        R(filename="omi6.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="O6", m_ht=1100, tva=100, m_ttc=1100, taux=0.1, lib_frss="OMI")]),
         # Taux 0
         R(filename="nu.pdf", engine="ai", raw_text="",
           lines=[L(fact_num="N1", m_ht=500, tva=0, m_ttc=500, taux=0, lib_frss="NU")]),
@@ -127,6 +140,9 @@ def norm(v):
 def compare(label: str, a: list[dict], b: list[dict]) -> int:
     diffs = 0
     for ra, rb in zip(a, b):
+        if sorted(ra.get("warnings") or []) != sorted(rb.get("warnings") or []):
+            print(f"[{label}] {ra['filename']} warnings: {ra.get('warnings')} vs {rb.get('warnings')}")
+            diffs += 1
         la, lb = ra["lines"], rb["lines"]
         if len(la) != len(lb):
             print(f"[{label}] {ra['filename']}: {len(la)} ligne(s) vs {len(lb)}")

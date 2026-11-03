@@ -586,11 +586,17 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 pass
 
         if new_lines:
+            merge_trace: dict[str, int] = {}
+
+            def add_new_lines(current: dict[str, Any]) -> dict[str, Any]:
+                # Rejouée sur l'état relu à chaque essai (écriture conditionnelle).
+                current_lines = list(current.get("lines") or [])
+                merge_trace["before"] = len(current_lines)
+                return {"lines": _merge_workspace_lines(current_lines, new_lines)}
+
             async with _dossier_lock(dossier_id):
-                latest = await db.load_workspace(dossier_id)
-                current_lines = list(latest.get("lines") or [])
-                merged_lines = _merge_workspace_lines(current_lines, new_lines)
-                await db.save_workspace(dossier_id, lines=merged_lines)
+                saved = await db.update_workspace(dossier_id, add_new_lines)
+                merged_lines = saved["lines"]
                 await db.touch_dossier_status(dossier_id, len(merged_lines))
             activity_meta: dict[str, Any] = {
                 "job_id": job_id,
@@ -606,7 +612,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     normalized=normalized,
                     new_lines=new_lines,
                     merged_lines=merged_lines,
-                    current_line_count=len(current_lines),
+                    current_line_count=merge_trace.get("before", 0),
                 )
             await db.log_activity(
                 dossier_id,

@@ -60,11 +60,16 @@ import {
 } from "./dossiers-client.js?v=dash2";
 import {
   createDebouncedSaver,
+  createWorkspaceTracker,
   loadDossierWorkspace,
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
 } from "./dossier-persistence.js?v=persist5";
+
+// Lignes et relevé repris du dossier par cette page (fusion des imports
+// serveur concurrents, voir dossier-persistence.js).
+let workspaceTracker = createWorkspaceTracker();
 
 const dossierState = {
   mode: "solo",
@@ -92,6 +97,7 @@ function getWorkspacePayload() {
     lines: state.lines,
     bankTransactions: state.bankTransactions,
     bankMeta: state.bankMeta,
+    tracker: workspaceTracker,
   };
 }
 
@@ -101,9 +107,13 @@ async function persistWorkspaceNow(eventType, summary, meta = {}) {
   setSaveStatus("Enregistrement…");
   try {
     const saved = await saveDossierWorkspace(dossierId, getWorkspacePayload());
-    if (saved?.added) {
-      // Lignes importées par le serveur pendant que la page était ouverte.
-      state.lines = saved.lines;
+    if (saved?.added || saved?.bankChanged) {
+      // Données importées par le serveur pendant que la page était ouverte.
+      if (saved.added) state.lines = saved.lines;
+      if (saved.bankChanged) {
+        state.bankTransactions = saved.bank_transactions;
+        state.bankMeta = { ...state.bankMeta, ...saved.bank_meta };
+      }
       refreshAllFieldConfidence();
       renderTable();
       updateButtons();
@@ -148,7 +158,11 @@ async function loadPersistedWorkspace() {
   if (!isDossierMode()) return;
   setSaveStatus("Chargement du dossier…");
   try {
-    const data = await loadDossierWorkspace(dossierState.context.dossierId);
+    workspaceTracker = createWorkspaceTracker();
+    const data = await loadDossierWorkspace(dossierState.context.dossierId, {
+      tracker: workspaceTracker,
+      adoptBank: true,
+    });
     state.lines = data.lines || [];
     state.bankTransactions = data.bank_transactions || [];
     state.bankMeta = { ...state.bankMeta, ...(data.bank_meta || {}) };

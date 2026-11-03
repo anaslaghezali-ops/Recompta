@@ -9,6 +9,7 @@ import {
   saveBankAlias,
 } from "./bank-match-client.js?v=bankmatch1";
 import {
+  createWorkspaceTracker,
   loadDossierWorkspace,
   logDossierActivity,
   saveDossierWorkspace,
@@ -50,6 +51,8 @@ export function createWorkspaceBankMatch({
 
   let lines = [];
   let bankTransactions = [];
+  // Documents repris par le rapprochement (fusion des imports concurrents).
+  let tracker = createWorkspaceTracker();
   let pendingQueue = [];
   let lastStats = null;
   let running = false;
@@ -158,11 +161,16 @@ export function createWorkspaceBankMatch({
   async function persistLines(summary, eventType = "bank_match") {
     const { dossierId } = getContext() || {};
     if (!dossierId) return;
-    const workspace = await loadDossierWorkspace(dossierId, { adopt: false });
+    const workspace = await loadDossierWorkspace(dossierId, {
+      tracker,
+      adoptLines: false,
+      adoptBank: true,
+    });
     const saved = await saveDossierWorkspace(dossierId, {
       lines,
       bankTransactions: workspace?.bank_transactions || bankTransactions,
       bankMeta: workspace?.bank_meta || {},
+      tracker,
     });
     if (saved?.added) lines = [...saved.lines];
     await logDossierActivity(dossierId, eventType, summary, lastStats || {});
@@ -242,7 +250,8 @@ export function createWorkspaceBankMatch({
 
     running = true;
     try {
-      const workspace = await loadDossierWorkspace(dossierId);
+      tracker = createWorkspaceTracker();
+      const workspace = await loadDossierWorkspace(dossierId, { tracker });
       bankTransactions = normalizeBankTransactions(workspace?.bank_transactions || []);
       const bankMeta = workspace?.bank_meta || {};
       lines = (workspace?.lines || []).map((line) => ({ ...line }));

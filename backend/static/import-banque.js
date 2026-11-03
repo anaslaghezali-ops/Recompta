@@ -236,7 +236,11 @@ async function renderJobsPanel() {
 
 async function reloadSessionBank() {
   // Seul le relevé est repris : ne pas marquer les lignes comme vues.
-  const workspace = await loadDossierWorkspace(session.dossierId, { adopt: false });
+  const workspace = await loadDossierWorkspace(session.dossierId, {
+    tracker: session.tracker,
+    adoptLines: false,
+    adoptBank: true,
+  });
   session.bankTransactions = workspace?.bank_transactions || [];
   session.bankMeta = {
     filename: "",

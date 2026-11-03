@@ -148,9 +148,48 @@ doit **converger vers ce comportement**, pas l'inverse.
 Bug corrigé au passage dans les deux pipelines : un TTC illisible faisait
 prendre le HT pour un TTC (HT 300 / TVA 30 → 272,73 / 27,27).
 
-Limite connue : la fusion côté page se fait entre une relecture et un upsert
-(fenêtre de quelques millisecondes). La solution définitive est une ligne par
-enregistrement en base, au lieu d'un tableau JSON réécrit en entier.
+### Écriture du dossier : règles
+
+Le serveur et chaque page ouverte écrivent la même ligne `dossier_workspaces`.
+
+1. **Écriture conditionnelle partout** (pages : `saveDossierWorkspace()`,
+   worker : `SupabaseService.update_workspace()`). On relit, on applique sa
+   modification, on écrit `WHERE updated_at = <valeur relue>` ; si quelqu'un a
+   écrit entre-temps, on recommence. `updated_at` sert de jeton de version.
+2. **Fusion par composant** : chaque composant qui garde des lignes en mémoire
+   (revue, rapprochement, pages d'import, production) a son *tracker*
+   (`createWorkspaceTracker()`). Il ne peut avoir supprimé que des documents
+   qu'il a repris ; les lignes serveur des autres documents sont conservées.
+   Même règle pour le relevé : s'il n'a pas modifié le relevé repris, celui
+   du serveur gagne.
+3. **Une lecture sans tracker n'engage à rien** (onglet Documents, résumés).
+   Passer `{ tracker }` à `loadDossierWorkspace()` uniquement quand le
+   composant remplace son état par ces données.
+
+Tests : `test-concurrent-lines.mjs` (pages, écritures concurrentes injectées
+au pire moment), `backend/scripts/test_workspace_cas.py` (worker).
+
+Suite logique, non urgente : une ligne par facture en base au lieu d'un
+tableau JSON, pour que deux personnes puissent modifier des lignes
+différentes en même temps sans fusion.
+
+### TTC lu comme HT ou facture multi-taux ?
+
+« 1 800 HT / 300 TVA » peut être une facture 10 % + 20 % (600 + 1 200 HT) ou
+un TTC de 1 800 à 20 % lu comme HT. Règle (`_is_ttc_mislabeled_as_ht`, miroir
+JS `isTtcMislabeledAsHt`) :
+
+- Correction seulement si la TVA vaut **au centime près** HT × taux/(1+taux).
+  L'ancienne tolérance (±2,5 points) corrigeait à tort des taux moyens de
+  14 à 17,5 %.
+- Si un TTC distinct, égal à HT + TVA, a été lu : le texte du document
+  tranche (TTC présent → multi-taux ; HT implicite présent → correction).
+  Sans texte : aucune correction, la ligne est signalée avec la ventilation
+  10/20 % proposée. Elle n'est pas appliquée d'office : une part exonérée
+  (0 %) donne le même taux moyen.
+
+Tests : `test_ttc_vs_multi_taux.py`, et `test_normalize_parity.py` vérifie que
+JS et Python donnent les mêmes montants et les mêmes alertes.
 
 ### Stratégie de convergence
 
