@@ -17,6 +17,7 @@ class EvalCase:
     mime: str
     expected: dict[str, Any]
     notes: str = ""
+    client_ice: str = ""
 
 
 def load_corpus(corpus_dir: Path) -> list[EvalCase]:
@@ -65,6 +66,7 @@ def load_corpus(corpus_dir: Path) -> list[EvalCase]:
                 mime=str(entry.get("mime") or "application/pdf"),
                 expected=expected,
                 notes=str(entry.get("notes") or ""),
+                client_ice="".join(ch for ch in str(entry.get("client_ice") or "") if ch.isdigit()),
             )
         )
     return cases

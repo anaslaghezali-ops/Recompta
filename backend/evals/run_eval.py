@@ -60,16 +60,34 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Ne pas appliquer de seuils (utile pour un corpus privé non calibré).",
     )
+    parser.add_argument(
+        "--no-normalize",
+        action="store_true",
+        help="Évaluer la sortie brute de extract_invoice, sans la normalisation du pipeline (API/worker).",
+    )
     return parser.parse_args(argv)
 
 
-async def _run_case(case: EvalCase) -> tuple[object | None, float, str]:
+async def _run_case(case: EvalCase, *, normalize: bool) -> tuple[object | None, float, str]:
     from invoice_extractor import extract_invoice
+    from normalize_results import (
+        activate_client_ice_exclusions,
+        deactivate_client_ice_exclusions,
+        normalize_extraction_results,
+    )
 
     content = case.document.read_bytes()
     started = time.perf_counter()
     try:
-        result = await extract_invoice(case.document.name, content, case.mime)
+        token = activate_client_ice_exclusions(case.client_ice)
+        try:
+            result = await extract_invoice(case.document.name, content, case.mime)
+        finally:
+            deactivate_client_ice_exclusions(token)
+        if normalize:
+            # Même pipeline que l'API/worker : consolidation multi-taux, avoirs,
+            # réconciliation TVA, complétion ICE/IF.
+            result = normalize_extraction_results([result], client_ice=case.client_ice)[0]
         error = ""
     except Exception as exc:  # noqa: BLE001 - un document ne doit pas arrêter le corpus
         result = None
@@ -87,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
 
     outcomes = []
     for case in cases:
-        result, latency_ms, error = asyncio.run(_run_case(case))
+        result, latency_ms, error = asyncio.run(_run_case(case, normalize=not args.no_normalize))
         outcome = evaluate_case(
             case_id=case.id,
             document=case.document.name,

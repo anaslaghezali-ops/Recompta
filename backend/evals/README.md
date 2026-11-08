@@ -25,6 +25,11 @@ Sortie : une ligne par document, une synthèse, puis le contrôle des seuils de
 `evals/thresholds.json`. Code de sortie `1` si un seuil n'est pas respecté —
 c'est ce que la CI utilise.
 
+Par défaut l'évaluation applique le **même pipeline que l'API/worker** après
+l'extraction : normalisation, consolidation multi-taux, avoirs, réconciliation
+TVA, complétion ICE/IF. `--no-normalize` évalue la sortie brute de
+`extract_invoice` (utile pour isoler un problème d'extraction).
+
 ## Corpus
 
 `evals/corpus/manifest.json` décrit les cas :
@@ -44,8 +49,11 @@ c'est ce que la CI utilise.
 }
 ```
 
-- `document` est relatif au dossier `backend/` (les PDF de démonstration déjà
+- `document` est relatif au dossier du corpus (les PDF de démonstration déjà
   versionnés ne sont pas dupliqués).
+- `client_ice` (optionnel) : ICE du client du dossier. Il active l'exclusion de
+  cet ICE à l'extraction (le client est en en-tête, jamais le fournisseur) et
+  aide la normalisation à choisir le bon ICE fournisseur.
 - `expected.lines` est une vérité terrain **partielle** : ne déclarer que les
   champs que l'on sait vérifier. La comparaison accepte ±0,50 MAD sur les
   montants, `lib_frss_contains` en sous-chaîne, ICE comparé chiffre à chiffre.
