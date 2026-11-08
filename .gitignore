@@ -12,3 +12,7 @@ backend/invoices/upload/*
 !backend/invoices/upload/README.md
 .DS_Store
 node_modules/
+
+# Corpus d'évaluation réel : documents clients, jamais versionnés.
+backend/evals/corpus/real/
+backend/evals/corpus/private/

@@ -49,6 +49,18 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Évaluation de l'extraction (corpus de démonstration)
+        working-directory: backend
+        run: python evals/run_eval.py --no-ai --markdown "$RUNNER_TEMP/eval.md" --json "$RUNNER_TEMP/eval.json"
+
+      - name: Publier le rapport d'évaluation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: ${{ runner.temp }}/eval.*
+          if-no-files-found: ignore
+
       - name: Copies docs/ et backend/static/ identiques à la racine
         run: |
           status=0
