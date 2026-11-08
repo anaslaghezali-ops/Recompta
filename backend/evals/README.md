@@ -58,6 +58,18 @@ Ajouter des documents réels anonymisés est la prochaine étape (200–500 piè
 scans, photos, multi-taux, avoirs, multi-factures, dossiers ZIP). Les gains de
 précision ne se pilotent qu'avec ce corpus.
 
+### Corpus réel (privé)
+
+Les factures clients ne doivent **jamais** être committées (dépôt public) :
+
+- soit dans `backend/evals/corpus/real/` (déjà dans `.gitignore`) ;
+- soit dans un dossier hors du dépôt, passé à `--corpus` :
+  `python evals/run_eval.py --corpus /chemin/vers/corpus-reel --no-ai`.
+
+Les `document` du manifeste peuvent être relatifs au dossier du corpus (pratique
+pour un corpus déplacable) ou à `backend/` (PDF de démonstration versionnés).
+
+
 ## Métriques
 
 - `field_accuracy` : champs vérifiés corrects / champs vérifiés ;

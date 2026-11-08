@@ -22,11 +22,12 @@ class EvalCase:
 def load_corpus(corpus_dir: Path) -> list[EvalCase]:
     """Charge le manifeste et vérifie que chaque document existe.
 
-    Les chemins du manifeste sont relatifs au dossier ``backend/`` pour que le
-    corpus puisse référencer des documents déjà versionnés (PDF de démonstration)
-    sans les dupliquer.
+    Les chemins du manifeste sont résolus d'abord relativement au dossier du
+    corpus (pour un corpus privé déplacable), puis relativement à ``backend/``
+    (pour les documents déjà versionnés, comme les PDF de démonstration).
     """
-    manifest_path = Path(corpus_dir) / "manifest.json"
+    corpus_dir = Path(corpus_dir).resolve()
+    manifest_path = corpus_dir / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifeste de corpus introuvable : {manifest_path}")
     raw = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -47,7 +48,8 @@ def load_corpus(corpus_dir: Path) -> list[EvalCase]:
         seen.add(case_id)
         document = Path(str(entry.get("document") or ""))
         if not document.is_absolute():
-            document = BACKEND_DIR / document
+            candidates = (corpus_dir / document, BACKEND_DIR / document)
+            document = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
         if not document.exists():
             raise FileNotFoundError(
                 f"Document du corpus introuvable pour {case_id}: {document}. "
