@@ -17,6 +17,7 @@ Module pur : utilisable par ``run_eval.py`` et par les tests.
 
 from __future__ import annotations
 
+import datetime
 import unicodedata
 from dataclasses import dataclass, field
 from statistics import mean
@@ -98,6 +99,15 @@ def _line_matches(expected_line: dict[str, Any], line: InvoiceLine) -> bool:
     return True
 
 
+def _json_safe(value: Any) -> Any:
+    """Les dates (date_fac/date_paie) doivent rester sérialisables en JSON."""
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 @dataclass
 class FieldCheck:
     field: str
@@ -108,8 +118,8 @@ class FieldCheck:
     def as_dict(self) -> dict[str, Any]:
         return {
             "field": self.field,
-            "expected": self.expected,
-            "actual": self.actual,
+            "expected": _json_safe(self.expected),
+            "actual": _json_safe(self.actual),
             "ok": self.ok,
         }
 
@@ -177,27 +187,43 @@ def evaluate_case(
     missed = 0
 
     for expected_line in expected_lines:
-        match_index = -1
+        # Meilleur candidat = ligne extraite qui satisfait le plus de champs
+        # attendus. Les champs sont ensuite notés un par un (diagnostic), tandis
+        # que le rappel de ligne reste strict (tous les champs doivent matcher).
+        best_index = -1
+        best_score = 0
         for index, line in enumerate(lines):
             if index in used:
                 continue
-            if _line_matches(expected_line, line):
-                match_index = index
-                break
-        if match_index >= 0:
-            used.add(match_index)
-            matched += 1
-            line = lines[match_index]
+            score = sum(
+                1
+                for field_name, expected_value in expected_line.items()
+                if _field_matches(field_name, expected_value, _actual_value(line, field_name))
+            )
+            if score > best_score:
+                best_score = score
+                best_index = index
+
+        if best_index >= 0:
+            used.add(best_index)
+            line = lines[best_index]
+            all_ok = True
             for field_name, expected_value in expected_line.items():
                 actual = _actual_value(line, field_name)
+                ok = _field_matches(field_name, expected_value, actual)
+                all_ok = all_ok and ok
                 checks.append(
                     FieldCheck(
                         field=_scored_field_name(field_name),
                         expected=expected_value,
                         actual=actual,
-                        ok=True,
+                        ok=ok,
                     )
                 )
+            if all_ok:
+                matched += 1
+            else:
+                missed += 1
         else:
             missed += 1
             for field_name, expected_value in expected_line.items():

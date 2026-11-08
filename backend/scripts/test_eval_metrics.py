@@ -101,6 +101,17 @@ def test_extra_lines_counted() -> None:
     assert outcome.extra_lines == 1
 
 
+def test_partial_fields_scored_but_line_not_recalled() -> None:
+    """Un champ correct est crédité même si la ligne n'est pas exacte."""
+    expected = {"lines": [{"fact_num": "F-1", "m_ht": 100.0}]}
+    result = make_result(make_line(fact_num="AUTRE", m_ht=100.0))
+    outcome = evaluate_case("partial", "test.pdf", expected, result)
+    assert not outcome.ok
+    assert outcome.fields_ok == 1
+    assert outcome.fields_total == 2
+    assert outcome.missed_lines == 1
+
+
 def test_summarize_and_thresholds() -> None:
     good = evaluate_case("good", "a.pdf", EXPECTED, make_result(make_line()))
     bad = evaluate_case("bad", "b.pdf", EXPECTED, make_result())

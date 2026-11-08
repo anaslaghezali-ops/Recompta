@@ -55,6 +55,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--show-failures", action="store_true", help="Affiche le détail des échecs.")
     parser.add_argument("--verbose", action="store_true", help="Affiche chaque document évalué.")
+    parser.add_argument(
+        "--no-thresholds",
+        action="store_true",
+        help="Ne pas appliquer de seuils (utile pour un corpus privé non calibré).",
+    )
     return parser.parse_args(argv)
 
 
@@ -138,7 +143,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Rapport Markdown : {args.markdown}")
 
     thresholds_path = args.thresholds
-    if thresholds_path is None:
+    if args.no_thresholds:
+        thresholds_path = None
+    elif thresholds_path is None:
         candidate = Path(__file__).resolve().parent / "thresholds.json"
         thresholds_path = candidate if candidate.exists() else None
     if thresholds_path is not None:
