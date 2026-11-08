@@ -1,0 +1,7 @@
+{
+  "field_accuracy_min": 0.9,
+  "line_recall_min": 0.9,
+  "document_pass_rate_min": 0.9,
+  "max_missed_documents": 0,
+  "max_extra_lines": 2
+}

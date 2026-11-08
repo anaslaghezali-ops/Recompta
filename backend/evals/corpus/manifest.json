@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "description": "Corpus de démonstration : les 5 PDF versionnés dans backend/scripts/invoices/. Vérité terrain partielle issue de backend/scripts/test_extraction.py. Ajouter ici des documents réels anonymisés (scans, photos, multi-taux, avoirs, multi-factures) au fur et à mesure.",
+  "cases": [
+    {
+      "id": "achibest_multi_taux",
+      "document": "scripts/invoices/achibest_FV26-023806.pdf",
+      "mime": "application/pdf",
+      "notes": "Facture 10 % + 20 % : deux lignes attendues, la seconde ne vérifie que les montants.",
+      "expected": {
+        "line_count": 2,
+        "lines": [
+          {
+            "fact_num": "FV26-023806",
+            "lib_frss_contains": "ACHIBEST",
+            "ice_frs": "000229475000050",
+            "if": "1102277",
+            "m_ht": 932.98,
+            "taux": 0.1
+          },
+          {
+            "m_ht": 4380.68,
+            "taux": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "orange_telephonie",
+      "document": "scripts/invoices/orange_F-0626-0465400.pdf",
+      "mime": "application/pdf",
+      "notes": "Téléphonie 20 %.",
+      "expected": {
+        "lines": [
+          {
+            "fact_num": "F-0626-0465400",
+            "lib_frss_contains": "ORANGE",
+            "ice_frs": "001524628000001",
+            "designation": "TELEPHONIE",
+            "m_ht": 249.17,
+            "taux": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "glovo_prestations",
+      "document": "scripts/invoices/glovo_MA-FVR260000608.pdf",
+      "mime": "application/pdf",
+      "notes": "Prestation de service 20 %.",
+      "expected": {
+        "lines": [
+          {
+            "fact_num": "MA-FVR260000608",
+            "lib_frss_contains": "GLOVO",
+            "ice_frs": "002086928000050",
+            "designation": "PRESTATIONS",
+            "m_ht": 2895.5,
+            "taux": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "carrefour_matiere",
+      "document": "scripts/invoices/carrefour_303-22-06-2026.pdf",
+      "mime": "application/pdf",
+      "notes": "Numéro de facture à séparateurs (chemins comptables).",
+      "expected": {
+        "lines": [
+          {
+            "fact_num": "303/22-06-2026/001/78561",
+            "ice_frs": "000078523000008",
+            "m_ht": 150.0,
+            "taux": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "saham_frais_bancaire",
+      "document": "scripts/invoices/saham_releve_bancaire.pdf",
+      "mime": "application/pdf",
+      "notes": "Frais bancaires 10 % extraits d'un relevé.",
+      "expected": {
+        "lines": [
+          {
+            "fact_num": "RELEVE BANCAIRE",
+            "designation": "FRAIS BANCAIRE",
+            "m_ht": 114.58,
+            "taux": 0.1
+          }
+        ]
+      }
+    }
+  ]
+}

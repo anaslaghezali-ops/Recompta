@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -143,6 +143,14 @@ class InvoiceLine(BaseModel):
         default_factory=dict,
         description="Confiance par champ pour la revue comptable",
     )
+    evidence: dict[str, str] = Field(
+        default_factory=dict,
+        description="Extrait verbatim du document justifiant chaque champ (IA)",
+    )
+    ai_confidence: dict[str, str] = Field(
+        default_factory=dict,
+        description="Confiance déclarée par le modèle par champ (ok|warn|error)",
+    )
     taux: float = Field(0.2, description="Taux TVA (0 exonéré, 0.1 ou 0.2)")
     id_paie: int = Field(4, description="Mode de paiement (1 ou 4)")
     date_paie: Optional[date] = None
@@ -193,3 +201,11 @@ class ExtractionResult(BaseModel):
     engine: str = "manual"  # ai | text | tesseract
     warnings: list[str] = Field(default_factory=list)
     source_id: str = ""
+    usage: dict[str, int] = Field(
+        default_factory=dict,
+        description="Tokens OpenAI consommés (prompt/completion/total)",
+    )
+    fusion: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Traçabilité de la fusion des lectures IA",
+    )

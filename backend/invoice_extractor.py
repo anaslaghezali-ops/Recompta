@@ -15,6 +15,14 @@ from pydantic import ValidationError
 from pypdf import PdfReader
 
 from models import Designation, ExtractionResult, InvoiceLine, normalize_taux, taux_from_amounts
+from ai_structured import (
+    AI_EVIDENCE_INSTRUCTIONS,
+    build_response_format,
+    json_object_response_format,
+    normalize_confidence,
+    normalize_evidence,
+    usage_totals,
+)
 
 MOROCCAN_DATE_PATTERNS = [
     r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})",
@@ -1111,7 +1119,12 @@ async def _post_chat_completion(api_key: str, payload: dict) -> dict:
             removed = False
             for param in ("temperature", "response_format"):
                 if param in payload and param in detail:
-                    payload.pop(param)
+                    if param == "response_format" and payload[param].get("type") == "json_schema":
+                        # Structured outputs refusés : on retombe sur json_object
+                        # au lieu de perdre toute contrainte de format.
+                        payload[param] = json_object_response_format()
+                    else:
+                        payload.pop(param)
                     removed = True
                     break
             if not removed:
@@ -1148,12 +1161,22 @@ def _parse_ai_lines(raw_lines: object) -> tuple[list[InvoiceLine], list[str]]:
                 _as_optional_float(data.get("m_ht")),
                 _as_optional_float(data.get("tva")),
             )
+        # Métadonnées de preuve : retirées avant validation du modèle (elles sont
+        # reposées ci-dessous), sinon Pydantic les rejette sur `field_confidence`.
+        raw_evidence = data.pop("evidence", None)
+        raw_confidence = data.pop("field_confidence", None)
         try:
-            lines.append(InvoiceLine.model_validate(data))
+            line = InvoiceLine.model_validate(data)
         except ValidationError as exc:
             fact = data.get("fact_num") or "?"
             detail = exc.errors()[0].get("msg", str(exc)) if exc.errors() else str(exc)
             warnings.append(f"Ligne {fact} ignorée : {detail}")
+            continue
+        # Preuves et confiance déclarées par le modèle : conservées pour la revue
+        # et pour la fusion des deux lectures (elles ne changent pas les montants).
+        line.evidence = normalize_evidence(raw_evidence)
+        line.ai_confidence = normalize_confidence(raw_confidence)
+        lines.append(line)
     return lines, warnings
 
 
@@ -1170,7 +1193,7 @@ async def _extract_with_openai_images(
 
     from normalize_results import get_excluded_client_ices
 
-    prompt = AI_EXTRACTION_PROMPT + (prompt_suffix or "")
+    prompt = AI_EXTRACTION_PROMPT + AI_EVIDENCE_INSTRUCTIONS + (prompt_suffix or "")
     excluded = get_excluded_client_ices()
     if excluded:
         prompt += (
@@ -1192,7 +1215,7 @@ async def _extract_with_openai_images(
     payload = {
         "model": used_model,
         "messages": [{"role": "user", "content": message_content}],
-        "response_format": {"type": "json_object"},
+        "response_format": build_response_format(),
         "temperature": 0,
     }
 
@@ -1208,6 +1231,7 @@ async def _extract_with_openai_images(
         confidence="high" if lines else "low",
         engine="ai",
         warnings=warnings,
+        usage=usage_totals(body.get("usage")),
     )
 
     from vat_intelligence import result_needs_escalation
@@ -1296,14 +1320,17 @@ async def _extract_with_ai_cascade(
     except Exception:  # noqa: BLE001
         return result
 
-    if result_needs_escalation(upgraded) and result.lines and not blended:
-        return result
-
-    if result_needs_escalation(upgraded) and blended and result_has_blended_summary(upgraded):
+    if not upgraded.lines:
         return result
 
     upgraded.warnings.append(f"Scan difficile : relu avec {fallback}.")
-    return upgraded
+
+    # Les deux lectures sont conservées et fusionnées champ par champ : une
+    # lecture de secours partiellement incohérente peut encore corriger des
+    # champs (ICE, IF, dates…) que la lecture principale a manqués.
+    from ai_fusion import merge_ai_results
+
+    return merge_ai_results(result, upgraded)
 
 
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
