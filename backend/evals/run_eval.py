@@ -77,11 +77,14 @@ async def _run_case(case: EvalCase, *, normalize: bool) -> tuple[object | None, 
     )
 
     content = case.document.read_bytes()
+    # Nom passé au pipeline : dossier parent + fichier, comme un ZIP organisé
+    # par fournisseur (permet l'indice dossier de la normalisation).
+    label = f"{case.document.parent.name}/{case.document.name}"
     started = time.perf_counter()
     try:
         token = activate_client_ice_exclusions(case.client_ice)
         try:
-            result = await extract_invoice(case.document.name, content, case.mime)
+            result = await extract_invoice(label, content, case.mime)
         finally:
             deactivate_client_ice_exclusions(token)
         if normalize:

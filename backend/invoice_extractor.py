@@ -973,6 +973,9 @@ Pour CHAQUE ligne de TVA ou ventilation, suis ces étapes dans l'ordre :
 ## Champs
 
 - ICE fournisseur = 15 chiffres (pied de page légal, PAS l'ICE client en en-tête)
+- lib_frss = nom du FOURNISSEUR émetteur : logo en haut de page ou pied de page
+  légal. JAMAIS le nom du client/destinataire (encadré en haut à droite), ni une
+  adresse, ni une ville (ex. « CASABLANCA-EL MAARIF »).
 - IF = Identifiant Fiscal, 6 à 9 chiffres, noté « IF », « I.F », « I.F. » ou « IF: »
   (le point après F est optionnel). Souvent collé dans une ligne légale :
   « R.C. :…-Patente : …-I.F : 40240688-ICE : … ».
@@ -1039,6 +1042,144 @@ Inclus un champ "verification" listant ton contrôle mathématique par ligne (ex
   "warnings": []
 }
 """
+
+
+FOOTER_IDENTIFIERS_PROMPT = """Tu reçois des extraits d'une facture marocaine : le haut de page
+(logo + mentions légales sous l'en-tête) et/ou le bas de page.
+Extrais UNIQUEMENT :
+- "ice" : l'ICE du FOURNISSEUR (15 chiffres), pas l'ICE du client ;
+- "if" : l'Identifiant Fiscal du FOURNISSEUR (6 à 9 chiffres), souvent écrit
+  « IF », « I.F », « I.F. » ou « F 14427958 » dans la ligne légale, à côté de
+  PATENTE / RC / CNSS ;
+- "evidence_ice", "evidence_if" : l'extrait verbatim du document.
+
+Réponds en JSON : {"ice": "", "if": "", "evidence_ice": "", "evidence_if": ""}.
+Si une valeur n'est pas lisible, laisse "". N'invente jamais."""
+
+
+def _footer_identifier_images_from_pdf(content: bytes, max_pages: int = 2) -> list[tuple[bytes, str]]:
+    """Haut (mentions légales) et bas de page recadrés et agrandis.
+
+    Chez certains fournisseurs (Achibest), la ligne légale IF/ICE est sous le
+    logo en haut ; chez d'autres (Mose Food), elle est en pied de page.
+    """
+    import pymupdf
+
+    images: list[tuple[bytes, str]] = []
+    document = pymupdf.open(stream=content, filetype="pdf")
+    try:
+        pages = min(document.page_count, max_pages)
+        for index in range(0, pages):
+            page = document[index]
+            rect = page.rect
+            top = pymupdf.Rect(0, 0, rect.width, rect.height * 0.32)
+            bottom = pymupdf.Rect(0, rect.height * 0.62, rect.width, rect.height)
+            for clip in (top, bottom):
+                pixmap = page.get_pixmap(clip=clip, dpi=220)
+                images.append((pixmap.tobytes("png"), "image/png"))
+    finally:
+        document.close()
+    return images
+
+
+def _footer_identifier_images_from_image(content: bytes) -> list[tuple[bytes, str]]:
+    from io import BytesIO
+    from PIL import Image
+
+    with Image.open(BytesIO(content)) as image:
+        width, height = image.size
+        crops = [
+            image.crop((0, 0, width, int(height * 0.32))),
+            image.crop((0, int(height * 0.62), width, height)),
+        ]
+        images: list[tuple[bytes, str]] = []
+        for crop in crops:
+            buffer = BytesIO()
+            crop.save(buffer, format="PNG")
+            images.append((buffer.getvalue(), "image/png"))
+        return images
+
+
+def _parse_footer_identifiers(payload: object) -> dict[str, str]:
+    if not isinstance(payload, dict):
+        return {}
+    identifiers: dict[str, str] = {}
+    ice = "".join(ch for ch in str(payload.get("ice") or "") if ch.isdigit())
+    if len(ice) == 15:
+        identifiers["ice"] = ice
+    fiscal = "".join(ch for ch in str(payload.get("if") or "") if ch.isdigit())
+    if 6 <= len(fiscal) <= 9:
+        identifiers["if"] = fiscal
+    return identifiers
+
+
+async def _extract_footer_identifiers(images: list[tuple[bytes, str]]) -> dict[str, str]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or not images:
+        return {}
+    content: list[dict] = [{"type": "text", "text": FOOTER_IDENTIFIERS_PROMPT}]
+    for image_bytes, image_mime in images:
+        content.append(
+            {"type": "image_url", "image_url": {"url": _image_to_base64(image_bytes, image_mime)}}
+        )
+    payload = {
+        "model": vision_model(),
+        "messages": [{"role": "user", "content": content}],
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+    }
+    body = await _post_chat_completion(api_key, payload)
+    try:
+        content_json = json.loads(body["choices"][0]["message"]["content"])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return {}
+    return _parse_footer_identifiers(content_json)
+
+
+def _needs_footer_pass(result: ExtractionResult) -> bool:
+    return bool(result.lines) and any(
+        not line.ice_frs or not line.if_fournisseur for line in result.lines
+    )
+
+
+def _apply_footer_identifiers(
+    result: ExtractionResult, identifiers: dict[str, str]
+) -> ExtractionResult:
+    changed = 0
+    for line in result.lines:
+        if identifiers.get("ice") and not line.ice_frs:
+            line.ice_frs = identifiers["ice"]
+            changed += 1
+        if identifiers.get("if") and not line.if_fournisseur:
+            line.if_fournisseur = identifiers["if"]
+            changed += 1
+    if changed:
+        result.warnings.append("ICE/IF complétés par relecture du pied de page.")
+    return result
+
+
+async def _augment_identifiers_from_footer(
+    filename: str,
+    content: bytes,
+    mime_type: str,
+    result: ExtractionResult,
+) -> ExtractionResult:
+    """Deuxième lecture ciblée des mentions légales quand ICE ou IF manque."""
+    if not _needs_footer_pass(result):
+        return result
+    try:
+        if mime_type == "application/pdf":
+            images = _footer_identifier_images_from_pdf(content)
+        elif mime_type.startswith("image/"):
+            images = _footer_identifier_images_from_image(content)
+        else:
+            return result
+        if not images:
+            return result
+        identifiers = await _extract_footer_identifiers(images)
+        return _apply_footer_identifiers(result, identifiers)
+    except Exception:  # noqa: BLE001 - la relecture ne doit jamais faire échouer l'extraction
+        return result
 
 
 def ai_available() -> bool:
@@ -1348,7 +1489,8 @@ async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResul
             f"analysées. Augmentez AI_MAX_PAGES pour tout traiter."
         )
 
-    return await _supplement_ttc_ventilation(result, filename, content, "application/pdf")
+    result = await _supplement_ttc_ventilation(result, filename, content, "application/pdf")
+    return await _augment_identifiers_from_footer(filename, content, "application/pdf", result)
 
 
 async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResult:
@@ -1367,15 +1509,51 @@ async def _extract_with_ocr(filename: str, image_bytes: bytes) -> ExtractionResu
     return result
 
 
+_ADDRESS_LIKE_MARKERS = (
+    "CASABLANCA",
+    "RABAT",
+    "MARRAKECH",
+    "BOULEVARD",
+    "QUARTIER",
+    "RESIDENCE",
+    " RUE ",
+)
+
+
+def _text_result_needs_ai_upgrade(result: ExtractionResult) -> bool:
+    """Un PDF texte peut être mal lu par l'heuristique (avoir, adresse client).
+
+    Dans ces cas seulement, on relit le document avec la Vision IA : le coût
+    est nul pour les PDF propres déjà bien extraits.
+    """
+    if not result.lines:
+        return False
+    from normalize_results import is_avoir_document
+
+    if is_avoir_document(result.filename, result.raw_text) or any(
+        is_avoir_document("", "", line.fact_num) for line in result.lines
+    ):
+        return True
+    if any(abs(line.tva) > 0.05 and abs(line.taux) < 1e-9 for line in result.lines):
+        return True
+    name = (result.lines[0].lib_frss or "").upper()
+    return bool(name) and any(marker in name for marker in _ADDRESS_LIKE_MARKERS)
+
+
 async def extract_invoice(filename: str, content: bytes, mime_type: str) -> ExtractionResult:
     if mime_type == "application/pdf":
         pages = await asyncio.to_thread(extract_text_from_pdf_pages, content)
         text = "\n".join(page for page in pages if page.strip())
         if is_meaningful_pdf_text(text):
             result = _heuristic_extract(filename, text, pages=pages)
-            if ai_available() and _needs_ai_upgrade(result):
+            if ai_available() and (
+                _needs_ai_upgrade(result) or _text_result_needs_ai_upgrade(result)
+            ):
                 try:
-                    return await _extract_pdf_with_ai(filename, content)
+                    ai_result = await _extract_pdf_with_ai(filename, content)
+                    from ai_fusion import merge_ai_results
+
+                    return merge_ai_results(result, ai_result)
                 except Exception as exc:  # noqa: BLE001
                     result.warnings.append(
                         f"Extraction IA échouée ({format_openai_error(exc)}) — résultat texte conservé."
@@ -1407,7 +1585,8 @@ async def extract_invoice(filename: str, content: bytes, mime_type: str) -> Extr
         if ai_available():
             try:
                 result = await _extract_with_ai_cascade(filename, [(content, mime_type)])
-                return await _supplement_ttc_ventilation(result, filename, content, mime_type)
+                result = await _supplement_ttc_ventilation(result, filename, content, mime_type)
+                return await _augment_identifiers_from_footer(filename, content, mime_type, result)
             except Exception as exc:  # noqa: BLE001
                 return ExtractionResult(
                     filename=filename,

@@ -285,6 +285,93 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
     return merged
 
 
+def _aggregate_key(line: InvoiceLine) -> tuple[str, float, str]:
+    fact = "".join(ch for ch in (line.fact_num or "").upper() if ch.isalnum())
+    return (fact, round(float(line.taux or 0.0), 4), line.designation.value)
+
+
+def aggregate_lines_by_rate(lines: list[InvoiceLine]) -> list[InvoiceLine]:
+    """Une entrée DED par (facture, taux, désignation).
+
+    L'IA ou l'OCR peut renvoyer plusieurs lignes au même taux (éclats produit,
+    tableau détaillé). La DED TVA attend une entrée par taux : on somme les
+    montants des lignes comparables en conservant la première comme base.
+    """
+    if len(lines) <= 1:
+        return lines
+
+    groups: dict[tuple[str, float, str], list[InvoiceLine]] = {}
+    for line in lines:
+        groups.setdefault(_aggregate_key(line), []).append(line)
+
+    aggregated: list[InvoiceLine] = []
+    for group in groups.values():
+        if len(group) == 1:
+            aggregated.append(group[0])
+            continue
+        base = group[0].model_copy(deep=True)
+        base.m_ht = round(sum(line.m_ht for line in group), 2)
+        base.tva = round(sum(line.tva for line in group), 2)
+        base.m_ttc = round(sum(line.m_ttc for line in group), 2)
+        for flag in (
+            "ice_inferred",
+            "if_inferred",
+            "ttc_reconstructed",
+            "tva_calculated",
+            "amounts_sanitized",
+            "supplier_from_folder",
+        ):
+            setattr(base, flag, any(getattr(line, flag, False) for line in group))
+        evidence: dict[str, str] = {}
+        for line in group:
+            for field_name, snippet in (line.evidence or {}).items():
+                evidence.setdefault(field_name, snippet)
+        base.evidence = evidence
+        confidence: dict[str, str] = {}
+        for line in group:
+            for field_name, level in (line.ai_confidence or {}).items():
+                confidence.setdefault(field_name, level)
+        base.ai_confidence = confidence
+        aggregated.append(base)
+    return aggregated
+
+
+def _supplier_names_are_variants(current: str, hint: str) -> bool:
+    """Vrai si `current` ressemble à une variante OCR du nom du dossier.
+
+    On ne remplace jamais un nom lisible et différent (ex. « PROBUNS SARL »
+    dans un dossier « Probun ») ; on corrige les variantes proches
+    (« Aichibes » → « Achibest », « Chibest Food SARL » → « Achibest ») et les
+    noms vides.
+    """
+    current_key = " ".join(
+        re.sub(r"[^a-z0-9]+", " ", _strip_accents_lower(current)).split()
+    )
+    hint_key = " ".join(re.sub(r"[^a-z0-9]+", " ", _strip_accents_lower(hint)).split())
+    if not current_key or not hint_key:
+        return True
+    if current_key == hint_key:
+        return False
+    tokens = [token for token in current_key.split() if len(token) >= 4]
+    import difflib
+
+    for token in tokens:
+        if token in hint_key:
+            return True
+        if hint_key in token:
+            continue
+        if difflib.SequenceMatcher(None, token, hint_key).ratio() >= 0.7:
+            return True
+    return difflib.SequenceMatcher(None, current_key, hint_key).ratio() >= 0.7
+
+
+def _strip_accents_lower(value: str) -> str:
+    import unicodedata
+
+    decomposed = unicodedata.normalize("NFKD", str(value or ""))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
 def normalize_extraction_results(
     results: list[ExtractionResult],
     client_ice: str = "",
@@ -301,6 +388,7 @@ def normalize_extraction_results(
             fill_missing_ttc(sanitize_impossible_amounts(line, is_avoir))
             for line in consolidate_lines(item.lines)
         ]
+        item.lines = aggregate_lines_by_rate(item.lines)
         # La date de paiement ne vient que du relevé bancaire : une facture ne
         # prouve pas son règlement, même si l'IA propose une date.
         for line in item.lines:
@@ -332,17 +420,20 @@ def normalize_extraction_results(
         if path_hint and not best_name:
             best_name = path_hint.get("lib_frss", "")
 
-        # Dossier interne seulement si la facture n'a pas déjà un nom.
+        # L'import est organisé par fournisseur : le dossier est la référence
+        # (il corrige les variantes OCR telles que « Aichibes » → « Achibest »).
+        # Le drapeau supplier_from_folder signale le nom à confirmer en revue.
         folder_name = (path_hint or {}).get("lib_frss", "")
 
         for line in bucket["lines"]:
-            if not (line.lib_frss or "").strip() and folder_name:
+            current_name = (line.lib_frss or "").strip()
+            if folder_name and _supplier_names_are_variants(current_name, folder_name):
                 line.lib_frss = folder_name
                 line.supplier_from_folder = True
-            elif best_name and not line.lib_frss:
+            elif not current_name and best_name:
                 line.lib_frss = best_name
-            elif not looks_like_supplier_name(line.lib_frss):
-                line.lib_frss = line.lib_frss.strip()
+            elif current_name and not looks_like_supplier_name(current_name):
+                line.lib_frss = current_name
             if best_ice and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
                 line.ice_frs = best_ice
                 line.ice_inferred = True
