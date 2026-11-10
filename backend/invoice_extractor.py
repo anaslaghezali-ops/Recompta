@@ -1476,7 +1476,7 @@ async def _extract_with_ai_cascade(
 
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
     limit = ai_max_pages()
-    pages = await pdf_to_png_pages_async(content, max_pages=limit, dpi=240)
+    pages = await pdf_to_png_pages_async(content, max_pages=limit)
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
 
