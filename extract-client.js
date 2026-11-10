@@ -840,19 +840,109 @@ function consolidateLines(lines) {
   return merged;
 }
 
+function normalizedSupplierWords(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function levenshtein(a, b) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  let previous = Array.from({ length: cols }, (_, i) => i);
+  for (let i = 1; i < rows; i += 1) {
+    const current = [i];
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+    }
+    previous = current;
+  }
+  return previous[cols - 1];
+}
+
+function supplierNamesAreVariants(current, hint) {
+  const currentKey = normalizedSupplierWords(current);
+  const hintKey = normalizedSupplierWords(hint);
+  if (!currentKey || !hintKey) return true;
+  if (currentKey === hintKey) return false;
+  const tokens = currentKey.split(" ").filter((token) => token.length >= 4);
+  for (const token of tokens) {
+    if (hintKey.includes(token)) return true;
+    if (token.includes(hintKey)) continue;
+    const tokenRatio = 1 - levenshtein(token, hintKey) / Math.max(token.length, hintKey.length, 1);
+    if (tokenRatio >= 0.7) return true;
+  }
+  const ratio = 1 - levenshtein(currentKey, hintKey) / Math.max(currentKey.length, hintKey.length, 1);
+  return ratio >= 0.7;
+}
+
+function aggregateLinesByRate(lines) {
+  if (lines.length <= 1) return lines;
+
+  const groups = new Map();
+  const order = [];
+  for (const line of lines) {
+    const fact = String(line.fact_num || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    const key = `${fact}|${Number(line.taux || 0).toFixed(4)}|${line.designation || ""}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      order.push(key);
+    }
+    groups.get(key).push(line);
+  }
+
+  const aggregated = [];
+  for (const key of order) {
+    const group = groups.get(key);
+    if (group.length === 1) {
+      aggregated.push(group[0]);
+      continue;
+    }
+    const base = { ...group[0] };
+    base.m_ht = Math.round(group.reduce((sum, line) => sum + Number(line.m_ht || 0), 0) * 100) / 100;
+    base.tva = Math.round(group.reduce((sum, line) => sum + Number(line.tva || 0), 0) * 100) / 100;
+    base.m_ttc = Math.round(group.reduce((sum, line) => sum + Number(line.m_ttc || 0), 0) * 100) / 100;
+    for (const flag of [
+      "ice_inferred",
+      "if_inferred",
+      "ttc_reconstructed",
+      "tva_calculated",
+      "amounts_sanitized",
+      "supplier_from_folder",
+    ]) {
+      base[flag] = group.some((line) => Boolean(line[flag]));
+    }
+    const evidence = {};
+    for (const line of group) Object.assign(evidence, line.evidence || {});
+    base.evidence = evidence;
+    const confidence = {};
+    for (const line of group) Object.assign(confidence, line.ai_confidence || {});
+    base.ai_confidence = confidence;
+    aggregated.push(base);
+  }
+  return aggregated;
+}
+
 export function normalizeExtractionResults(results) {
   const normalized = results.map((result) => {
     const withAvoir = applyAvoirSigns({ ...result, lines: result.lines || [] });
     const withIf = reconcileSupplierIf(withAvoir);
     const withTtc = applyTtcVentilationFixes(withIf);
+    const sanitized = consolidateLines(withTtc.lines || []).map((line) => {
+      const isAvoir =
+        isAvoirDocument(withTtc.raw_text || "", withTtc.filename) ||
+        isAvoirDocument("", "", line.fact_num);
+      return fillMissingTtc(sanitizeImpossibleAmounts(line, isAvoir));
+    });
     return {
       ...withTtc,
-      lines: consolidateLines(withTtc.lines || []).map((line) => {
-        const isAvoir =
-          isAvoirDocument(withTtc.raw_text || "", withTtc.filename) ||
-          isAvoirDocument("", "", line.fact_num);
-        return fillMissingTtc(sanitizeImpossibleAmounts(line, isAvoir));
-      }),
+      lines: aggregateLinesByRate(sanitized),
       warnings: [...new Set(withTtc.warnings || [])],
     };
   });
@@ -883,10 +973,14 @@ export function normalizeExtractionResults(results) {
       line.designation = normalizeDesignation(line.designation);
       // Renseignée uniquement par le rapprochement bancaire.
       line.date_paie = "";
-      if (pathHint?.lib_frss && !String(line.lib_frss || "").trim()) {
+      // L'import est organisé par fournisseur : le dossier corrige les
+      // variantes OCR (« Aichibes » → « Achibest ») ; le drapeau signale le
+      // nom à confirmer en revue.
+      const currentName = String(line.lib_frss || "").trim();
+      if (pathHint?.lib_frss && supplierNamesAreVariants(currentName, pathHint.lib_frss)) {
         line.lib_frss = pathHint.lib_frss;
         line.supplier_from_folder = true;
-      } else if (!line.lib_frss && bestName) {
+      } else if (!currentName && bestName) {
         line.lib_frss = bestName;
       }
       if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) {

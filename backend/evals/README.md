@@ -54,6 +54,9 @@ TVA, complétion ICE/IF. `--no-normalize` évalue la sortie brute de
 - `client_ice` (optionnel) : ICE du client du dossier. Il active l'exclusion de
   cet ICE à l'extraction (le client est en en-tête, jamais le fournisseur) et
   aide la normalisation à choisir le bon ICE fournisseur.
+- `document_label` (optionnel) : nom passé au pipeline quand le dossier n'est
+  pas un nom de fournisseur (ex. facture d'un livreur classée dans un dossier
+  client). Par défaut : `<dossier parent>/<fichier>`.
 - `expected.lines` est une vérité terrain **partielle** : ne déclarer que les
   champs que l'on sait vérifier. La comparaison accepte ±0,50 MAD sur les
   montants, `lib_frss_contains` en sous-chaîne, ICE comparé chiffre à chiffre.
