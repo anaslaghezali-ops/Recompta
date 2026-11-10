@@ -125,6 +125,35 @@ def test_text_upgrade_on_address_like_supplier_or_avoir() -> None:
     assert not _text_result_needs_ai_upgrade(clean_result)
 
 
+def test_text_upgrade_on_broken_heuristic_layout() -> None:
+    # Numéro de facture qui est une date.
+    date_number = ExtractionResult(
+        filename="facture.pdf",
+        raw_text="Facture N° 337929-26-DJ",
+        engine="text",
+        lines=[make_line(fact_num="07-04-2026", lib_frss="HEBERJAHIZ")],
+    )
+    assert _text_result_needs_ai_upgrade(date_number)
+
+    # Nom fournisseur = numéro de facture (FA2026057).
+    code_name = ExtractionResult(
+        filename="facture.pdf",
+        raw_text="Facture FA2026057",
+        engine="text",
+        lines=[make_line(fact_num="FA2026057", lib_frss="FA2026057")],
+    )
+    assert _text_result_needs_ai_upgrade(code_name)
+
+    # TVA 0 % annoncée sur le document mais 20 % inventée par l'heuristique.
+    zero_vat = ExtractionResult(
+        filename="facture.pdf",
+        raw_text="Sous-total: 230,00 MAD\nTVA (0%): 0,00 MAD",
+        engine="text",
+        lines=[make_line(fact_num="4", lib_frss="ABDESSALAM LABRARDI", m_ht=191.67, tva=38.33, m_ttc=230, taux=0.2)],
+    )
+    assert _text_result_needs_ai_upgrade(zero_vat)
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     failures = 0

@@ -78,8 +78,9 @@ async def _run_case(case: EvalCase, *, normalize: bool) -> tuple[object | None, 
 
     content = case.document.read_bytes()
     # Nom passé au pipeline : dossier parent + fichier, comme un ZIP organisé
-    # par fournisseur (permet l'indice dossier de la normalisation).
-    label = f"{case.document.parent.name}/{case.document.name}"
+    # par fournisseur (permet l'indice dossier de la normalisation). Un cas peut
+    # forcer `document_label` quand le dossier n'est pas un fournisseur.
+    label = case.document_label or f"{case.document.parent.name}/{case.document.name}"
     started = time.perf_counter()
     try:
         token = activate_client_ice_exclusions(case.client_ice)

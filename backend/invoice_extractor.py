@@ -1476,7 +1476,7 @@ async def _extract_with_ai_cascade(
 
 async def _extract_pdf_with_ai(filename: str, content: bytes) -> ExtractionResult:
     limit = ai_max_pages()
-    pages = await pdf_to_png_pages_async(content, max_pages=limit)
+    pages = await pdf_to_png_pages_async(content, max_pages=limit, dpi=240)
     if not pages:
         raise RuntimeError("Impossible de convertir le PDF en image pour l'IA.")
 
@@ -1521,14 +1521,15 @@ _ADDRESS_LIKE_MARKERS = (
 
 
 def _text_result_needs_ai_upgrade(result: ExtractionResult) -> bool:
-    """Un PDF texte peut être mal lu par l'heuristique (avoir, adresse client).
+    """Un PDF texte peut être mal lu par l'heuristique (avoir, adresse client,
+    mise en page inhabituelle, TVA 0 % annoncée).
 
     Dans ces cas seulement, on relit le document avec la Vision IA : le coût
     est nul pour les PDF propres déjà bien extraits.
     """
     if not result.lines:
         return False
-    from normalize_results import is_avoir_document
+    from normalize_results import is_avoir_document, looks_like_supplier_name
 
     if is_avoir_document(result.filename, result.raw_text) or any(
         is_avoir_document("", "", line.fact_num) for line in result.lines
@@ -1536,8 +1537,29 @@ def _text_result_needs_ai_upgrade(result: ExtractionResult) -> bool:
         return True
     if any(abs(line.tva) > 0.05 and abs(line.taux) < 1e-9 for line in result.lines):
         return True
-    name = (result.lines[0].lib_frss or "").upper()
-    return bool(name) and any(marker in name for marker in _ADDRESS_LIKE_MARKERS)
+    text = (result.raw_text or "").lower()
+    if any(marker in text for marker in ("tva (0", "tva(0", "tva : 0", "tva 0%", "tva 0 %")) and any(
+        abs(line.taux) >= 0.1 for line in result.lines
+    ):
+        return True
+    # Toute ligne dont le numéro est une date, le nom un fragment/code, ou dont
+    # les montants sont vides alors qu'une autre ligne en porte : le découpage
+    # heuristique est suspect (mise en page PDF libre, facture scannée à plat).
+    for line in result.lines:
+        if re.fullmatch(r"\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}", (line.fact_num or "").strip()):
+            return True
+        name = (line.lib_frss or "").strip()
+        if name and any(marker in name.upper() for marker in _ADDRESS_LIKE_MARKERS):
+            return True
+        if name and (
+            not looks_like_supplier_name(name)
+            or (line.fact_num and name.upper().replace(" ", "") == line.fact_num.upper().replace(" ", ""))
+        ):
+            return True
+    totals = [abs(line.m_ht) + abs(line.tva) + abs(line.m_ttc) for line in result.lines]
+    if any(total < 0.01 for total in totals) and any(total >= 0.01 for total in totals):
+        return True
+    return False
 
 
 async def extract_invoice(filename: str, content: bytes, mime_type: str) -> ExtractionResult:

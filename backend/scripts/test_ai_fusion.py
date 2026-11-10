@@ -76,6 +76,45 @@ def test_coherent_primary_rescues_incoherent_secondary() -> None:
     assert merged.fusion["coherence_rescues"] == 1
 
 
+def test_single_unmatched_lines_with_suspicious_fact_num_are_fused() -> None:
+    heuristic = make_line(
+        fact_num="FACTURE AVRIL - ABDESSALAM LABRARDI",
+        m_ht=191.67,
+        tva=38.33,
+        m_ttc=230.0,
+        taux=0.2,
+        lib_frss="Abdessalam Labrardi",
+        ice_frs="002198138000015",
+    )
+    ai_line = make_line(
+        fact_num="#4",
+        m_ht=230.0,
+        tva=0.0,
+        m_ttc=230.0,
+        taux=0.0,
+        lib_frss="Abdessalam Labrardi",
+        ice_frs="002198138000015",
+    )
+    merged = merge_ai_results(make_result(heuristic), make_result(ai_line))
+    assert len(merged.lines) == 1
+    assert merged.lines[0].fact_num == "#4"
+    assert merged.lines[0].taux == 0.0
+    assert merged.lines[0].m_ht == 230.0
+
+
+def test_zero_amount_artifact_line_is_dropped() -> None:
+    heuristic_header = make_line(fact_num="337929-26-DJ", m_ht=0.0, tva=0.0, m_ttc=0.0)
+    heuristic_body = make_line(fact_num="07-04-2026", m_ht=139.0, tva=27.8, m_ttc=166.8)
+    ai_line = make_line(fact_num="337929-26-DJ", m_ht=139.0, tva=27.8, m_ttc=166.8)
+    merged = merge_ai_results(
+        make_result(heuristic_header, heuristic_body),
+        make_result(ai_line),
+    )
+    assert len(merged.lines) == 1
+    assert merged.lines[0].m_ttc == 166.8
+    assert merged.lines[0].fact_num == "337929-26-DJ"
+
+
 def test_unmatched_lines_are_kept_on_both_sides() -> None:
     primary = make_line(fact_num="A-1")
     extra_primary = make_line(fact_num="A-2", m_ht=50.0, tva=10.0, m_ttc=60.0)

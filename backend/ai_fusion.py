@@ -166,7 +166,38 @@ def _align_lines(
         else:
             only_primary.append(primary_line)
     only_secondary = [secondary_lines[index] for index in available]
+
+    # Dernier recours : une seule ligne restante de chaque côté, même fournisseur
+    # (ICE ou nom), et un numéro de facture manifestement mal lu d'un côté
+    # (texte libre type « FACTURE AVRIL - ABDESSALAM LABRARDI »). On ne rapproche
+    # pas deux vraies factures distinctes d'un même fournisseur.
+    if len(only_primary) == 1 and len(only_secondary) == 1:
+        primary_line = only_primary[0]
+        secondary_line = only_secondary[0]
+        if (
+            _supplier_key(primary_line) == _supplier_key(secondary_line)
+            and (
+                _fact_num_is_suspicious(primary_line.fact_num)
+                or _fact_num_is_suspicious(secondary_line.fact_num)
+            )
+        ):
+            pairs.append((primary_line, secondary_line))
+            only_primary = []
+            only_secondary = []
+
     return pairs, only_primary, only_secondary
+
+
+def _fact_num_is_suspicious(value: object) -> bool:
+    text = str(value or "").strip()
+    return bool(text) and (" " in text or len(text) > 20)
+
+
+def _supplier_key(line: InvoiceLine) -> tuple[str, str]:
+    ice = _normalize_digits(line.ice_frs)
+    if len(ice) == 15:
+        return ("ice", ice)
+    return ("name", _normalize_identifier(line.lib_frss))
 
 
 def _choose_text_value(
@@ -284,6 +315,48 @@ def _fused_signature(line: InvoiceLine) -> tuple[Any, ...]:
     )
 
 
+def _weak_signature(line: InvoiceLine) -> tuple[Any, ...]:
+    return (
+        round(_taux(line), 4),
+        round(_as_amount(line.m_ht), 2),
+        round(_as_amount(line.tva), 2),
+        round(_as_amount(line.m_ttc), 2),
+        str(line.date_fac or ""),
+    )
+
+
+def _line_is_artifact(line: InvoiceLine) -> bool:
+    """Ligne issue d'un mauvais découpage : numéro date ou nom = description."""
+    fact = str(line.fact_num or "").strip()
+    if re.fullmatch(r"\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}", fact):
+        return True
+    name = str(line.lib_frss or "")
+    words = [word for word in name.split() if word]
+    return len(name) > 60 or sum(ch.isdigit() for ch in name) > 3 or len(words) > 6
+
+
+def _dedupe_same_amounts(lines: list[InvoiceLine]) -> list[InvoiceLine]:
+    """Garde une seule ligne pour un même montant/taux/date.
+
+    Cible les artefacts de découpage texte qui dupliquent la facture avec un
+    numéro mal lu (ex. une date à la place du numéro) ou un nom qui est une
+    description de produit. La ligne crédible (numéro et nom lisibles) gagne.
+    """
+    out: list[InvoiceLine] = []
+    for line in lines:
+        signature = _weak_signature(line)
+        match = next((index for index, kept in enumerate(out) if _weak_signature(kept) == signature), None)
+        if match is None:
+            out.append(line)
+            continue
+        kept = out[match]
+        if _line_is_artifact(line) and not _line_is_artifact(kept):
+            continue
+        if _line_is_artifact(kept) and not _line_is_artifact(line):
+            out[match] = line
+    return out
+
+
 def _dedupe(lines: list[InvoiceLine]) -> list[InvoiceLine]:
     seen: set[tuple[Any, ...]] = set()
     out: list[InvoiceLine] = []
@@ -336,6 +409,26 @@ def merge_ai_results(primary: ExtractionResult, secondary: ExtractionResult) -> 
     fused_lines = [_fuse_line(first, second, raw_text, stats) for first, second in pairs]
     fused_lines.extend(line.model_copy(deep=True) for line in only_primary)
     fused_lines.extend(line.model_copy(deep=True) for line in only_secondary)
+
+    # Une ligne sans aucun montant est un artefact de découpage (en-tête/adresse
+    # pris pour une facture) ; on la retire dès qu'une vraie ligne existe.
+    has_amounts = any(
+        abs(line.m_ht) + abs(line.tva) + abs(line.m_ttc) >= 0.01 for line in fused_lines
+    )
+    if has_amounts:
+        kept: list[InvoiceLine] = []
+        dropped = 0
+        for line in fused_lines:
+            if abs(line.m_ht) + abs(line.tva) + abs(line.m_ttc) < 0.01:
+                dropped += 1
+                continue
+            kept.append(line)
+        if dropped:
+            stats.unresolved += dropped
+            fused_lines = kept
+    # Un artefact peut aussi porter des montants (ligne « 07-04-2026 ») en
+    # doublon de la vraie ligne fusionnée : même fournisseur, mêmes montants.
+    fused_lines = _dedupe_same_amounts(fused_lines)
     fused_lines = _dedupe(fused_lines)
 
     warnings = list(primary.warnings)
