@@ -65,3 +65,32 @@ Authentication → Providers → Email :
 
 - **Confirm email** : au choix (désactivé simplifie les tests)
 - Avec l'inscription publique coupée, seuls les comptes créés par le super-admin existent
+
+## 7. Authentification du serveur (routes `/api/…`)
+
+Le serveur Python écrit dans Supabase avec la clé `service_role`, qui contourne la RLS.
+Il vérifie donc lui-même chaque appel (`backend/auth.py`) :
+
+| Route | Qui peut appeler |
+|-------|------------------|
+| `POST /api/extract`, `POST /api/import-bank-statement`, `POST /api/import-jobs/process` | Membre actif d'un cabinet, ou super-admin |
+| `POST /api/import-jobs/{id}/upload` | Utilisateur ayant accès au dossier du job |
+| `POST /api/dossiers/{id}/analyze` | Utilisateur ayant accès au dossier |
+| `GET /api/health`, `GET /api/reference`, `POST /api/export` | Public (aucune donnée cabinet, aucun appel IA) |
+
+Le navigateur envoie le jeton de session Supabase (`Authorization: Bearer …`), ajouté
+automatiquement par `api-client.js`. L'accès au dossier est vérifié en interrogeant
+Supabase **avec le jeton de l'utilisateur** : ce sont les règles RLS qui décident.
+
+Variable à définir côté serveur (Codespace `backend/.env`, Render, etc.) :
+
+```env
+SUPABASE_ANON_KEY=eyJ...   # la clé publique, la même que dans docs/auth-client.js
+```
+
+À défaut, le serveur utilise `SUPABASE_SERVICE_ROLE_KEY` comme `apikey` (les droits
+restent ceux du jeton utilisateur). Sans aucune des deux, les routes protégées
+répondent `503`.
+
+Conséquence : `production.html` (mode solo) exige désormais d'être connecté pour
+l'extraction IA.

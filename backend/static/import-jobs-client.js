@@ -7,7 +7,7 @@ import {
   shouldSkipZipForAnalysis,
   sourceIdsWithLines,
 } from "./dossier-documents.js?v=doc19";
-import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
+import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api9";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
 

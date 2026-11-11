@@ -59,6 +59,20 @@ async function fetchOrExplain(url, options, { attempts = 2, timeoutMs = FETCH_TI
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Jeton de session Supabase : le serveur refuse désormais les appels anonymes.
+ * Import dynamique pour que ce module reste chargeable hors navigateur (tests Node).
+ */
+async function authHeader() {
+  try {
+    const { getSession } = await import("./auth-client.js?v=auth6");
+    const session = await getSession();
+    return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Une coupure ponctuelle du tunnel Codespace ne doit pas perdre le lot. */
 async function fetchWithRetry(url, options, attempts = 2, timeoutMs = FETCH_TIMEOUT_MS) {
   for (let i = 0; ; i += 1) {
@@ -73,10 +87,13 @@ async function fetchWithRetry(url, options, attempts = 2, timeoutMs = FETCH_TIME
 
 async function errorFromResponse(response) {
   let detail = "";
+  let fromApi = false;
   try {
     const body = await response.text();
     try {
-      detail = JSON.parse(body).detail || body;
+      const parsed = JSON.parse(body);
+      fromApi = typeof parsed?.detail === "string";
+      detail = parsed.detail || body;
     } catch {
       detail = body;
     }
@@ -84,7 +101,9 @@ async function errorFromResponse(response) {
     detail = "";
   }
   if (response.status === 302 || response.status === 401 || response.status === 403) {
-    return new Error(PORT_ACCESS_HINT);
+    // Réponse JSON de l'API = refus d'authentification Recompta ; sinon c'est
+    // le tunnel Codespace (port privé) qui bloque avant d'atteindre le serveur.
+    return new Error(fromApi && detail ? detail : PORT_ACCESS_HINT);
   }
   return new Error(detail || `Erreur serveur (${response.status})`);
 }
@@ -136,6 +155,7 @@ async function extractBatch(batch, apiUrl, normalizedIce) {
     `${apiUrl}/api/extract`,
     {
       method: "POST",
+      headers: await authHeader(),
       body: formData,
     },
     2,
@@ -230,6 +250,7 @@ export async function parseBankStatementViaServer(file, apiUrl) {
     `${apiUrl}/api/import-bank-statement`,
     {
       method: "POST",
+      headers: await authHeader(),
       body: formData,
     },
     2,
@@ -244,7 +265,7 @@ export async function kickImportJobWorker(apiUrl, { limit = 1 } = {}) {
   if (!apiUrl) return null;
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/import-jobs/process?limit=${limit}`,
-    { method: "POST" },
+    { method: "POST", headers: await authHeader() },
     { attempts: 2, timeoutMs: WORKER_KICK_TIMEOUT_MS },
   );
   if (!response.ok) throw await errorFromResponse(response);
@@ -291,7 +312,7 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
     return Promise.reject(new Error("Paramètres d'envoi invalides."));
   }
 
-  return new Promise((resolve, reject) => {
+  return authHeader().then((headers) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const formData = new FormData();
     formData.append("file", file, file.name);
@@ -330,8 +351,9 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
     xhr.addEventListener("abort", () => reject(new Error("Envoi annulé.")));
 
     xhr.open("POST", `${base}/api/import-jobs/${jobId}/upload`);
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
     xhr.send(formData);
-  });
+  }));
 }
 
 export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoice", clientIce = "" } = {}) {
@@ -339,7 +361,7 @@ export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoi
   const params = new URLSearchParams({ doc_type: docType, client_ice: clientIce || "" });
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/dossiers/${dossierId}/analyze?${params}`,
-    { method: "POST" },
+    { method: "POST", headers: await authHeader() },
     { attempts: 2, timeoutMs: ANALYSIS_QUEUE_TIMEOUT_MS },
   );
   if (!response.ok) throw await errorFromResponse(response);

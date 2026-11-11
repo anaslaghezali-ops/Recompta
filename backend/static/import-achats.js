@@ -18,7 +18,7 @@ import {
   fetchServerHealth,
   getApiUrl,
   saveApiUrl,
-} from "./api-client.js?v=api7";
+} from "./api-client.js?v=api9";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
 import {
   countConfidenceIssues,

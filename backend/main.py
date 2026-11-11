@@ -12,12 +12,19 @@ _backend_dir = Path(__file__).resolve().parent
 load_dotenv(_backend_dir / ".env")
 load_dotenv(_backend_dir.parent / ".env")
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from admin_saas import router as admin_router
+from auth import (
+    AuthUser,
+    ensure_dossier_access,
+    ensure_job_access,
+    require_cabinet_user,
+    require_user,
+)
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
 from dossier_analysis import queue_dossier_analysis
@@ -194,6 +201,7 @@ def extraction_concurrency() -> int:
 @app.post("/api/extract", response_model=list[ExtractionResult])
 async def extract_files(
     files: Annotated[list[UploadFile], File(...)],
+    _user: Annotated[AuthUser, Depends(require_cabinet_user)],
     client_ice: Annotated[str, Form()] = "",
 ) -> list[ExtractionResult]:
     if not files:
@@ -258,6 +266,7 @@ async def extract_files(
 @app.post("/api/import-bank-statement", response_model=BankStatementResult)
 async def import_bank_statement(
     file: Annotated[UploadFile, File(...)],
+    _user: Annotated[AuthUser, Depends(require_cabinet_user)],
 ) -> BankStatementResult:
     content = await file.read()
     upload_name = file.filename or "releve_bancaire"
@@ -269,8 +278,12 @@ async def import_bank_statement(
 async def upload_import_job_file(
     job_id: int,
     file: Annotated[UploadFile, File(...)],
+    user: Annotated[AuthUser, Depends(require_user)],
 ) -> dict:
     """Reçoit le fichier depuis le navigateur et le place en file d'attente Supabase."""
+    # Le job est écrit avec la clé service_role : sans ce contrôle, n'importe
+    # qui pourrait déposer un fichier dans le dossier d'un autre cabinet.
+    await ensure_job_access(user, job_id)
     if not import_worker_enabled():
         raise HTTPException(
             status_code=503,
@@ -310,10 +323,12 @@ async def upload_import_job_file(
 @app.post("/api/dossiers/{dossier_id}/analyze")
 async def analyze_dossier_documents(
     dossier_id: int,
+    user: Annotated[AuthUser, Depends(require_user)],
     doc_type: str = "invoice",
     client_ice: str = "",
 ) -> dict:
     """Lance l'analyse IA en arrière-plan pour les documents stockés non encore traités."""
+    await ensure_dossier_access(user, dossier_id)
     if not import_worker_enabled():
         raise HTTPException(
             status_code=503,
@@ -352,7 +367,10 @@ async def analyze_dossier_documents(
 
 
 @app.post("/api/import-jobs/process")
-async def process_import_jobs(limit: int = 1) -> dict:
+async def process_import_jobs(
+    _user: Annotated[AuthUser, Depends(require_cabinet_user)],
+    limit: int = 1,
+) -> dict:
     """Déclenche le traitement des jobs en file d'attente (réponse immédiate, travail en arrière-plan)."""
     if not import_worker_enabled():
         raise HTTPException(
