@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.0";
 
 /**
- * Portail client : accès sans mot de passe par lien personnel.
+ * Portail client : accès par email + mot de passe et/ou par lien personnel (sans mot de passe).
  *
  * POST JSON { action, ... } :
  * Côté client (aucune session requise, clé publique suffit) :
