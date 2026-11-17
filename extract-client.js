@@ -840,21 +840,104 @@ function consolidateLines(lines) {
   return merged;
 }
 
+const DATE_LIKE_NUMBER = /^(?:\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})$/;
+const RATE_AS_AMOUNT = new Set([7, 10, 14, 20]);
+
+function invoiceNumberKey(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^0+/, "");
+}
+
+function isRealInvoiceNumber(value) {
+  const text = String(value || "").trim();
+  return Boolean(invoiceNumberKey(text)) && !DATE_LIKE_NUMBER.test(text);
+}
+
+const round2 = (value) => Math.round(Math.abs(Number(value) || 0) * 100) / 100;
+
+function amountKey(line) {
+  return [round2(line.m_ht), round2(line.tva), round2(line.m_ttc), Math.round((Number(line.taux) || 0) * 1000) / 1000].join("|");
+}
+
+// Miroir de normalize_results.drop_same_document_duplicates.
+export function dropSameDocumentDuplicates(result) {
+  const lines = [...(result.lines || [])];
+  if (lines.length < 2) return 0;
+  const drop = new Set();
+
+  const byAmounts = new Map();
+  lines.forEach((line, index) => {
+    const key = amountKey(line);
+    if (!byAmounts.has(key)) byAmounts.set(key, []);
+    byAmounts.get(key).push(index);
+  });
+  for (const indexes of byAmounts.values()) {
+    if (indexes.length < 2) continue;
+    const real = indexes.filter((i) => isRealInvoiceNumber(lines[i].fact_num));
+    if (!real.length) continue;
+    for (const i of indexes) if (!real.includes(i)) drop.add(i);
+  }
+
+  lines.forEach((line, index) => {
+    if (drop.has(index)) return;
+    const tva = round2(line.tva);
+    if (Math.abs(Number(line.m_ht) || 0) >= 0.01 || !RATE_AS_AMOUNT.has(tva)) return;
+    if (Math.abs(Number(line.m_ttc) || 0) >= 0.01 && round2(line.m_ttc) !== tva) return;
+    const key = invoiceNumberKey(line.fact_num);
+    const twin = lines.some((other, j) =>
+      j !== index && !drop.has(j) && Math.abs(Number(other.m_ht) || 0) >= 0.01
+      && (!key || invoiceNumberKey(other.fact_num) === key));
+    if (twin) drop.add(index);
+  });
+
+  if (!drop.size) return 0;
+  result.lines = lines.filter((_, i) => !drop.has(i));
+  result.warnings = [
+    ...(result.warnings || []),
+    `${drop.size} ligne(s) en double retirée(s) (date lue comme n° de facture, ou taux lu comme montant) — vérifiez les montants de cette pièce.`,
+  ];
+  return drop.size;
+}
+
+// Miroir de normalize_results._bucket_identity : jamais l'ICE d'un fournisseur
+// collé sur la facture d'un autre dans un dossier qui en mélange plusieurs.
+function bucketIdentity(group) {
+  const ices = new Set(
+    group.ices
+      .map((raw) => normalizeIceDigits(raw))
+      .filter((ice) => ice && !/^0+$/.test(ice) && !isExcludedIce(ice)),
+  );
+  if (ices.size !== 1) return { ice: "", names: new Set() };
+  const ice = [...ices][0];
+  const names = new Set(
+    group.lines
+      .filter((line) => normalizeIceDigits(line.ice_frs) === ice)
+      .map((line) => supplierNameKey(line.lib_frss))
+      .filter(Boolean),
+  );
+  return { ice, names };
+}
+
 export function normalizeExtractionResults(results) {
   const normalized = results.map((result) => {
     const withAvoir = applyAvoirSigns({ ...result, lines: result.lines || [] });
+    // Doublons retirés sur les montants tels que lus, avant toute correction
+    // (une correction transformerait la ligne fantôme en ligne plausible).
+    dropSameDocumentDuplicates(withAvoir);
     const withIf = reconcileSupplierIf(withAvoir);
     const withTtc = applyTtcVentilationFixes(withIf);
-    return {
+    const item = {
       ...withTtc,
-      lines: consolidateLines(withTtc.lines || []).map((line) => {
-        const isAvoir =
-          isAvoirDocument(withTtc.raw_text || "", withTtc.filename) ||
-          isAvoirDocument("", "", line.fact_num);
-        return fillMissingTtc(sanitizeImpossibleAmounts(line, isAvoir));
-      }),
-      warnings: [...new Set(withTtc.warnings || [])],
+      lines: consolidateLines(withTtc.lines || []),
+      warnings: [...(withTtc.warnings || [])],
     };
+    item.lines = item.lines.map((line) => {
+      const isAvoir =
+        isAvoirDocument(withTtc.raw_text || "", withTtc.filename) ||
+        isAvoirDocument("", "", line.fact_num);
+      return fillMissingTtc(sanitizeImpossibleAmounts(line, isAvoir));
+    });
+    item.warnings = [...new Set(item.warnings)];
+    return item;
   });
 
   const groups = new Map();
@@ -875,8 +958,12 @@ export function normalizeExtractionResults(results) {
 
   for (const [, group] of groups) {
     const pathHint = supplierHintFromPath(group.filenames[0] || "");
-    const bestIce = pickBestIce(group.ices);
-    const bestIf = pickMostCommon(group.ifs);
+    const { ice: bestIce, names: iceNames } = bucketIdentity(group);
+    const bestIf = pickMostCommon(
+      group.lines
+        .filter((line) => bestIce && normalizeIceDigits(line.ice_frs) === bestIce && line.if)
+        .map((line) => line.if),
+    );
     const bestName = pickMostCommon(group.lines.map((l) => l.lib_frss));
 
     for (const line of group.lines) {
@@ -889,11 +976,13 @@ export function normalizeExtractionResults(results) {
       } else if (!line.lib_frss && bestName) {
         line.lib_frss = bestName;
       }
-      if (bestIce && (!line.ice_frs || isExcludedIce(line.ice_frs))) {
+      const nameKey = supplierNameKey(line.lib_frss);
+      const sameSupplier = Boolean(bestIce) && (!nameKey || iceNames.has(nameKey));
+      if (sameSupplier && (!line.ice_frs || isExcludedIce(line.ice_frs))) {
         line.ice_frs = bestIce;
         line.ice_inferred = true;
       }
-      if (bestIf && !line.if) {
+      if (sameSupplier && bestIf && !line.if && normalizeIceDigits(line.ice_frs) === bestIce) {
         line.if = bestIf;
         line.if_inferred = true;
       }

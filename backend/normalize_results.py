@@ -285,6 +285,107 @@ def consolidate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
     return merged
 
 
+_DATE_LIKE_NUMBER = re.compile(
+    r"^(?:\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})$"
+)
+_RATE_AS_AMOUNT = {7.0, 10.0, 14.0, 20.0}
+
+
+def _invoice_number_key(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", str(value or "").upper()).lstrip("0")
+
+
+def _is_real_invoice_number(value: str) -> bool:
+    text = str(value or "").strip()
+    return bool(_invoice_number_key(text)) and not _DATE_LIKE_NUMBER.match(text)
+
+
+def _amount_key(line: InvoiceLine) -> tuple:
+    return (
+        round(abs(line.m_ht), 2),
+        round(abs(line.tva), 2),
+        round(abs(line.m_ttc), 2),
+        round(float(line.taux or 0), 3),
+    )
+
+
+def drop_same_document_duplicates(result: ExtractionResult) -> int:
+    """Lignes en double produites par la lecture d'un même document.
+
+    Supprimé seulement sur preuve :
+    - même montants, même taux, et un « numéro » qui est en fait une date
+      (ou vide) alors qu'une jumelle porte un vrai numéro : la date de la
+      facture a été lue comme une 2e facture (TVA comptée deux fois) ;
+    - ligne fantôme HT 0 dont la « TVA » vaut 7, 10, 14 ou 20 : c'est le taux
+      imprimé lu comme un montant, à côté de la vraie ligne de la même facture.
+
+    Deux lignes aux mêmes montants mais avec deux vrais numéros différents
+    sont conservées (deux livraisons identiques, par exemple).
+    """
+    lines = list(result.lines or [])
+    if len(lines) < 2:
+        return 0
+    drop: set[int] = set()
+
+    by_amounts: dict[tuple, list[int]] = defaultdict(list)
+    for index, line in enumerate(lines):
+        by_amounts[_amount_key(line)].append(index)
+    for indexes in by_amounts.values():
+        if len(indexes) < 2:
+            continue
+        real = [i for i in indexes if _is_real_invoice_number(lines[i].fact_num)]
+        if not real:
+            continue
+        drop.update(i for i in indexes if i not in real)
+
+    for index, line in enumerate(lines):
+        if index in drop:
+            continue
+        tva = round(abs(line.tva), 2)
+        if abs(line.m_ht) >= 0.01 or tva not in _RATE_AS_AMOUNT:
+            continue
+        if abs(line.m_ttc) >= 0.01 and round(abs(line.m_ttc), 2) != tva:
+            continue
+        key = _invoice_number_key(line.fact_num)
+        twins = [
+            other for j, other in enumerate(lines)
+            if j != index and j not in drop and abs(other.m_ht) >= 0.01
+            and (not key or _invoice_number_key(other.fact_num) == key)
+        ]
+        if twins:
+            drop.add(index)
+
+    if not drop:
+        return 0
+    result.lines = [line for i, line in enumerate(lines) if i not in drop]
+    result.warnings.append(
+        f"{len(drop)} ligne(s) en double retirée(s) (date lue comme n° de facture, "
+        "ou taux lu comme montant) — vérifiez les montants de cette pièce."
+    )
+    return len(drop)
+
+
+def _bucket_identity(bucket: dict, excluded: frozenset[str]) -> tuple[str, set[str]]:
+    """ICE du groupe s'il est unique, et noms (clés) des lignes qui le portent.
+
+    Un dossier importé (« Autres », « Août 2026 ») mélange des fournisseurs :
+    l'ICE majoritaire ne doit jamais être collé sur la facture d'un autre.
+    """
+    ices = {
+        ice for ice in (normalize_ice_digits(raw) for raw in bucket["ices"])
+        if ice and not re.fullmatch(r"0+", ice) and ice not in excluded
+    }
+    if len(ices) != 1:
+        return "", set()
+    ice = next(iter(ices))
+    keys = {
+        supplier_name_key(line.lib_frss)
+        for line in bucket["lines"]
+        if normalize_ice_digits(line.ice_frs) == ice
+    } - {""}
+    return ice, keys
+
+
 def normalize_extraction_results(
     results: list[ExtractionResult],
     client_ice: str = "",
@@ -296,6 +397,9 @@ def normalize_extraction_results(
         is_avoir = is_avoir_document(item.filename, item.raw_text)
         if not is_avoir and item.lines:
             is_avoir = any(is_avoir_document("", "", line.fact_num) for line in item.lines)
+        # Doublons retirés sur les montants tels que lus, avant toute correction
+        # (une correction transformerait la ligne fantôme en ligne plausible).
+        drop_same_document_duplicates(item)
         item = apply_vat_reconciliation(item)
         item.lines = [
             fill_missing_ttc(sanitize_impossible_amounts(line, is_avoir))
@@ -326,8 +430,11 @@ def normalize_extraction_results(
 
     for _group_key, bucket in groups.items():
         path_hint = supplier_hint_from_path(bucket["filenames"][0] if bucket["filenames"] else "")
-        best_ice = pick_best_ice(bucket["ices"], excluded)
-        best_if = pick_most_common(bucket["ifs"])
+        best_ice, ice_names = _bucket_identity(bucket, excluded)
+        best_if = pick_most_common([
+            line.if_fournisseur for line in bucket["lines"]
+            if best_ice and normalize_ice_digits(line.ice_frs) == best_ice and line.if_fournisseur
+        ])
         best_name = pick_most_common([line.lib_frss for line in bucket["lines"]])
         if path_hint and not best_name:
             best_name = path_hint.get("lib_frss", "")
@@ -343,10 +450,17 @@ def normalize_extraction_results(
                 line.lib_frss = best_name
             elif not looks_like_supplier_name(line.lib_frss):
                 line.lib_frss = line.lib_frss.strip()
-            if best_ice and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
+            # Même fournisseur seulement : nom absent, ou nom d'une ligne qui
+            # porte cet ICE.
+            name_key = supplier_name_key(line.lib_frss)
+            same_supplier = bool(best_ice) and (not name_key or name_key in ice_names)
+            if same_supplier and (not line.ice_frs or is_excluded_ice(line.ice_frs)):
                 line.ice_frs = best_ice
                 line.ice_inferred = True
-            if best_if and not line.if_fournisseur:
+            if (
+                same_supplier and best_if and not line.if_fournisseur
+                and normalize_ice_digits(line.ice_frs) == best_ice
+            ):
                 line.if_fournisseur = best_if
                 line.if_inferred = True
 

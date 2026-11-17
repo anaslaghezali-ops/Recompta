@@ -17,7 +17,7 @@ from normalize_results import (
     normalize_extraction_results,
 )
 from supabase_service import SupabaseService, _document_identity_keys
-from supplier_notebook import apply_official_supplier_names
+from supplier_notebook import enrich_supplier_identities
 from vision_credits import cabinet_id_for_dossier, reset_active_cabinet_id, set_active_cabinet_id
 from zip_utils import iter_invoice_files, storage_path_for_zip_member
 
@@ -594,14 +594,14 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     )
                 )
 
+        notebook: list[dict[str, Any]] = []
         if new_lines:
             try:
                 client_id = await db.get_dossier_client_id(dossier_id)
                 if client_id:
                     notebook = await db.list_client_suppliers(client_id)
-                    apply_official_supplier_names(new_lines, notebook)
             except Exception:  # noqa: BLE001
-                pass
+                notebook = []
 
         if new_lines:
             merge_trace: dict[str, int] = {}
@@ -610,7 +610,15 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 # Rejouée sur l'état relu à chaque essai (écriture conditionnelle).
                 current_lines = list(current.get("lines") or [])
                 merge_trace["before"] = len(current_lines)
-                return {"lines": _merge_workspace_lines(current_lines, new_lines)}
+                merged = _merge_workspace_lines(
+                    current_lines, [dict(line) for line in new_lines]
+                )
+                # IF / ICE / nom complétés depuis le carnet et tout le dossier
+                # (y compris les lignes déjà présentes, champs vides seulement).
+                merge_trace.update(enrich_supplier_identities(
+                    merged, notebook, client_ice=str(options.get("client_ice") or "")
+                ))
+                return {"lines": merged}
 
             async with _dossier_lock(dossier_id):
                 saved = await db.update_workspace(dossier_id, add_new_lines)

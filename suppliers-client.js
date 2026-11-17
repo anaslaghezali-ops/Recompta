@@ -6,7 +6,7 @@ import {
   officialNameForLine,
   supplierIdentityKey,
   supplierNameKey,
-} from "./extract-client.js?v=notebook1";
+} from "./extract-client.js?v=dedup1";
 import { formatMonthLabel, getClientWithDossiers } from "./dossiers-client.js?v=dash2";
 
 function pickCanonicalName(names) {
