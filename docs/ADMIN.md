@@ -70,3 +70,15 @@ Voir [DOSSIERS.md](DOSSIERS.md) pour la migration et l'utilisation.
 - RLS : `INSERT` sur `cabinets` et `cabinet_members` réservé au super-admin
 - Edge Function : vérifie le JWT super-admin avant `createUser`
 - Désactiver **Allow new users to sign up** dans Supabase Auth
+
+## Équipe du cabinet (page `equipe.html`)
+
+Le responsable d'un cabinet (et ses administrateurs) ajoutent leurs collaborateurs sans passer par le super-admin : création du compte avec mot de passe initial, changement de rôle (Administrateur / Collaborateur), nouveau mot de passe, désactivation / réactivation. Chaque membre peut changer son propre mot de passe sur la même page.
+
+Edge Function : `supabase/functions/cabinet-team/index.ts` (vérifie que l'appelant est owner ou admin actif du cabinet, utilise `service_role` côté serveur).
+
+```bash
+supabase functions deploy cabinet-team --project-ref pbyoxfxngfutoiqjirkx
+```
+
+Règles : le compte du responsable ne se modifie pas depuis cette page ; seul le responsable nomme ou gère un administrateur ; un administrateur gère les collaborateurs.

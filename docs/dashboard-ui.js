@@ -38,12 +38,9 @@ export function sidebarHtml({ cabinetName, active }) {
         <a href="dossiers.html" class="${active === "portfolio" ? "active" : ""}">
           <i data-lucide="layout-grid"></i> Portefeuille clients
         </a>
-        <button type="button" disabled title="Bientôt disponible">
-          <i data-lucide="landmark"></i> Banque
-        </button>
-        <button type="button" disabled title="Bientôt disponible">
-          <i data-lucide="settings"></i> Paramètres
-        </button>
+        <a href="equipe.html" class="${active === "team" ? "active" : ""}">
+          <i data-lucide="users"></i> Équipe
+        </a>
       </nav>
       <div class="dash-nav-footer">
         <button type="button" class="dash-btn dash-btn-ghost" id="signOutBtn" style="width:100%;justify-content:flex-start;">
