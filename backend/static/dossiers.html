@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=jobs6" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc5" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc6" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -146,9 +146,11 @@
   </dialog>
 
   <script type="module">
-    import { signOut } from "./auth-client.js?v=auth9";
-    import { createClient, requireCabinetSession } from "./dossiers-client.js?v=dash2";
+    import { signOut } from "./auth-client.js?v=auth10";
+    import { createClient, requireCabinetSession } from "./dossiers-client.js?v=dash3";
     import { openClientEditor } from "./client-edit.js?v=edit1";
+    import { countUnseenUploads } from "./portal-client.js?v=portal1";
+    let portalCounts = {};
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -371,6 +373,7 @@
           <div class="dash-portfolio-client">
             <strong class="dash-portfolio-name">${escapeHtml(row.name)}</strong>
             <span class="dash-portfolio-ice">ICE ${escapeHtml(row.ice)}</span>
+            ${portalCounts[row.clientId] ? `<a class="rc-portal-new-chip" href="workspace.html?client=${escapeHtml(row.clientId)}&tab=portal" title="Documents déposés par le client dans son espace"><i data-lucide="inbox"></i> ${portalCounts[row.clientId]} nouveau${portalCounts[row.clientId] > 1 ? "x" : ""} document${portalCounts[row.clientId] > 1 ? "s" : ""}</a>` : ""}
             ${importBadge}
           </div>
           <div class="dash-portfolio-col period">${escapeHtml(periodText)}</div>
@@ -416,11 +419,11 @@
       portfolioRows.querySelectorAll(".dash-portfolio-row").forEach((row) => {
         const clientId = row.dataset.clientId;
         row.addEventListener("click", (event) => {
-          if (event.target.closest("button")) return;
+          if (event.target.closest("button, a")) return;
           openWorkspace(clientId);
         });
         row.addEventListener("keydown", (event) => {
-          if (event.target.closest("button")) return;
+          if (event.target.closest("button, a")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openWorkspace(clientId);
@@ -495,6 +498,7 @@
 
       try {
         allRows = await listPortfolioRows(cabinetId);
+        portalCounts = await countUnseenUploads(allRows.map((r) => r.clientId)).catch(() => ({}));
         renderPortfolio();
         startCompletionWatcher();
       } catch (error) {

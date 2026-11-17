@@ -1,4 +1,4 @@
-import { getSupabase } from "./auth-client.js?v=auth9";
+import { getSupabase } from "./auth-client.js?v=auth10";
 
 const DEFAULT_BANK_META = {
   filename: "",

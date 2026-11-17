@@ -1,4 +1,4 @@
-import { getSupabase, requireSuperAdminSession } from "./auth-client.js?v=auth9";
+import { getSupabase, requireSuperAdminSession } from "./auth-client.js?v=auth10";
 
 export function isBillableVisionEngine(engine) {
   return engine === "scan" || engine === "ai";

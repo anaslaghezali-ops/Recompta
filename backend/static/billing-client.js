@@ -3,7 +3,7 @@
  * Les contrôles (numérotation, immutabilité, droits) sont faits en base
  * (migration 20261117200000_billing.sql) ; ce module ne fait que les appeler.
  */
-import { getSupabase } from "./auth-client.js?v=auth9";
+import { getSupabase } from "./auth-client.js?v=auth10";
 
 function db() {
   const supabase = getSupabase();

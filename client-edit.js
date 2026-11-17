@@ -2,7 +2,7 @@
  * Fiche client modifiable (nom, ICE, coordonnées de facturation).
  * Partagée par le portefeuille et l'espace de travail du client.
  */
-import { getSupabase } from "./auth-client.js?v=auth9";
+import { getSupabase } from "./auth-client.js?v=auth10";
 
 const BILLING_FIELDS = ["billing_address", "billing_city", "billing_if", "billing_email", "billing_phone"];
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

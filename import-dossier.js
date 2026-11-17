@@ -1,4 +1,4 @@
-import { requireCabinetSession, formatMonthLabel, loadDossierContext } from "./dossiers-client.js?v=dash2";
+import { requireCabinetSession, formatMonthLabel, loadDossierContext } from "./dossiers-client.js?v=dash3";
 import {
   createDebouncedSaver,
   createWorkspaceTracker,

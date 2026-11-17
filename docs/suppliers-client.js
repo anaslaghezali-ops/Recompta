@@ -1,4 +1,4 @@
-import { getSupabase } from "./auth-client.js?v=auth9";
+import { getSupabase } from "./auth-client.js?v=auth10";
 import {
   lineIfValue,
   normalizeIceDigits,
@@ -7,7 +7,7 @@ import {
   supplierIdentityKey,
   supplierNameKey,
 } from "./extract-client.js?v=dedup1";
-import { formatMonthLabel, getClientWithDossiers } from "./dossiers-client.js?v=dash2";
+import { formatMonthLabel, getClientWithDossiers } from "./dossiers-client.js?v=dash3";
 
 function pickCanonicalName(names) {
   const counts = new Map();

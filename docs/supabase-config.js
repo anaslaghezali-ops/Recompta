@@ -6,4 +6,4 @@ export {
   SUPABASE_ANON_KEY,
   SUPABASE_CONFIG_VERSION,
   SUPABASE_URL,
-} from "./auth-client.js?v=auth9";
+} from "./auth-client.js?v=auth10";

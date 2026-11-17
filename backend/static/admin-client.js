@@ -5,7 +5,7 @@ import {
   isSuperAdmin,
   requireSuperAdminSession,
   SUPABASE_URL,
-} from "./auth-client.js?v=auth9";
+} from "./auth-client.js?v=auth10";
 import { getApiUrl } from "./api-client.js";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

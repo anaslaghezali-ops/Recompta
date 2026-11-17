@@ -53,11 +53,11 @@ import {
   isSuperAdmin,
   isSupabaseConfigured,
   signOut,
-} from "./auth-client.js?v=auth9";
+} from "./auth-client.js?v=auth10";
 import {
   formatMonthLabel,
   loadDossierContext,
-} from "./dossiers-client.js?v=dash2";
+} from "./dossiers-client.js?v=dash3";
 import {
   createDebouncedSaver,
   createWorkspaceTracker,

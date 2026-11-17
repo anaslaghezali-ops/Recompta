@@ -1,7 +1,7 @@
 /**
  * Équipe du cabinet : appels à l'Edge Function cabinet-team.
  */
-import { SUPABASE_URL, authHeaders, getSession, updatePassword } from "./auth-client.js?v=auth9";
+import { SUPABASE_URL, authHeaders, getSession, updatePassword } from "./auth-client.js?v=auth10";
 
 async function call(action, payload = {}) {
   const session = await getSession();
