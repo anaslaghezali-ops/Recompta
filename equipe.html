@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=jobs6" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc2" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc3" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -47,6 +47,7 @@
                 <tr>
                   <th scope="col">Membre</th>
                   <th scope="col">Rôle</th>
+                  <th scope="col">Clients</th>
                   <th scope="col">Statut</th>
                   <th scope="col">Dernière connexion</th>
                   <th scope="col" class="rc-team-actions-col"><span class="rc-sr">Actions</span></th>
@@ -61,9 +62,9 @@
           <section class="rc-panel">
             <h2 class="rc-section-title">Rôles</h2>
             <dl class="rc-roles">
-              <div><dt>Responsable</dt><dd>Gère le cabinet, l'équipe et tous les dossiers. Il y en a un par cabinet.</dd></div>
-              <div><dt>Administrateur</dt><dd>Ajoute et gère les collaborateurs, travaille sur tous les dossiers.</dd></div>
-              <div><dt>Collaborateur</dt><dd>Travaille sur tous les dossiers du cabinet : imports, revue, export.</dd></div>
+              <div><dt>Responsable</dt><dd>Gère le cabinet, l'équipe et tous les clients. Il y en a un par cabinet.</dd></div>
+              <div><dt>Administrateur</dt><dd>Accède à tous les clients, crée les clients et gère les collaborateurs.</dd></div>
+              <div><dt>Collaborateur</dt><dd>Travaille uniquement sur les clients qui lui sont attribués : imports, revue, export. Il ne voit pas les autres clients du cabinet.</dd></div>
             </dl>
           </section>
 
@@ -98,6 +99,11 @@
           <option value="comptable">Collaborateur</option>
           <option value="admin">Administrateur</option>
         </select></label>
+      <div class="rc-field" id="addClientsField">
+        <span>Clients attribués</span>
+        <div class="rc-client-picker" id="addClientsPicker"></div>
+        <small>Le collaborateur ne verra que ces clients. Vous pourrez modifier la liste plus tard.</small>
+      </div>
       <label class="rc-field"><span>Mot de passe initial</span>
         <span class="rc-field-row">
           <input type="text" id="addPassword" autocomplete="new-password" spellcheck="false" minlength="8" required />
@@ -143,6 +149,20 @@
     </form>
   </dialog>
 
+  <!-- Clients attribués à un collaborateur -->
+  <dialog id="clientsDialog" class="dash-modal rc-team-dialog" aria-labelledby="clientsTitle">
+    <form class="dash-modal-inner rc-form" id="clientsForm" novalidate>
+      <h3 id="clientsTitle">Clients attribués</h3>
+      <p class="rc-muted" id="clientsIntro">—</p>
+      <div class="rc-client-picker" id="clientsPicker"></div>
+      <p class="rc-form-error" id="clientsError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="clientsCancelBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="clientsSubmitBtn">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Confirmation -->
   <dialog id="confirmDialog" class="dash-modal rc-team-dialog" aria-labelledby="confirmTitle">
     <div class="dash-modal-inner">
@@ -168,9 +188,10 @@
       generatePassword,
       loadTeam,
       resetTeamPassword,
+      setTeamClients,
       setTeamMemberActive,
       setTeamRole,
-    } from "./team-client.js?v=team1";
+    } from "./team-client.js?v=team2";
 
     const $ = (id) => document.getElementById(id);
     const state = { team: null, me: null };
@@ -246,6 +267,66 @@
       return `<select class="rc-role-select" data-role="${member.user_id}" aria-label="Rôle de ${escapeHtml(member.email || "")}">${options}</select>`;
     }
 
+    const clientName = (id) => state.team.clients?.find((c) => c.id === id)?.name || `Client ${id}`;
+
+    function clientsCell(member) {
+      if (member.role !== "comptable") return '<span class="rc-muted-inline">Tous les clients</span>';
+      const ids = member.client_ids || [];
+      const names = ids.map(clientName);
+      const label = ids.length
+        ? `<span title="${escapeHtml(names.join(", "))}">${ids.length === 1 ? escapeHtml(names[0]) : `${ids.length} clients`}</span>`
+        : '<span class="rc-warn-inline">Aucun client</span>';
+      const btn = canManage(member)
+        ? ` <button type="button" class="rc-link" data-clients="${member.user_id}">Choisir</button>`
+        : "";
+      return label + btn;
+    }
+
+    function pickerHtml(selected) {
+      const clients = state.team.clients || [];
+      if (!clients.length) return '<p class="rc-muted">Aucun client dans le cabinet pour l\'instant.</p>';
+      const chosen = new Set(selected || []);
+      return `
+        <div class="rc-picker-tools">
+          <input type="search" class="rc-picker-search" placeholder="Filtrer les clients" aria-label="Filtrer les clients" />
+          <button type="button" class="rc-link" data-pick="all">Tout cocher</button>
+          <button type="button" class="rc-link" data-pick="none">Tout décocher</button>
+        </div>
+        <div class="rc-picker-list">
+          ${clients.map((c) => `
+            <label class="rc-picker-item" data-name="${escapeHtml((c.name + " " + (c.ice || "")).toLowerCase())}">
+              <input type="checkbox" value="${c.id}" ${chosen.has(c.id) ? "checked" : ""} />
+              <span>${escapeHtml(c.name)}</span>
+              ${c.ice ? `<small>ICE ${escapeHtml(c.ice)}</small>` : ""}
+            </label>`).join("")}
+        </div>
+        <p class="rc-picker-count"></p>`;
+    }
+
+    function bindPicker(container) {
+      const count = () => {
+        const n = container.querySelectorAll('input[type="checkbox"]:checked').length;
+        const el = container.querySelector(".rc-picker-count");
+        if (el) el.textContent = `${n} client${n > 1 ? "s" : ""} sélectionné${n > 1 ? "s" : ""}`;
+      };
+      container.oninput = (event) => {
+        if (event.target.matches(".rc-picker-search")) {
+          const q = event.target.value.trim().toLowerCase();
+          container.querySelectorAll(".rc-picker-item").forEach((item) => { item.hidden = q && !item.dataset.name.includes(q); });
+        }
+      };
+      container.onchange = count;
+      container.onclick = (event) => {
+        const b = event.target.closest("[data-pick]");
+        if (!b) return;
+        container.querySelectorAll(".rc-picker-item:not([hidden]) input").forEach((cb) => { cb.checked = b.dataset.pick === "all"; });
+        count();
+      };
+      count();
+    }
+
+    const pickedIds = (container) => [...container.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => Number(cb.value));
+
     function render() {
       const { members, cabinet } = state.team;
       const active = members.filter((m) => m.active).length;
@@ -274,6 +355,7 @@
               ${m.display_name && m.email ? `<div class="rc-member-email">${escapeHtml(m.email)}</div>` : ""}
             </td>
             <td>${roleCell(m)}</td>
+            <td>${clientsCell(m)}</td>
             <td>${m.active ? '<span class="dash-badge dash-badge-success">Actif</span>' : '<span class="dash-badge dash-badge-danger">Désactivé</span>'}</td>
             <td>${last}</td>
             <td class="rc-team-actions">${actions}</td>
@@ -314,12 +396,23 @@
     });
 
     let pwdTarget = null;
+    let clientsTarget = null;
     $("teamRows").addEventListener("click", async (event) => {
       const btn = event.target.closest("button");
       if (!btn) return;
-      const id = btn.dataset.password || btn.dataset.deactivate || btn.dataset.activate;
+      const id = btn.dataset.password || btn.dataset.deactivate || btn.dataset.activate || btn.dataset.clients;
       const member = state.team.members.find((m) => m.user_id === id);
       if (!member) return;
+
+      if (btn.dataset.clients) {
+        clientsTarget = member;
+        $("clientsIntro").textContent = `${member.display_name || member.email} ne verra que les clients cochés.`;
+        $("clientsPicker").innerHTML = pickerHtml(member.client_ids);
+        bindPicker($("clientsPicker"));
+        showError("clientsError", "");
+        $("clientsDialog").showModal();
+        return;
+      }
 
       if (btn.dataset.password) {
         pwdTarget = member;
@@ -361,11 +454,34 @@
     $("addMemberBtn").addEventListener("click", () => {
       $("addForm").reset();
       $("addPassword").value = generatePassword();
+      $("addClientsPicker").innerHTML = pickerHtml([]);
+      bindPicker($("addClientsPicker"));
+      $("addClientsField").hidden = $("addRole").value !== "comptable";
       showError("addError", "");
       $("addDialog").showModal();
       $("addEmail").focus();
     });
     $("addGenerateBtn").addEventListener("click", () => { $("addPassword").value = generatePassword(); });
+    $("addRole").addEventListener("change", () => { $("addClientsField").hidden = $("addRole").value !== "comptable"; });
+
+    // ---------- Clients attribués ----------
+    $("clientsCancelBtn").addEventListener("click", () => $("clientsDialog").close());
+    $("clientsForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const ids = pickedIds($("clientsPicker"));
+      await busy($("clientsSubmitBtn"), async () => {
+        try {
+          await setTeamClients(clientsTarget.user_id, ids);
+          $("clientsDialog").close();
+          toast(ids.length
+            ? `${clientsTarget.display_name || clientsTarget.email} a accès à ${ids.length} client${ids.length > 1 ? "s" : ""}.`
+            : `${clientsTarget.display_name || clientsTarget.email} n'a plus accès à aucun client.`);
+          await refresh();
+        } catch (err) {
+          showError("clientsError", err.message);
+        }
+      });
+    });
     $("addCancelBtn").addEventListener("click", () => $("addDialog").close());
     $("addForm").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -376,7 +492,14 @@
       if (password.length < 8) return showError("addError", "Le mot de passe doit contenir au moins 8 caractères.");
       await busy($("addSubmitBtn"), async () => {
         try {
-          await addTeamMember({ email, password, display_name: $("addName").value.trim(), role: $("addRole").value });
+          const role = $("addRole").value;
+          await addTeamMember({
+            email,
+            password,
+            display_name: $("addName").value.trim(),
+            role,
+            client_ids: role === "comptable" ? pickedIds($("addClientsPicker")) : [],
+          });
           $("addDialog").close();
           showCredentials("Compte créé", email, password);
           await refresh();

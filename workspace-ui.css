@@ -1272,3 +1272,37 @@ td.row-actions .view-btn { min-height: 1.9rem; padding: 0 0.6rem; font-size: 0.8
   .rc-team-table td { border: 0; padding: 0.25rem 0; }
   .rc-team-actions { text-align: left; }
 }
+
+/* Choix des clients d'un collaborateur */
+.rc-warn-inline { color: var(--rc-warn); font-weight: 600; }
+.rc-client-picker { display: grid; gap: 0.5rem; }
+.rc-picker-tools { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+.rc-picker-search {
+  flex: 1 1 12rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--rc-line-strong);
+  border-radius: var(--rc-radius-s);
+  font-size: 0.9rem;
+}
+.rc-picker-list {
+  max-height: 15rem;
+  overflow-y: auto;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-radius-s);
+}
+.rc-picker-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--rc-line);
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+.rc-picker-item:last-child { border-bottom: 0; }
+.rc-picker-item:hover { background: var(--rc-surface-2); }
+.rc-picker-item small { grid-column: 2; color: var(--rc-muted); font-size: 0.78rem; }
+.rc-picker-item:has(input:checked) { background: var(--rc-brand-wash); }
+.rc-picker-count { margin: 0; font-size: 0.84rem; color: var(--rc-muted); }
+.rc-team-dialog { max-width: 32rem; }

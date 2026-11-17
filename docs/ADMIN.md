@@ -82,3 +82,7 @@ supabase functions deploy cabinet-team --project-ref pbyoxfxngfutoiqjirkx
 ```
 
 Règles : le compte du responsable ne se modifie pas depuis cette page ; seul le responsable nomme ou gère un administrateur ; un administrateur gère les collaborateurs.
+
+### Clients attribués
+
+Un collaborateur (rôle `comptable`) n'accède qu'aux clients qui lui sont attribués (table `client_assignments`, migration `20261117190000_client_assignments.sql`). La restriction est appliquée par les règles RLS : clients, périodes, documents, fichiers Storage, imports, activité et fournisseurs. Le responsable et les administrateurs voient tous les clients et sont les seuls à pouvoir en créer.
