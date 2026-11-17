@@ -817,6 +817,10 @@
 
     async function openEditor({ invoiceId = null, clientId = null } = {}) {
       showError("editorError", "");
+      // Données à jour : la fiche client ou les réglages ont pu changer dans un autre onglet.
+      try {
+        [state.clients, state.settings] = await Promise.all([listBillingClients(state.cabinetId), loadBillingSettings(state.cabinetId)]);
+      } catch { /* on garde les données déjà chargées */ }
       $("edClient").innerHTML = '<option value="">Choisir un client…</option>'
         + state.clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
       $("edMethod").innerHTML = methodOptions("virement");
@@ -1149,6 +1153,13 @@
           openDetail(credit.id);
         } catch (err) { showError("cancelError", err.message); }
       });
+    });
+
+    // Retour sur l'onglet : on recharge si aucune fenêtre n'est ouverte.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible" || !state.cabinetId) return;
+      if (document.querySelector("dialog[open]")) return;
+      refresh();
     });
 
     // ---------- Démarrage ----------
