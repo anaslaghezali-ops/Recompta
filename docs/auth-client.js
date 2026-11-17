@@ -252,6 +252,8 @@ export async function getUserCabinetMembership() {
 
 export async function redirectAfterLogin(userId) {
   if (await isSuperAdmin(userId)) return "admin.html";
+  const session = await getSession();
+  if (session?.user?.app_metadata?.portal_client_id) return "portail.html";
   const membership = await getUserCabinetMembership();
   if (membership) return "dossiers.html";
   return "production.html";

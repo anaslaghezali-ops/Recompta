@@ -4,7 +4,7 @@ import {
   formatRelativeTime,
   periodToMmaaaa,
   STATUS_META,
-} from "./dossiers-client.js?v=dash2";
+} from "./dossiers-client.js?v=dash3";
 import {
   computeProgress,
   daysUntilDeadline,

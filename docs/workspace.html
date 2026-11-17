@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=modal-font1" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc5" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc6" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -113,6 +113,7 @@
         <nav class="rc-tabs ws-tabs" id="viewTabs" role="tablist" aria-label="Sections du dossier">
           <button type="button" class="active" data-tab="cockpit" role="tab">Production</button>
           <button type="button" data-tab="documents" role="tab">Documents</button>
+          <button type="button" data-tab="portal" role="tab" id="portalTabBtn">Portail client</button>
           <button type="button" data-tab="review" role="tab">Revue &amp; export</button>
           <button type="button" data-tab="suppliers" role="tab">Fournisseurs</button>
           <button type="button" data-tab="history" role="tab">Périodes</button>
@@ -422,6 +423,10 @@
           </section>
         </div>
 
+        <div id="portalView" hidden>
+          <div class="rc-portal" id="portalPanel"></div>
+        </div>
+
         <div id="historyView" hidden>
           <section class="rc-panel">
             <header class="rc-panel-head ws-history-header">
@@ -558,7 +563,7 @@
   </dialog>
 
   <script type="module">
-    import { signOut } from "./auth-client.js?v=auth9";
+    import { signOut } from "./auth-client.js?v=auth10";
     import {
       buildYearGrid,
       createDossier,
@@ -569,7 +574,7 @@
       MONTH_LABELS,
       requireCabinetSession,
       STATUS_META,
-    } from "./dossiers-client.js?v=dash2";
+    } from "./dossiers-client.js?v=dash3";
     import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
     import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist5";
     import {
@@ -703,6 +708,8 @@
     let reviewModulePromise = null;
     let bankMatchModulePromise = null;
     let suppliersModulePromise = null;
+    let portalController = null;
+    let cabinetDisplayName = "";
 
     function countLinesWithoutPaymentDate(lines) {
       return (lines || []).filter((line) => !String(line.date_paie || "").trim()).length;
@@ -1121,6 +1128,25 @@
           variant: "error",
         });
       }
+    }
+
+    async function ensurePortalController() {
+      if (portalController) return portalController;
+      const { createWorkspacePortal } = await import("./workspace-portal.js?v=portal2");
+      portalController = createWorkspacePortal({
+        mountEl: document.getElementById("portalPanel"),
+        tabButton: document.getElementById("portalTabBtn"),
+        getContext: () => ({
+          clientId: client?.id,
+          clientName: client?.name || "",
+          cabinetId,
+          cabinetName: cabinetDisplayName,
+          dossiers: client?.dossiers || [],
+          selectedDossierId,
+        }),
+        toast: showWorkspaceToast,
+      });
+      return portalController;
     }
 
     async function ensureSuppliersController() {
@@ -2132,6 +2158,11 @@
       document.getElementById("reviewView").hidden = tab !== "review";
       document.getElementById("suppliersView").hidden = tab !== "suppliers";
       document.getElementById("historyView").hidden = tab !== "history";
+      document.getElementById("portalView").hidden = tab !== "portal";
+      if (tab === "portal") {
+        const portal = await ensurePortalController();
+        await portal.load();
+      }
       if (tab === "history") {
         renderYearTabs();
         renderMonthGrid();
@@ -2768,11 +2799,13 @@
             billingLink.hidden = false;
           }
           bindSidebarMobile();
+          cabinetDisplayName = membership.cabinet.name;
           await refreshTopbarCredits();
           document.getElementById("signOutBtn")?.addEventListener("click", async () => {
             await signOut();
             window.location.href = "login.html";
           });
+          ensurePortalController().then((portal) => portal.refreshBadge()).catch(() => {});
 
           renderClientHeader();
           loadAnalysisApiSettings();

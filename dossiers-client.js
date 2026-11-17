@@ -2,7 +2,7 @@ import {
   getSession,
   getSupabase,
   isSuperAdmin,
-} from "./auth-client.js?v=auth9";
+} from "./auth-client.js?v=auth10";
 
 const MONTH_LABELS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -172,6 +172,11 @@ export async function requireCabinetSession() {
   }
   const membership = await getUserCabinet();
   if (!membership) {
+    // Compte d'un client du cabinet : son espace est le portail.
+    if (session.user.app_metadata?.portal_client_id) {
+      window.location.href = "portail.html";
+      return null;
+    }
     throw new Error("Aucun cabinet actif associé à ce compte.");
   }
   return { session, ...membership };

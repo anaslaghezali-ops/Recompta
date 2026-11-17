@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Votre espace documents</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="portal.css?v=portal1" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="pt">
+  <header class="pt-head">
+    <div class="pt-wrap">
+      <p class="pt-cabinet" id="ptCabinet">&nbsp;</p>
+      <h1 id="ptTitle">Votre espace documents</h1>
+      <p class="pt-sub" id="ptSub">Connexion…</p>
+    </div>
+  </header>
+
+  <main class="pt-wrap pt-main">
+    <section class="pt-state" id="ptState" role="status">
+      <div class="pt-spinner" aria-hidden="true"></div>
+      <p>Ouverture de votre espace…</p>
+    </section>
+
+    <div id="ptApp" hidden>
+      <section class="pt-section" id="ptRequestsSection" hidden>
+        <h2>Votre cabinet attend</h2>
+        <ul class="pt-requests" id="ptRequests"></ul>
+      </section>
+
+      <section class="pt-section">
+        <div class="pt-section-head">
+          <h2>Déposer des documents</h2>
+          <label class="pt-period">
+            <span>Mois concerné</span>
+            <select id="ptPeriod"></select>
+          </label>
+        </div>
+        <p class="pt-closed-note" id="ptClosedNote" hidden>Votre cabinet a clôturé ce mois. Vous pouvez encore déposer un document oublié : il sera signalé au cabinet.</p>
+        <div class="pt-tiles">
+          <button type="button" class="pt-tile" data-pick="invoice">
+            <i data-lucide="receipt"></i>
+            <strong>Factures d'achat</strong>
+            <span>Photos ou PDF, plusieurs à la fois</span>
+          </button>
+          <button type="button" class="pt-tile" data-pick="bank">
+            <i data-lucide="landmark"></i>
+            <strong>Relevé bancaire</strong>
+            <span>Le relevé du mois, en PDF de préférence</span>
+          </button>
+          <button type="button" class="pt-tile is-quiet" data-pick="other">
+            <i data-lucide="paperclip"></i>
+            <strong>Autre document</strong>
+            <span>Contrat, courrier, justificatif…</span>
+          </button>
+        </div>
+        <input type="file" id="ptFile" accept="application/pdf,image/*" multiple hidden />
+        <ul class="pt-queue" id="ptQueue" aria-live="polite"></ul>
+      </section>
+
+      <section class="pt-section">
+        <h2 id="ptSentTitle">Documents envoyés</h2>
+        <ul class="pt-sent" id="ptSent"></ul>
+      </section>
+
+      <footer class="pt-foot">
+        <p><i data-lucide="lock"></i> <span id="ptFootText">Vos documents sont transmis uniquement à votre cabinet comptable.</span></p>
+        <button type="button" class="pt-link" id="ptSignOut">Se déconnecter de cet appareil</button>
+      </footer>
+    </div>
+  </main>
+
+  <script type="module">
+    import { getSupabase, signOut } from "./auth-client.js?v=auth10";
+    import {
+      PORTAL_DOC_TYPES,
+      checkPortalFile,
+      ensurePeriod,
+      exchangeAccessToken,
+      listMyRequests,
+      listMyUploads,
+      loadPortalContext,
+      periodLabelCap,
+      uploadPortalFile,
+    } from "./portal-client.js?v=portal2";
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const icons = () => window.lucide?.createIcons?.();
+    const state = { ctx: null, requests: [], uploads: [], periodKey: null, pick: null };
+    const key = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
+    const fmtDate = (iso) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+    function showState(message, { error = false, html = "" } = {}) {
+      $("ptApp").hidden = true;
+      $("ptState").hidden = false;
+      $("ptState").className = `pt-state${error ? " is-error" : ""}`;
+      $("ptState").innerHTML = `${error ? '<i data-lucide="link-2-off"></i>' : '<div class="pt-spinner" aria-hidden="true"></div>'}<p>${esc(message)}</p>${html}`;
+      icons();
+    }
+
+    // ---------- Périodes proposées : celles du cabinet + les 4 derniers mois ----------
+    function periodOptions() {
+      const map = new Map();
+      for (const d of state.ctx.dossiers) map.set(key(d.period_year, d.period_month), { year: d.period_year, month: d.period_month, dossier: d });
+      const now = new Date();
+      for (let i = 0; i < 4; i += 1) {
+        const dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const k = key(dt.getFullYear(), dt.getMonth() + 1);
+        if (!map.has(k)) map.set(k, { year: dt.getFullYear(), month: dt.getMonth() + 1, dossier: null });
+      }
+      return [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 18);
+    }
+    const currentPeriod = () => periodOptions().find(([k]) => k === state.periodKey)?.[1];
+    const dossierById = (id) => state.ctx.dossiers.find((d) => d.id === id);
+
+    function defaultPeriodKey() {
+      const firstReq = state.requests.find((r) => r.status === "open");
+      const d = firstReq && dossierById(firstReq.dossier_id);
+      if (d) return key(d.period_year, d.period_month);
+      const prev = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+      return key(prev.getFullYear(), prev.getMonth() + 1);
+    }
+
+    // ---------- Rendu ----------
+    function render() {
+      const { client, cabinet } = state.ctx;
+      $("ptCabinet").textContent = cabinet?.name || "Votre cabinet comptable";
+      $("ptTitle").textContent = client.name;
+      $("ptSub").textContent = "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable.";
+      $("ptFootText").textContent = `Vos documents sont transmis uniquement à ${cabinet?.name || "votre cabinet comptable"}, par une connexion sécurisée.`;
+      document.title = `${client.name} — espace documents`;
+
+      // Pièces attendues
+      const open = state.requests.filter((r) => r.status === "open");
+      $("ptRequestsSection").hidden = !state.requests.length;
+      $("ptRequests").innerHTML = state.requests.map((r) => {
+        const d = dossierById(r.dossier_id);
+        const done = r.status === "received";
+        return `
+          <li class="${done ? "is-done" : ""}">
+            <i data-lucide="${done ? "check-circle-2" : (PORTAL_DOC_TYPES[r.doc_type]?.icon || "file")}"></i>
+            <div>
+              <strong>${esc(r.label)}</strong>
+              <span>${d ? esc(periodLabelCap(d.period_year, d.period_month)) : ""}${done ? " · reçu, merci" : ""}</span>
+              ${r.note ? `<small>${esc(r.note)}</small>` : ""}
+            </div>
+            <button type="button" class="pt-btn ${done ? "is-ghost" : ""}" data-request="${r.id}">${done ? "Ajouter" : "Envoyer"}</button>
+          </li>`;
+      }).join("");
+      $("ptRequestsSection").querySelector("h2").textContent = open.length
+        ? `Votre cabinet attend ${open.length} pièce${open.length > 1 ? "s" : ""}`
+        : "Pièces demandées : tout est reçu";
+
+      // Mois
+      const options = periodOptions();
+      if (!options.some(([k]) => k === state.periodKey)) state.periodKey = options[0]?.[0];
+      $("ptPeriod").innerHTML = options.map(([k, p]) => `<option value="${k}" ${k === state.periodKey ? "selected" : ""}>${esc(periodLabelCap(p.year, p.month))}${p.dossier?.status === "exported" ? " (clôturé)" : ""}</option>`).join("");
+      const period = currentPeriod();
+      $("ptClosedNote").hidden = period?.dossier?.status !== "exported";
+
+      // Envoyés pour ce mois
+      const sent = state.uploads.filter((u) => period?.dossier && u.dossier_id === period.dossier.id);
+      $("ptSentTitle").textContent = `Envoyés pour ${period ? periodLabelCap(period.year, period.month).toLowerCase() : "ce mois"}`;
+      $("ptSent").innerHTML = sent.length ? sent.map((u) => `
+        <li class="${u.status === "rejected" ? "is-rejected" : ""}">
+          <i data-lucide="${u.status === "rejected" ? "alert-triangle" : "check"}"></i>
+          <div>
+            <strong>${esc(u.original_filename)}</strong>
+            <span>${esc(PORTAL_DOC_TYPES[u.doc_type]?.short || "")} · ${fmtDate(u.created_at)}</span>
+            ${u.status === "rejected" ? `<em>À renvoyer : ${esc(u.reject_reason || "document à reprendre")}</em>` : ""}
+          </div>
+          ${u.status === "rejected" ? `<button type="button" class="pt-btn" data-resend="${u.doc_type}">Renvoyer</button>` : '<span class="pt-ok">Reçu</span>'}
+        </li>`).join("") : '<li class="pt-empty">Aucun document envoyé pour ce mois.</li>';
+      icons();
+    }
+
+    // ---------- Envoi ----------
+    function pickFiles(pick) {
+      state.pick = pick;
+      $("ptFile").value = "";
+      $("ptFile").click();
+    }
+
+    async function resolveDossier(pick) {
+      if (pick.dossierId) return pick.dossierId;
+      const period = currentPeriod();
+      if (period.dossier) return period.dossier.id;
+      const d = await ensurePeriod(period.year, period.month);
+      state.ctx.dossiers.push(d);
+      return d.id;
+    }
+
+    $("ptFile").addEventListener("change", async () => {
+      const files = [...$("ptFile").files];
+      const pick = state.pick;
+      if (!files.length || !pick) return;
+      let dossierId;
+      try {
+        dossierId = await resolveDossier(pick);
+      } catch (err) {
+        $("ptQueue").insertAdjacentHTML("afterbegin", `<li class="is-error"><i data-lucide="x-circle"></i><span>${esc(err.message)}</span></li>`);
+        icons();
+        return;
+      }
+      const items = files.map((file) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<div class="pt-spinner is-small" aria-hidden="true"></div><span>${esc(file.name)}</span><small>Envoi…</small>`;
+        $("ptQueue").prepend(li);
+        return { file, li };
+      });
+      let ok = 0;
+      for (const { file, li } of items) {
+        const problem = checkPortalFile(file);
+        try {
+          if (problem) throw new Error(problem);
+          await uploadPortalFile({ dossierId, docType: pick.docType, file, requestId: pick.requestId || null });
+          ok += 1;
+          li.className = "is-done";
+          li.innerHTML = `<i data-lucide="check-circle-2"></i><span>${esc(file.name)}</span><small>Envoyé</small>`;
+        } catch (err) {
+          li.className = "is-error";
+          li.innerHTML = `<i data-lucide="x-circle"></i><span>${esc(file.name)}</span><small>${esc(err.message)}</small>`;
+        }
+        icons();
+      }
+      if (ok) {
+        await refreshLists();
+        const d = dossierById(dossierId);
+        if (d) state.periodKey = key(d.period_year, d.period_month);
+        render();
+      }
+      setTimeout(() => { $("ptQueue").querySelectorAll("li.is-done").forEach((li) => li.remove()); }, 6000);
+    });
+
+    document.addEventListener("click", (event) => {
+      const tile = event.target.closest("[data-pick]");
+      if (tile) return pickFiles({ docType: tile.dataset.pick });
+      const req = event.target.closest("[data-request]");
+      if (req) {
+        const r = state.requests.find((x) => x.id === Number(req.dataset.request));
+        const docType = r.doc_type;
+        return pickFiles({ docType, requestId: r.id, dossierId: r.dossier_id });
+      }
+      const resend = event.target.closest("[data-resend]");
+      if (resend) return pickFiles({ docType: resend.dataset.resend });
+    });
+    $("ptPeriod").addEventListener("change", () => { state.periodKey = $("ptPeriod").value; render(); });
+    $("ptSignOut").addEventListener("click", async () => {
+      await signOut();
+      showState("Vous êtes déconnecté. Utilisez le lien envoyé par votre cabinet pour revenir.", { error: true });
+    });
+
+    async function refreshLists() {
+      [state.requests, state.uploads] = await Promise.all([listMyRequests(), listMyUploads()]);
+    }
+
+    // ---------- Démarrage ----------
+    async function start() {
+      const match = window.location.hash.match(/acces=([A-Za-z0-9_-]+)/);
+      if (match) {
+        history.replaceState(null, "", window.location.pathname);
+        try {
+          await exchangeAccessToken(match[1]);
+        } catch (err) {
+          const { data } = await getSupabase().auth.getSession();
+          if (!data?.session) return showState(err.message, { error: true });
+        }
+      }
+      const { data } = await getSupabase().auth.getSession();
+      if (!data?.session) {
+        return showState("Pour ouvrir votre espace, utilisez le lien personnel envoyé par votre cabinet comptable.", { error: true });
+      }
+      const ctx = await loadPortalContext().catch(() => null);
+      if (!ctx) {
+        if (!data.session.user.app_metadata?.portal_client_id) {
+          return showState("Cette page est réservée aux clients des cabinets.", { error: true, html: '<p><a class="pt-link" href="dossiers.html">Aller à mon espace cabinet</a></p>' });
+        }
+        return showState("Votre accès a été désactivé. Contactez votre cabinet comptable pour obtenir un nouveau lien.", { error: true });
+      }
+      state.ctx = ctx;
+      await refreshLists();
+      state.periodKey = defaultPeriodKey();
+      $("ptState").hidden = true;
+      $("ptApp").hidden = false;
+      render();
+    }
+
+    start().catch((err) => showState(err.message || "Une erreur est survenue. Réessayez dans un instant.", { error: true }));
+  </script>
+</body>
+</html>
