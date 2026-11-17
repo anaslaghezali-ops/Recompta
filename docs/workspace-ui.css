@@ -1306,3 +1306,14 @@ td.row-actions .view-btn { min-height: 1.9rem; padding: 0 0.6rem; font-size: 0.8
 .rc-picker-item:has(input:checked) { background: var(--rc-brand-wash); }
 .rc-picker-count { margin: 0; font-size: 0.84rem; color: var(--rc-muted); }
 .rc-team-dialog { max-width: 32rem; }
+
+/* Fiche client modifiable */
+.rc-portfolio-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.25rem; }
+.rc-icon-btn { padding: 0.3rem; min-width: 2rem; justify-content: center; }
+.rc-icon-btn svg { width: 16px; height: 16px; }
+.rc-client-sub #editClientBtn { font-size: 0.86rem; }
+.rc-client-billing { display: grid; gap: 0.75rem; padding-top: 0.85rem; border-top: 1px solid var(--rc-line); }
+.rc-client-billing[hidden] { display: none; }
+.rc-client-billing-title { margin: 0; font-size: 0.92rem; font-weight: 600; color: var(--rc-ink); }
+.rc-client-billing .rc-field-row > .rc-field { flex: 1; min-width: 0; }
+.rc-client-sub #clientBillingLink { font-size: 0.86rem; }
