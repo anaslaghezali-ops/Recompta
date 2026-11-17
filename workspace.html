@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=modal-font1" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc3" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc4" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -29,6 +29,8 @@
             <h1 id="clientTitle">—</h1>
             <div class="rc-client-sub">
               <span class="dash-client-ice" id="clientIceLine">ICE —</span>
+              <button type="button" class="rc-link" id="editClientBtn" hidden>Modifier la fiche</button>
+              <a class="rc-link" id="clientBillingLink" href="facturation.html" hidden>Factures du client</a>
               <div class="ws-client-meta" id="clientMeta"></div>
             </div>
           </div>
@@ -612,7 +614,7 @@
       renderBadge,
       renderPriorityBadge,
       sidebarHtml,
-    } from "./dashboard-ui.js?v=team1";
+    } from "./dashboard-ui.js?v=bill1";
 
     const params = new URLSearchParams(window.location.search);
     const clientId = Number(params.get("client"));
@@ -2744,7 +2746,27 @@
           sidebarMount.innerHTML = sidebarHtml({
             cabinetName: membership.cabinet.name,
             active: "portfolio",
+            role: membership.role,
           });
+          const editClientBtn = document.getElementById("editClientBtn");
+          if (editClientBtn && ["owner", "admin"].includes(membership.role)) {
+            editClientBtn.hidden = false;
+            editClientBtn.addEventListener("click", async () => {
+              const { openClientEditor } = await import("./client-edit.js?v=edit1");
+              const saved = await openClientEditor(clientId).catch((err) => { window.alert(err.message); return null; });
+              if (saved) {
+                client = { ...client, name: saved.name, ice: saved.ice };
+                document.getElementById("clientTitle").textContent = saved.name;
+                document.getElementById("clientIceLine").textContent = `ICE ${saved.ice}`;
+                document.title = `Recompta — ${saved.name}`;
+              }
+            });
+          }
+          const billingLink = document.getElementById("clientBillingLink");
+          if (billingLink && ["owner", "admin"].includes(membership.role)) {
+            billingLink.href = `facturation.html?client=${clientId}`;
+            billingLink.hidden = false;
+          }
           bindSidebarMobile();
           await refreshTopbarCredits();
           document.getElementById("signOutBtn")?.addEventListener("click", async () => {

@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facturation — Recompta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs6" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc4" />
+  <link rel="stylesheet" href="billing.css?v=bill1" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="rc-app">
+  <div class="dash-app" id="dashApp">
+    <div id="sidebarMount"></div>
+    <div class="dash-main">
+      <header class="dash-topbar rc-topbar">
+        <div class="dash-topbar-left">
+          <button type="button" class="dash-mobile-toggle dash-btn dash-btn-ghost" id="mobileNavToggle" aria-label="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <h1>Facturation</h1>
+            <p class="rc-page-sub" id="billSubtitle">Chargement…</p>
+          </div>
+        </div>
+        <div class="dash-topbar-actions">
+          <button type="button" class="dash-btn dash-btn-primary" id="newInvoiceBtn" hidden>
+            <i data-lucide="file-plus-2"></i> Nouvelle facture
+          </button>
+        </div>
+      </header>
+
+      <main class="dash-content rc-content rc-bill">
+        <div class="adm-note rc-team-note" id="billNote" role="status" hidden></div>
+
+        <div class="rc-bill-setup" id="setupBanner" hidden>
+          <i data-lucide="building-2"></i>
+          <div>
+            <strong>Complétez les informations légales du cabinet</strong>
+            <p id="setupMissing">—</p>
+          </div>
+          <button type="button" class="dash-btn dash-btn-sm" data-goto="settings">Compléter</button>
+        </div>
+
+        <section class="rc-bill-facts" id="facts" aria-label="Synthèse" hidden>
+          <button type="button" class="rc-bill-fact" data-quick="open">
+            <span>À encaisser</span>
+            <strong id="factOpen">—</strong>
+            <small id="factOpenSub">—</small>
+          </button>
+          <button type="button" class="rc-bill-fact is-stop" data-quick="late">
+            <span>En retard</span>
+            <strong id="factLate">—</strong>
+            <small id="factLateSub">—</small>
+          </button>
+          <button type="button" class="rc-bill-fact is-ok" data-quick="paid">
+            <span>Encaissé ce mois</span>
+            <strong id="factPaid">—</strong>
+            <small id="factPaidSub">—</small>
+          </button>
+          <button type="button" class="rc-bill-fact" data-quick="draft">
+            <span>Brouillons</span>
+            <strong id="factDraft">—</strong>
+            <small id="factDraftSub">—</small>
+          </button>
+        </section>
+
+        <nav class="rc-tabs ws-tabs" id="billTabs" role="tablist" aria-label="Sections de la facturation" hidden>
+          <button type="button" class="active" data-tab="invoices" role="tab">Factures</button>
+          <button type="button" data-tab="clients" role="tab">Clients</button>
+          <button type="button" data-tab="settings" role="tab">Réglages</button>
+        </nav>
+
+        <!-- Factures -->
+        <section class="rc-panel" data-pane="invoices" hidden>
+          <div class="rc-bill-toolbar">
+            <div class="rc-bill-chips" id="statusChips" role="group" aria-label="Filtrer par statut">
+              <button type="button" class="active" data-status="all">Toutes</button>
+              <button type="button" data-status="open">À encaisser</button>
+              <button type="button" data-status="late">En retard</button>
+              <button type="button" data-status="draft">Brouillons</button>
+              <button type="button" data-status="paid">Payées</button>
+              <button type="button" data-status="closed">Annulées et avoirs</button>
+            </div>
+            <div class="rc-bill-filters">
+              <select id="clientFilter" aria-label="Filtrer par client"><option value="">Tous les clients</option></select>
+              <input type="search" id="invoiceSearch" placeholder="Numéro ou client" aria-label="Rechercher une facture" />
+            </div>
+          </div>
+          <div class="rc-team-table-wrap">
+            <table class="rc-team-table rc-bill-table">
+              <thead>
+                <tr>
+                  <th scope="col">Numéro</th>
+                  <th scope="col">Client</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Échéance</th>
+                  <th scope="col" class="num">Montant TTC</th>
+                  <th scope="col" class="num">Reste dû</th>
+                  <th scope="col">Statut</th>
+                </tr>
+              </thead>
+              <tbody id="invoiceRows"></tbody>
+            </table>
+          </div>
+          <p class="rc-bill-foot" id="invoiceFoot"></p>
+        </section>
+
+        <!-- Clients -->
+        <section class="rc-panel" data-pane="clients" hidden>
+          <header class="rc-panel-head">
+            <div>
+              <h2>Qui vous doit quoi</h2>
+              <p>Montants restant dus par client, classés par ancienneté du retard. Les coordonnées servent à remplir les factures.</p>
+            </div>
+          </header>
+          <div class="rc-team-table-wrap">
+            <table class="rc-team-table rc-bill-table">
+              <thead>
+                <tr>
+                  <th scope="col">Client</th>
+                  <th scope="col" class="num">Reste dû</th>
+                  <th scope="col" class="num">Non échu</th>
+                  <th scope="col" class="num">Retard ≤ 30 j</th>
+                  <th scope="col" class="num">31 à 60 j</th>
+                  <th scope="col" class="num">Plus de 60 j</th>
+                  <th scope="col" class="rc-team-actions-col"><span class="rc-sr">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="clientRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Réglages -->
+        <div class="rc-bill-settings" data-pane="settings" hidden>
+          <section class="rc-panel">
+            <h2 class="rc-section-title">Informations légales du cabinet</h2>
+            <p class="rc-muted rc-bill-intro">Ces mentions figurent sur chaque facture (article 145 du CGI). Elles sont figées sur la facture au moment de son émission.</p>
+            <form class="rc-form rc-bill-grid" id="settingsForm" novalidate>
+              <label class="rc-field span-2"><span>Raison sociale *</span><input type="text" name="legal_name" autocomplete="organization" /></label>
+              <label class="rc-field"><span>Forme juridique</span><input type="text" name="legal_form" placeholder="SARL, SARL AU…" /></label>
+              <label class="rc-field"><span>Capital social</span><input type="text" name="capital" placeholder="100 000 DH" /></label>
+              <label class="rc-field span-2"><span>Adresse du siège *</span><input type="text" name="address" autocomplete="street-address" /></label>
+              <label class="rc-field"><span>Ville</span><input type="text" name="city" /></label>
+              <label class="rc-field"><span>Téléphone</span><input type="tel" name="phone" /></label>
+              <label class="rc-field"><span>ICE *</span><input type="text" name="ice" inputmode="numeric" maxlength="15" placeholder="15 chiffres" /></label>
+              <label class="rc-field"><span>Identifiant fiscal (IF) *</span><input type="text" name="if_number" inputmode="numeric" /></label>
+              <label class="rc-field"><span>Taxe professionnelle</span><input type="text" name="tp_number" inputmode="numeric" /></label>
+              <label class="rc-field"><span>Registre de commerce</span><span class="rc-field-row"><input type="text" name="rc_number" placeholder="Numéro" /><input type="text" name="rc_city" placeholder="Ville du RC" /></span></label>
+              <label class="rc-field span-2"><span>Email de facturation</span><input type="email" name="email" autocomplete="email" /></label>
+
+              <h3 class="rc-bill-sub span-2">Paiement</h3>
+              <label class="rc-field"><span>Banque</span><input type="text" name="bank_name" /></label>
+              <label class="rc-field"><span>RIB</span><input type="text" name="rib" inputmode="numeric" placeholder="24 chiffres" /></label>
+              <label class="rc-field"><span>Délai de paiement par défaut</span>
+                <select name="default_payment_days">
+                  <option value="0">À réception</option>
+                  <option value="15">15 jours</option>
+                  <option value="30">30 jours</option>
+                  <option value="45">45 jours</option>
+                  <option value="60">60 jours (maximum légal)</option>
+                </select>
+                <small>La loi 69-21 plafonne le délai à 60 jours sauf accord sectoriel.</small></label>
+              <label class="rc-field"><span>TVA par défaut</span>
+                <select name="default_vat_rate">
+                  <option value="20">20 %</option><option value="14">14 %</option><option value="10">10 %</option><option value="7">7 %</option><option value="0">Exonéré (0 %)</option>
+                </select></label>
+
+              <h3 class="rc-bill-sub span-2">Numérotation et pied de page</h3>
+              <label class="rc-field"><span>Préfixe des factures</span><input type="text" name="invoice_prefix" maxlength="8" /><small id="prefixPreview">—</small></label>
+              <label class="rc-field"><span>Préfixe des avoirs</span><input type="text" name="credit_prefix" maxlength="8" /></label>
+              <label class="rc-field span-2"><span>Mention en pied de facture</span>
+                <textarea name="footer_note" rows="2" placeholder="Ex. : Tout retard de paiement entraîne l'application des pénalités prévues par la loi 69-21."></textarea></label>
+
+              <p class="rc-form-error span-2" id="settingsError" hidden></p>
+              <div class="span-2"><button type="submit" class="dash-btn dash-btn-primary" id="settingsSaveBtn">Enregistrer les informations</button></div>
+            </form>
+          </section>
+
+          <section class="rc-panel">
+            <h2 class="rc-section-title">Catalogue de prestations</h2>
+            <p class="rc-muted rc-bill-intro">Vos prestations habituelles, à ajouter en un clic sur une facture.</p>
+            <ul class="rc-bill-catalog" id="catalogList"></ul>
+            <form class="rc-bill-catalog-add" id="serviceForm" novalidate>
+              <label class="rc-field"><span>Prestation</span><input type="text" id="serviceLabel" placeholder="Tenue comptable mensuelle" /></label>
+              <label class="rc-field"><span>Prix HT</span><input type="number" id="servicePrice" min="0" step="0.01" /></label>
+              <label class="rc-field"><span>TVA</span>
+                <select id="serviceVat"><option value="20">20 %</option><option value="14">14 %</option><option value="10">10 %</option><option value="7">7 %</option><option value="0">0 %</option></select></label>
+              <button type="submit" class="dash-btn" id="serviceAddBtn"><i data-lucide="plus"></i> Ajouter</button>
+            </form>
+            <p class="rc-form-error" id="serviceError" hidden></p>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Éditeur de facture -->
+  <dialog id="editorDialog" class="dash-modal rc-bill-editor" aria-labelledby="editorTitle">
+    <form class="dash-modal-inner rc-form" id="editorForm" novalidate>
+      <header class="rc-bill-editor-head">
+        <h3 id="editorTitle">Nouvelle facture</h3>
+        <button type="button" class="dash-btn dash-btn-ghost dash-btn-sm" id="editorCloseBtn" aria-label="Fermer"><i data-lucide="x"></i></button>
+      </header>
+      <div class="rc-bill-editor-meta">
+        <label class="rc-field span-2"><span>Client</span><select id="edClient" required></select>
+          <small id="edClientHint"></small></label>
+        <label class="rc-field"><span>Date de facture</span><input type="date" id="edIssue" required /></label>
+        <label class="rc-field"><span>Échéance</span><input type="date" id="edDue" /></label>
+        <label class="rc-field"><span>Mode de paiement</span><select id="edMethod"></select></label>
+      </div>
+
+      <div class="rc-bill-lines-wrap">
+        <table class="rc-bill-lines">
+          <thead>
+            <tr>
+              <th scope="col">Désignation</th>
+              <th scope="col" class="num">Qté</th>
+              <th scope="col" class="num">Prix unitaire HT</th>
+              <th scope="col">TVA</th>
+              <th scope="col" class="num">Total HT</th>
+              <th scope="col"><span class="rc-sr">Supprimer</span></th>
+            </tr>
+          </thead>
+          <tbody id="edLines"></tbody>
+        </table>
+      </div>
+      <div class="rc-bill-lines-add">
+        <button type="button" class="dash-btn dash-btn-sm" id="edAddLine"><i data-lucide="plus"></i> Ajouter une ligne</button>
+        <select id="edCatalog" aria-label="Ajouter une prestation du catalogue"><option value="">Ajouter depuis le catalogue…</option></select>
+      </div>
+
+      <div class="rc-bill-editor-foot">
+        <label class="rc-field"><span>Note sur la facture</span><textarea id="edNotes" rows="3" placeholder="Période concernée, référence de la lettre de mission…"></textarea></label>
+        <dl class="rc-bill-totals" id="edTotals"></dl>
+      </div>
+
+      <p class="rc-form-error" id="editorError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="edCancelBtn">Annuler</button>
+        <button type="button" class="dash-btn" id="edSaveBtn">Enregistrer le brouillon</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="edIssueBtn">Émettre la facture</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Détail d'une facture -->
+  <dialog id="detailDialog" class="dash-modal rc-bill-detail" aria-labelledby="detailTitle">
+    <div class="dash-modal-inner">
+      <header class="rc-bill-editor-head">
+        <div>
+          <h3 id="detailTitle">—</h3>
+          <p class="rc-muted" id="detailSub">—</p>
+        </div>
+        <button type="button" class="dash-btn dash-btn-ghost dash-btn-sm" id="detailCloseBtn" aria-label="Fermer"><i data-lucide="x"></i></button>
+      </header>
+      <div id="detailBody"></div>
+      <div class="rc-bill-detail-actions" id="detailActions"></div>
+    </div>
+  </dialog>
+
+  <!-- Paiement -->
+  <dialog id="paymentDialog" class="dash-modal rc-team-dialog" aria-labelledby="paymentTitle">
+    <form class="dash-modal-inner rc-form" id="paymentForm" novalidate>
+      <h3 id="paymentTitle">Enregistrer un paiement</h3>
+      <p class="rc-muted" id="paymentIntro">—</p>
+      <label class="rc-field"><span>Montant reçu</span><input type="number" id="payAmount" min="0.01" step="0.01" required /></label>
+      <label class="rc-field"><span>Date de réception</span><input type="date" id="payDate" required /></label>
+      <label class="rc-field"><span>Mode</span><select id="payMethod"></select></label>
+      <label class="rc-field"><span>Référence</span><input type="text" id="payRef" placeholder="N° de chèque, référence du virement…" /></label>
+      <p class="rc-form-error" id="paymentError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="payCancelBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="paySubmitBtn">Enregistrer le paiement</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Annulation par avoir -->
+  <dialog id="cancelDialog" class="dash-modal rc-team-dialog" aria-labelledby="cancelTitle">
+    <form class="dash-modal-inner rc-form" id="cancelForm" novalidate>
+      <h3 id="cancelTitle">Annuler la facture</h3>
+      <p class="rc-muted" id="cancelIntro">Une facture émise ne peut pas être supprimée. Recompta crée un avoir du même montant qui l'annule. Vous pourrez ensuite émettre une facture corrigée.</p>
+      <label class="rc-field"><span>Motif de l'annulation</span><input type="text" id="cancelReason" placeholder="Erreur de montant, prestation non réalisée…" required /></label>
+      <p class="rc-form-error" id="cancelError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="cancelCancelBtn">Retour</button>
+        <button type="submit" class="dash-btn danger" id="cancelSubmitBtn">Créer l'avoir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Coordonnées du client -->
+  <dialog id="clientDialog" class="dash-modal rc-team-dialog" aria-labelledby="clientTitle">
+    <form class="dash-modal-inner rc-form" id="clientForm" novalidate>
+      <h3 id="clientTitle">Coordonnées de facturation</h3>
+      <p class="rc-muted" id="clientIntro">—</p>
+      <label class="rc-field"><span>Adresse</span><input type="text" id="clAddress" autocomplete="off" /></label>
+      <label class="rc-field"><span>Ville</span><input type="text" id="clCity" autocomplete="off" /></label>
+      <label class="rc-field"><span>Identifiant fiscal (IF)</span><input type="text" id="clIf" inputmode="numeric" /></label>
+      <label class="rc-field"><span>Email de facturation</span><input type="email" id="clEmail" autocomplete="off" /></label>
+      <label class="rc-field"><span>Téléphone</span><input type="tel" id="clPhone" autocomplete="off" /></label>
+      <p class="rc-form-error" id="clientError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="clCancelBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="clSubmitBtn">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirmation -->
+  <dialog id="confirmDialog" class="dash-modal rc-team-dialog" aria-labelledby="confirmTitle">
+    <div class="dash-modal-inner">
+      <h3 id="confirmTitle">—</h3>
+      <p class="rc-muted" id="confirmText">—</p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="confirmCancelBtn">Annuler</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="confirmOkBtn">Confirmer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="rc-toasts" id="toasts" aria-live="polite" popover="manual"></div>
+
+  <script type="module">
+    import { signOut } from "./auth-client.js?v=auth9";
+    import { requireCabinetSession } from "./dossiers-client.js?v=dash2";
+    import { bindSidebarMobile, escapeHtml, initLucide, sidebarHtml } from "./dashboard-ui.js?v=bill1";
+    import {
+      PAYMENT_METHODS,
+      addPayment,
+      amountInWords,
+      cancelInvoice,
+      computeTotals,
+      deleteDraft,
+      deletePayment,
+      deleteService,
+      formatDate,
+      formatMAD,
+      issueInvoice,
+      listBillingClients,
+      listInvoices,
+      listServices,
+      loadBillingSettings,
+      loadInvoice,
+      markInvoiceSent,
+      missingLegalFields,
+      receivablesByClient,
+      round2,
+      saveBillingSettings,
+      saveClientBillingInfo,
+      saveDraft,
+      saveService,
+      todayIso,
+    } from "./billing-client.js?v=bill1";
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (v) => escapeHtml(v ?? "");
+    const state = {
+      cabinetId: null,
+      cabinetName: "",
+      settings: null,
+      clients: [],
+      services: [],
+      invoices: [],
+      filter: { status: "all", client: "", q: "" },
+      editing: null,
+      detail: null,
+    };
+    const VAT_RATES = [20, 14, 10, 7, 0];
+    const methodOptions = (selected) => Object.entries(PAYMENT_METHODS)
+      .map(([k, label]) => `<option value="${k}" ${k === selected ? "selected" : ""}>${label}</option>`).join("");
+    const clientById = (id) => state.clients.find((c) => c.id === Number(id));
+    const addDays = (iso, days) => {
+      const d = new Date(`${iso}T00:00:00`);
+      d.setDate(d.getDate() + Number(days || 0));
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+
+    // ---------- Utilitaires d'interface ----------
+    function toast(message, isError = false) {
+      const box = $("toasts");
+      const el = document.createElement("div");
+      el.className = `rc-toast${isError ? " is-error" : ""}`;
+      el.textContent = message;
+      box.appendChild(el);
+      if (box.showPopover) {
+        if (box.matches(":popover-open")) box.hidePopover();
+        box.showPopover();
+      }
+      setTimeout(() => {
+        el.remove();
+        if (!box.children.length && box.matches?.(":popover-open")) box.hidePopover();
+      }, isError ? 7000 : 4000);
+    }
+    function showError(id, message) {
+      const el = $(id);
+      el.hidden = !message;
+      el.textContent = message || "";
+    }
+    async function busy(button, fn) {
+      const label = button.innerHTML;
+      button.disabled = true;
+      try { return await fn(); } finally { button.disabled = false; button.innerHTML = label; initLucide(); }
+    }
+    function confirmAction({ title, text, okLabel, danger = false }) {
+      $("confirmTitle").textContent = title;
+      $("confirmText").textContent = text;
+      $("confirmOkBtn").textContent = okLabel;
+      $("confirmOkBtn").className = `dash-btn ${danger ? "danger" : "dash-btn-primary"}`;
+      $("confirmDialog").showModal();
+      return new Promise((resolve) => {
+        const done = (v) => { $("confirmDialog").close(); resolve(v); };
+        $("confirmOkBtn").onclick = () => done(true);
+        $("confirmCancelBtn").onclick = () => done(false);
+        $("confirmDialog").oncancel = () => done(false);
+      });
+    }
+    const badge = (st) => `<span class="rc-bill-status is-${st.tone}">${esc(st.label)}</span>`;
+
+    // ---------- Chargement ----------
+    async function refresh() {
+      try {
+        const [settings, clients, services, invoices] = await Promise.all([
+          loadBillingSettings(state.cabinetId),
+          listBillingClients(state.cabinetId),
+          listServices(state.cabinetId),
+          listInvoices(state.cabinetId),
+        ]);
+        Object.assign(state, { settings, clients, services, invoices });
+        $("billNote").hidden = true;
+        render();
+      } catch (err) {
+        $("billNote").hidden = false;
+        $("billNote").textContent = err.message;
+      }
+    }
+
+    function render() {
+      ["facts", "billTabs"].forEach((id) => { $(id).hidden = false; });
+      $("newInvoiceBtn").hidden = false;
+      const missing = missingLegalFields(state.settings);
+      $("setupBanner").hidden = !missing.length;
+      $("setupMissing").textContent = missing.length
+        ? `Il manque : ${missing.join(", ")}. Vous pouvez préparer des brouillons, mais pas émettre de facture tant que la raison sociale, l'adresse, l'ICE et l'IF ne sont pas renseignés.`
+        : "";
+      renderFacts();
+      renderClientFilter();
+      renderInvoices();
+      renderClients();
+      renderSettings();
+      renderCatalog();
+      initLucide();
+    }
+
+    function renderFacts() {
+      const inv = state.invoices.filter((i) => i.kind === "invoice");
+      const open = inv.filter((i) => i.status === "issued" && i.state.remaining > 0);
+      const late = open.filter((i) => i.state.key === "late");
+      const drafts = inv.filter((i) => i.status === "draft");
+      const month = todayIso().slice(0, 7);
+      const paidPayments = inv.flatMap((i) => i.payments).filter((p) => String(p.paid_on).startsWith(month));
+      const sum = (arr, f) => round2(arr.reduce((s, x) => s + Number(f(x) || 0), 0));
+      const n = (k, one, many) => `${k} ${k > 1 ? many : one}`;
+      $("factOpen").textContent = formatMAD(sum(open, (i) => i.state.remaining));
+      $("factOpenSub").textContent = n(open.length, "facture", "factures");
+      $("factLate").textContent = formatMAD(sum(late, (i) => i.state.remaining));
+      $("factLateSub").textContent = late.length ? n(late.length, "facture échue", "factures échues") : "Aucun retard";
+      $("factPaid").textContent = formatMAD(sum(paidPayments, (p) => p.amount));
+      $("factPaidSub").textContent = n(paidPayments.length, "paiement", "paiements");
+      $("factDraft").textContent = String(drafts.length);
+      $("factDraftSub").textContent = drafts.length ? `${formatMAD(sum(drafts, (i) => i.total_ttc))} à émettre` : "Rien en attente";
+    }
+
+    function renderClientFilter() {
+      const sel = $("clientFilter");
+      const current = state.filter.client;
+      sel.innerHTML = '<option value="">Tous les clients</option>'
+        + state.clients.map((c) => `<option value="${c.id}" ${String(c.id) === current ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+    }
+
+    function matchesStatus(i, status) {
+      switch (status) {
+        case "open": return i.kind === "invoice" && i.status === "issued" && i.state.remaining > 0;
+        case "late": return i.state.key === "late";
+        case "draft": return i.status === "draft";
+        case "paid": return i.state.key === "paid";
+        case "closed": return i.state.key === "cancelled" || i.kind === "credit_note";
+        default: return true;
+      }
+    }
+
+    function renderInvoices() {
+      const { status, client, q } = state.filter;
+      document.querySelectorAll("#statusChips button").forEach((b) => b.classList.toggle("active", b.dataset.status === status));
+      const query = q.trim().toLowerCase();
+      const rows = state.invoices.filter((i) => matchesStatus(i, status)
+        && (!client || String(i.client_id) === client)
+        && (!query || `${i.number || "brouillon"} ${clientById(i.client_id)?.name || ""}`.toLowerCase().includes(query)));
+
+      if (!state.invoices.length) {
+        $("invoiceRows").innerHTML = `<tr><td colspan="7" class="rc-bill-empty">
+          <strong>Aucune facture pour l'instant</strong>
+          <span>Créez votre première facture d'honoraires : elle reste en brouillon jusqu'à son émission.</span>
+          <button type="button" class="dash-btn dash-btn-primary" data-new-invoice>Nouvelle facture</button></td></tr>`;
+        $("invoiceFoot").textContent = "";
+        return;
+      }
+      if (!rows.length) {
+        $("invoiceRows").innerHTML = '<tr><td colspan="7" class="rc-bill-empty"><span>Aucune facture ne correspond à ces filtres.</span></td></tr>';
+        $("invoiceFoot").textContent = "";
+        return;
+      }
+      $("invoiceRows").innerHTML = rows.map((i) => {
+        const cli = clientById(i.client_id);
+        const due = i.status === "issued" && i.kind === "invoice" && i.state.remaining > 0 && i.state.daysToDue !== null
+          ? (i.state.daysToDue < 0 ? `<small class="is-stop">${-i.state.daysToDue} j de retard</small>`
+            : i.state.daysToDue === 0 ? '<small class="is-warn">aujourd\'hui</small>'
+              : `<small>dans ${i.state.daysToDue} j</small>`)
+          : "";
+        return `
+          <tr class="rc-bill-row" data-invoice="${i.id}" tabindex="0">
+            <td class="rc-bill-num">${i.number ? esc(i.number) : '<span class="rc-muted-inline">Brouillon</span>'}</td>
+            <td class="rc-bill-wrap">${esc(cli?.name || `Client ${i.client_id}`)}</td>
+            <td>${formatDate(i.issue_date)}</td>
+            <td>${i.kind === "invoice" && i.status !== "cancelled" ? formatDate(i.due_date) : "—"} ${due}</td>
+            <td class="num">${formatMAD(i.total_ttc)}</td>
+            <td class="num">${i.state.remaining > 0 ? `<strong>${formatMAD(i.state.remaining)}</strong>` : "—"}</td>
+            <td>${badge(i.state)}</td>
+          </tr>`;
+      }).join("");
+      const total = round2(rows.reduce((s, i) => s + Number(i.total_ttc || 0), 0));
+      const remaining = round2(rows.reduce((s, i) => s + i.state.remaining, 0));
+      $("invoiceFoot").textContent = `${rows.length} document${rows.length > 1 ? "s" : ""} · ${formatMAD(total)} TTC · ${formatMAD(remaining)} restant dû`;
+    }
+
+    function renderClients() {
+      const recv = receivablesByClient(state.invoices);
+      const byClient = Object.fromEntries(recv.map((r) => [r.client_id, r]));
+      const sorted = [...state.clients].sort((a, b) => {
+        const ra = byClient[a.id];
+        const rb = byClient[b.id];
+        return (rb?.late || 0) - (ra?.late || 0) || (rb?.total || 0) - (ra?.total || 0) || a.name.localeCompare(b.name, "fr");
+      });
+      if (!sorted.length) {
+        $("clientRows").innerHTML = '<tr><td colspan="7" class="rc-bill-empty"><span>Aucun client. Ajoutez vos clients depuis le portefeuille.</span></td></tr>';
+        return;
+      }
+      const cell = (v, tone = "") => `<td class="num ${tone}">${v > 0 ? formatMAD(v) : '<span class="rc-muted-inline">—</span>'}</td>`;
+      $("clientRows").innerHTML = sorted.map((c) => {
+        const r = byClient[c.id] || { total: 0, late: 0, b30: 0, b60: 0, b60p: 0 };
+        const notDue = round2(r.total - r.late);
+        const lateUnder30 = round2(r.b30 - notDue);
+        const complete = c.billing_address && c.ice;
+        return `
+          <tr>
+            <td class="rc-bill-wrap">
+              <div class="rc-member-name">${esc(c.name)}</div>
+              <div class="rc-member-email">${c.ice ? `ICE ${esc(c.ice)}` : '<span class="rc-warn-inline">ICE manquant</span>'}${complete ? "" : ' · <span class="rc-warn-inline">adresse manquante</span>'} · <button type="button" class="rc-link" data-client-coords="${c.id}">${complete ? "Coordonnées" : "Compléter"}</button></div>
+            </td>
+            <td class="num"><strong>${r.total > 0 ? formatMAD(r.total) : "—"}</strong></td>
+            ${cell(notDue)}
+            ${cell(lateUnder30, "is-warn")}
+            ${cell(r.b60, "is-stop")}
+            ${cell(r.b60p, "is-stop")}
+            <td class="rc-team-actions">
+              <button type="button" class="dash-btn dash-btn-sm" data-client-invoices="${c.id}">Factures</button>
+              <button type="button" class="dash-btn dash-btn-sm dash-btn-primary" data-client-new="${c.id}">Facturer</button>
+            </td>
+          </tr>`;
+      }).join("");
+    }
+
+    function renderSettings() {
+      const form = $("settingsForm");
+      const s = state.settings || {};
+      for (const el of form.elements) {
+        if (!el.name) continue;
+        const v = s[el.name];
+        el.value = v === null || v === undefined ? "" : String(Number.isFinite(Number(v)) && el.tagName === "SELECT" ? Number(v) : v);
+      }
+      if (!form.elements.invoice_prefix.value) form.elements.invoice_prefix.value = "FAC";
+      if (!form.elements.credit_prefix.value) form.elements.credit_prefix.value = "AV";
+      updatePrefixPreview();
+    }
+    function updatePrefixPreview() {
+      const form = $("settingsForm");
+      const p = form.elements.invoice_prefix.value.trim() || "FAC";
+      $("prefixPreview").textContent = `Prochaine facture : ${p}-${new Date().getFullYear()}-0001, puis 0002… sans trou.`;
+    }
+
+    function renderCatalog() {
+      const list = $("catalogList");
+      if (!state.services.length) {
+        list.innerHTML = '<li class="rc-bill-catalog-empty">Aucune prestation enregistrée.</li>';
+      } else {
+        list.innerHTML = state.services.map((s) => `
+          <li>
+            <span>${esc(s.label)}</span>
+            <span class="num">${formatMAD(s.unit_price_ht)} HT · TVA ${Number(s.vat_rate)} %</span>
+            <button type="button" class="rc-link" data-service-del="${s.id}">Retirer</button>
+          </li>`).join("");
+      }
+      $("edCatalog").innerHTML = '<option value="">Ajouter depuis le catalogue…</option>'
+        + state.services.filter((s) => s.is_active).map((s) => `<option value="${s.id}">${esc(s.label)} — ${formatMAD(s.unit_price_ht)} HT</option>`).join("");
+    }
+
+    // ---------- Onglets et filtres ----------
+    function showTab(name) {
+      document.querySelectorAll("#billTabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+      document.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== name; });
+    }
+    $("billTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
+    document.addEventListener("click", (e) => {
+      const goto = e.target.closest("[data-goto]");
+      if (goto) showTab(goto.dataset.goto);
+      if (e.target.closest("[data-new-invoice]")) openEditor();
+    });
+    $("statusChips").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-status]");
+      if (!b) return;
+      state.filter.status = b.dataset.status;
+      renderInvoices();
+    });
+    $("facts").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-quick]");
+      if (!b) return;
+      state.filter.status = b.dataset.quick === "paid" ? "paid" : b.dataset.quick;
+      showTab("invoices");
+      renderInvoices();
+    });
+    $("clientFilter").addEventListener("change", (e) => { state.filter.client = e.target.value; renderInvoices(); });
+    $("invoiceSearch").addEventListener("input", (e) => { state.filter.q = e.target.value; renderInvoices(); });
+
+    $("invoiceRows").addEventListener("click", (e) => {
+      const row = e.target.closest("tr[data-invoice]");
+      if (row) openDetail(Number(row.dataset.invoice));
+    });
+    $("invoiceRows").addEventListener("keydown", (e) => {
+      const row = e.target.closest("tr[data-invoice]");
+      if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDetail(Number(row.dataset.invoice)); }
+    });
+
+    $("clientRows").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.clientInvoices) {
+        state.filter = { status: "all", client: b.dataset.clientInvoices, q: "" };
+        $("invoiceSearch").value = "";
+        renderClientFilter();
+        showTab("invoices");
+        renderInvoices();
+      } else if (b.dataset.clientCoords) {
+        openClientDialog(Number(b.dataset.clientCoords));
+      } else if (b.dataset.clientNew) {
+        openEditor({ clientId: Number(b.dataset.clientNew) });
+      }
+    });
+
+    // ---------- Réglages ----------
+    $("settingsForm").elements.invoice_prefix.addEventListener("input", updatePrefixPreview);
+    $("settingsForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showError("settingsError", "");
+      const form = $("settingsForm");
+      const values = {};
+      for (const el of form.elements) {
+        if (!el.name) continue;
+        const v = el.value.trim();
+        values[el.name] = ["default_payment_days", "default_vat_rate"].includes(el.name) ? Number(v) : (v || null);
+      }
+      values.invoice_prefix = (values.invoice_prefix || "FAC").toUpperCase().replace(/[^A-Z0-9]/g, "") || "FAC";
+      values.credit_prefix = (values.credit_prefix || "AV").toUpperCase().replace(/[^A-Z0-9]/g, "") || "AV";
+      if (values.ice && !/^\d{15}$/.test(values.ice)) return showError("settingsError", "L'ICE doit contenir exactement 15 chiffres.");
+      if (values.rib && !/^\d{24}$/.test(values.rib.replace(/\s/g, ""))) return showError("settingsError", "Le RIB doit contenir 24 chiffres.");
+      if (values.rib) values.rib = values.rib.replace(/\s/g, "");
+      await busy($("settingsSaveBtn"), async () => {
+        try {
+          state.settings = await saveBillingSettings(state.cabinetId, values);
+          toast("Informations du cabinet enregistrées.");
+          render();
+        } catch (err) { showError("settingsError", err.message); }
+      });
+    });
+
+    $("serviceForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showError("serviceError", "");
+      const label = $("serviceLabel").value.trim();
+      const price = Number($("servicePrice").value);
+      if (!label) return showError("serviceError", "Indiquez le nom de la prestation.");
+      if (!(price >= 0)) return showError("serviceError", "Indiquez un prix HT valide.");
+      await busy($("serviceAddBtn"), async () => {
+        try {
+          await saveService(state.cabinetId, { label, unit_price_ht: price, vat_rate: Number($("serviceVat").value) });
+          $("serviceForm").reset();
+          state.services = await listServices(state.cabinetId);
+          renderCatalog();
+          toast(`« ${label} » ajouté au catalogue.`);
+        } catch (err) { showError("serviceError", err.message); }
+      });
+    });
+    $("catalogList").addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-service-del]");
+      if (!b) return;
+      try {
+        await deleteService(Number(b.dataset.serviceDel));
+        state.services = await listServices(state.cabinetId);
+        renderCatalog();
+      } catch (err) { toast(err.message, true); }
+    });
+
+    // ---------- Coordonnées client ----------
+    let clientTarget = null;
+    function openClientDialog(id) {
+      clientTarget = clientById(id);
+      if (!clientTarget) return;
+      $("clientIntro").textContent = `${clientTarget.name}${clientTarget.ice ? ` — ICE ${clientTarget.ice}` : " — ICE non renseigné (à compléter dans le portefeuille)"}`;
+      $("clAddress").value = clientTarget.billing_address || "";
+      $("clCity").value = clientTarget.billing_city || "";
+      $("clIf").value = clientTarget.billing_if || "";
+      $("clEmail").value = clientTarget.billing_email || "";
+      $("clPhone").value = clientTarget.billing_phone || "";
+      showError("clientError", "");
+      $("clientDialog").showModal();
+      $("clAddress").focus();
+    }
+    $("clCancelBtn").addEventListener("click", () => $("clientDialog").close());
+    $("clientForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = $("clEmail").value.trim();
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError("clientError", "Adresse email invalide.");
+      await busy($("clSubmitBtn"), async () => {
+        try {
+          await saveClientBillingInfo(clientTarget.id, {
+            billing_address: $("clAddress").value, billing_city: $("clCity").value, billing_if: $("clIf").value,
+            billing_email: email, billing_phone: $("clPhone").value,
+          });
+          $("clientDialog").close();
+          state.clients = await listBillingClients(state.cabinetId);
+          renderClients();
+          if ($("editorDialog").open) updateClientHint();
+          toast(`Coordonnées de ${clientTarget.name} enregistrées.`);
+        } catch (err) { showError("clientError", err.message); }
+      });
+    });
+
+    // ---------- Éditeur ----------
+    function lineRow(line = {}) {
+      const vat = line.vat_rate ?? state.settings?.default_vat_rate ?? 20;
+      return `
+        <tr>
+          <td><input type="text" class="ed-label" value="${esc(line.label || "")}" placeholder="Prestation" aria-label="Désignation" /></td>
+          <td class="num"><input type="number" class="ed-qty" value="${line.quantity ?? 1}" step="0.001" aria-label="Quantité" /></td>
+          <td class="num"><input type="number" class="ed-price" value="${line.unit_price_ht ?? ""}" step="0.01" min="0" placeholder="0,00" aria-label="Prix unitaire HT" /></td>
+          <td><select class="ed-vat" aria-label="Taux de TVA">${VAT_RATES.map((r) => `<option value="${r}" ${Number(vat) === r ? "selected" : ""}>${r} %</option>`).join("")}</select></td>
+          <td class="num ed-total">—</td>
+          <td><button type="button" class="dash-btn dash-btn-ghost dash-btn-sm ed-del" aria-label="Supprimer la ligne"><i data-lucide="trash-2"></i></button></td>
+        </tr>`;
+    }
+    function readLines() {
+      return [...$("edLines").querySelectorAll("tr")].map((tr) => ({
+        label: tr.querySelector(".ed-label").value,
+        quantity: Number(tr.querySelector(".ed-qty").value) || 0,
+        unit_price_ht: Number(tr.querySelector(".ed-price").value) || 0,
+        vat_rate: Number(tr.querySelector(".ed-vat").value),
+      }));
+    }
+    function updateTotals() {
+      const lines = readLines();
+      $("edLines").querySelectorAll("tr").forEach((tr, i) => {
+        tr.querySelector(".ed-total").textContent = formatMAD(round2(lines[i].quantity * lines[i].unit_price_ht));
+      });
+      const t = computeTotals(lines);
+      const rates = Object.entries(t.byRate).filter(([, v]) => v.ht !== 0).sort((a, b) => Number(b[0]) - Number(a[0]));
+      $("edTotals").innerHTML = `
+        <div><dt>Total HT</dt><dd>${formatMAD(t.ht)}</dd></div>
+        ${rates.map(([r, v]) => `<div><dt>TVA ${r} %</dt><dd>${formatMAD(v.vat)}</dd></div>`).join("")}
+        <div class="is-total"><dt>Total TTC</dt><dd>${formatMAD(t.ttc)}</dd></div>
+        <p>${t.ttc ? esc(amountInWords(t.ttc)) : ""}</p>`;
+    }
+    function updateClientHint() {
+      const c = clientById($("edClient").value);
+      const hint = $("edClientHint");
+      if (!c) { hint.innerHTML = ""; return; }
+      const miss = [];
+      if (!c.ice) miss.push("ICE");
+      if (!c.billing_address) miss.push("adresse");
+      hint.innerHTML = miss.length
+        ? `<span class="rc-warn-inline">À compléter pour ce client : ${miss.join(" et ")}.</span> <button type="button" class="rc-link" data-edit-client="${c.id}">Compléter</button>`
+        : `ICE ${esc(c.ice)} · ${esc([c.billing_address, c.billing_city].filter(Boolean).join(", "))}`;
+    }
+
+    async function openEditor({ invoiceId = null, clientId = null } = {}) {
+      showError("editorError", "");
+      $("edClient").innerHTML = '<option value="">Choisir un client…</option>'
+        + state.clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+      $("edMethod").innerHTML = methodOptions("virement");
+      let inv = null;
+      if (invoiceId) {
+        try { inv = await loadInvoice(invoiceId); } catch (err) { toast(err.message, true); return; }
+      }
+      state.editing = inv;
+      $("editorTitle").textContent = inv ? "Modifier le brouillon" : "Nouvelle facture";
+      $("edClient").value = String(inv?.client_id || clientId || state.filter.client || "");
+      $("edIssue").value = inv?.issue_date || todayIso();
+      $("edDue").value = inv?.due_date || addDays($("edIssue").value, state.settings?.default_payment_days ?? 30);
+      $("edDue").dataset.auto = inv?.due_date ? "" : "1";
+      $("edMethod").value = inv?.payment_method || "virement";
+      $("edNotes").value = inv?.notes || "";
+      const lines = inv?.lines?.length ? inv.lines : [{}];
+      $("edLines").innerHTML = lines.map(lineRow).join("");
+      updateTotals();
+      updateClientHint();
+      $("editorDialog").showModal();
+      initLucide();
+      (inv ? $("edLines").querySelector(".ed-label") : $("edClient")).focus();
+    }
+
+    $("newInvoiceBtn").addEventListener("click", () => openEditor());
+    $("edClient").addEventListener("change", updateClientHint);
+    $("edIssue").addEventListener("change", () => {
+      if ($("edDue").dataset.auto) $("edDue").value = addDays($("edIssue").value, state.settings?.default_payment_days ?? 30);
+    });
+    $("edDue").addEventListener("change", () => { $("edDue").dataset.auto = ""; });
+    $("edLines").addEventListener("input", updateTotals);
+    $("edLines").addEventListener("change", updateTotals);
+    $("edLines").addEventListener("click", (e) => {
+      if (!e.target.closest(".ed-del")) return;
+      const tr = e.target.closest("tr");
+      if ($("edLines").children.length > 1) tr.remove();
+      else tr.querySelectorAll("input").forEach((i) => { i.value = i.classList.contains("ed-qty") ? "1" : ""; });
+      updateTotals();
+    });
+    $("edAddLine").addEventListener("click", () => {
+      $("edLines").insertAdjacentHTML("beforeend", lineRow());
+      initLucide();
+      updateTotals();
+      $("edLines").lastElementChild.querySelector(".ed-label").focus();
+    });
+    $("edCatalog").addEventListener("change", (e) => {
+      const s = state.services.find((x) => x.id === Number(e.target.value));
+      e.target.value = "";
+      if (!s) return;
+      const empty = [...$("edLines").querySelectorAll("tr")].find((tr) => !tr.querySelector(".ed-label").value.trim() && !Number(tr.querySelector(".ed-price").value));
+      const html = lineRow({ label: s.label, quantity: 1, unit_price_ht: s.unit_price_ht, vat_rate: s.vat_rate });
+      if (empty) empty.outerHTML = html; else $("edLines").insertAdjacentHTML("beforeend", html);
+      initLucide();
+      updateTotals();
+    });
+    $("editorDialog").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-edit-client]");
+      if (b) openClientDialog(Number(b.dataset.editClient));
+    });
+    const closeEditor = () => $("editorDialog").close();
+    $("editorCloseBtn").addEventListener("click", closeEditor);
+    $("edCancelBtn").addEventListener("click", closeEditor);
+
+    function validateEditor({ forIssue }) {
+      const clientId = Number($("edClient").value);
+      if (!clientId) return "Choisissez le client à facturer.";
+      if (!$("edIssue").value) return "Indiquez la date de la facture.";
+      if ($("edDue").value && $("edDue").value < $("edIssue").value) return "L'échéance ne peut pas précéder la date de facture.";
+      const lines = readLines().filter((l) => l.label.trim() || l.unit_price_ht);
+      if (lines.some((l) => !l.label.trim())) return "Chaque ligne doit avoir une désignation.";
+      if (forIssue) {
+        if (!lines.length) return "Ajoutez au moins une prestation.";
+        if (computeTotals(lines).ttc <= 0) return "Le montant de la facture doit être positif.";
+      }
+      return "";
+    }
+    async function persistDraft() {
+      return saveDraft({
+        id: state.editing?.id || null,
+        cabinetId: state.cabinetId,
+        clientId: Number($("edClient").value),
+        issueDate: $("edIssue").value,
+        dueDate: $("edDue").value,
+        paymentMethod: $("edMethod").value,
+        notes: $("edNotes").value,
+        lines: readLines(),
+      });
+    }
+    $("edSaveBtn").addEventListener("click", async () => {
+      const err = validateEditor({ forIssue: false });
+      if (err) return showError("editorError", err);
+      showError("editorError", "");
+      await busy($("edSaveBtn"), async () => {
+        try {
+          const id = await persistDraft();
+          state.editing = { id };
+          closeEditor();
+          toast("Brouillon enregistré.");
+          await refresh();
+        } catch (e) { showError("editorError", e.message); }
+      });
+    });
+    $("editorForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = validateEditor({ forIssue: true });
+      if (err) return showError("editorError", err);
+      const missing = missingLegalFields(state.settings).filter((m) => ["raison sociale", "adresse du siège", "ICE", "IF"].includes(m));
+      if (missing.length) return showError("editorError", `Avant d'émettre, complétez dans Réglages : ${missing.join(", ")}. Vous pouvez enregistrer le brouillon en attendant.`);
+      showError("editorError", "");
+      const ttc = computeTotals(readLines()).ttc;
+      const c = clientById($("edClient").value);
+      $("editorDialog").close();
+      const ok = await confirmAction({
+        title: "Émettre la facture ?",
+        text: `${c?.name} — ${formatMAD(ttc)} TTC. La facture reçoit son numéro définitif et ne pourra plus être modifiée ; une erreur se corrige ensuite par un avoir.`,
+        okLabel: "Émettre",
+      });
+      if (!ok) { $("editorDialog").showModal(); return; }
+      try {
+        const id = await persistDraft();
+        state.editing = { id };
+        const issued = await issueInvoice(id);
+        toast(`Facture ${issued.number} émise.`);
+        await refresh();
+        openDetail(id);
+      } catch (e2) {
+        $("editorDialog").showModal();
+        showError("editorError", e2.message);
+      }
+    });
+
+    // ---------- Détail ----------
+    async function openDetail(id) {
+      let inv;
+      try { inv = await loadInvoice(id); } catch (err) { toast(err.message, true); return; }
+      state.detail = inv;
+      const c = clientById(inv.client_id);
+      const st = inv.state;
+      const kindLabel = inv.kind === "credit_note" ? "Avoir" : "Facture";
+      $("detailTitle").innerHTML = `${kindLabel} ${inv.number ? esc(inv.number) : "(brouillon)"} ${badge(st)}`;
+      $("detailSub").textContent = `${c?.name || ""} · ${formatDate(inv.issue_date)}${inv.kind === "invoice" && inv.due_date ? ` · échéance ${formatDate(inv.due_date)}` : ""}`;
+      const original = inv.credits_invoice_id ? state.invoices.find((x) => x.id === inv.credits_invoice_id) : null;
+      const creditFor = inv.status === "cancelled" ? state.invoices.find((x) => x.credits_invoice_id === inv.id) : null;
+      const t = computeTotals(inv.lines);
+      $("detailBody").innerHTML = `
+        ${original ? `<p class="rc-bill-callout">Annule la facture <button type="button" class="rc-link" data-open-invoice="${original.id}">${esc(original.number)}</button>${inv.reason ? ` — motif : ${esc(inv.reason)}` : ""}</p>` : ""}
+        ${creditFor ? `<p class="rc-bill-callout">Annulée par l'avoir <button type="button" class="rc-link" data-open-invoice="${creditFor.id}">${esc(creditFor.number)}</button>${creditFor.reason ? ` — motif : ${esc(creditFor.reason)}` : ""}</p>` : ""}
+        <table class="rc-bill-mini">
+          <thead><tr><th>Désignation</th><th class="num">Qté</th><th class="num">PU HT</th><th class="num">TVA</th><th class="num">Total HT</th></tr></thead>
+          <tbody>${inv.lines.map((l) => `<tr><td>${esc(l.label)}</td><td class="num">${Number(l.quantity)}</td><td class="num">${formatMAD(l.unit_price_ht)}</td><td class="num">${Number(l.vat_rate)} %</td><td class="num">${formatMAD(l.total_ht)}</td></tr>`).join("") || '<tr><td colspan="5" class="rc-muted-inline">Aucune ligne</td></tr>'}</tbody>
+        </table>
+        <dl class="rc-bill-totals is-compact">
+          <div><dt>Total HT</dt><dd>${formatMAD(inv.status === "draft" ? t.ht : inv.total_ht)}</dd></div>
+          <div><dt>TVA</dt><dd>${formatMAD(inv.status === "draft" ? t.vat : inv.total_vat)}</dd></div>
+          <div class="is-total"><dt>Total TTC</dt><dd>${formatMAD(inv.status === "draft" ? t.ttc : inv.total_ttc)}</dd></div>
+          ${inv.kind === "invoice" && inv.status === "issued" ? `
+            <div><dt>Déjà payé</dt><dd>${formatMAD(st.paid)}</dd></div>
+            <div class="is-due"><dt>Reste dû</dt><dd>${formatMAD(st.remaining)}</dd></div>` : ""}
+        </dl>
+        ${inv.notes ? `<p class="rc-bill-notes">${esc(inv.notes)}</p>` : ""}
+        ${inv.kind === "invoice" && inv.status !== "draft" ? `
+          <h4 class="rc-bill-sub">Paiements</h4>
+          ${inv.payments.length ? `<ul class="rc-bill-payments">${inv.payments.map((p) => `
+            <li>
+              <span>${formatDate(p.paid_on)}</span>
+              <span>${esc(PAYMENT_METHODS[p.method] || p.method)}${p.reference ? ` · ${esc(p.reference)}` : ""}</span>
+              <strong class="num">${formatMAD(p.amount)}</strong>
+              ${inv.status === "issued" ? `<button type="button" class="rc-link" data-del-payment="${p.id}">Supprimer</button>` : "<span></span>"}
+            </li>`).join("")}</ul>` : '<p class="rc-muted">Aucun paiement enregistré.</p>'}
+          ${inv.sent_at ? `<p class="rc-muted">Marquée comme envoyée le ${formatDate(inv.sent_at)}.</p>` : ""}` : ""}`;
+
+      const actions = [];
+      if (inv.status === "draft") {
+        actions.push('<button type="button" class="dash-btn danger" data-act="delete">Supprimer le brouillon</button>');
+        actions.push('<span class="spacer"></span>');
+        actions.push('<button type="button" class="dash-btn" data-act="preview"><i data-lucide="eye"></i> Aperçu</button>');
+        actions.push('<button type="button" class="dash-btn dash-btn-primary" data-act="edit">Modifier et émettre</button>');
+      } else {
+        if (inv.kind === "invoice" && inv.status === "issued") {
+          actions.push('<button type="button" class="dash-btn danger" data-act="cancel">Annuler par un avoir</button>');
+        }
+        actions.push('<span class="spacer"></span>');
+        actions.push('<button type="button" class="dash-btn" data-act="preview"><i data-lucide="printer"></i> Imprimer / PDF</button>');
+        if (inv.kind === "invoice" && inv.status === "issued") {
+          actions.push('<button type="button" class="dash-btn" data-act="send"><i data-lucide="mail"></i> Envoyer</button>');
+          if (st.remaining > 0) actions.push('<button type="button" class="dash-btn dash-btn-primary" data-act="pay">Enregistrer un paiement</button>');
+        }
+      }
+      $("detailActions").innerHTML = actions.join("");
+      if (!$("detailDialog").open) $("detailDialog").showModal();
+      initLucide();
+    }
+    $("detailCloseBtn").addEventListener("click", () => $("detailDialog").close());
+    $("detailBody").addEventListener("click", async (e) => {
+      const open = e.target.closest("[data-open-invoice]");
+      if (open) return openDetail(Number(open.dataset.openInvoice));
+      const del = e.target.closest("[data-del-payment]");
+      if (!del) return;
+      const ok = await confirmAction({ title: "Supprimer ce paiement ?", text: "Le montant redevient dû sur la facture.", okLabel: "Supprimer", danger: true });
+      if (!ok) return;
+      try {
+        await deletePayment(Number(del.dataset.delPayment));
+        toast("Paiement supprimé.");
+        await refresh();
+        openDetail(state.detail.id);
+      } catch (err) { toast(err.message, true); }
+    });
+    $("detailActions").addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-act]");
+      if (!b) return;
+      const inv = state.detail;
+      const act = b.dataset.act;
+      if (act === "preview") {
+        window.open(`facture.html?id=${inv.id}`, "_blank", "noopener");
+      } else if (act === "edit") {
+        $("detailDialog").close();
+        openEditor({ invoiceId: inv.id });
+      } else if (act === "delete") {
+        const ok = await confirmAction({ title: "Supprimer ce brouillon ?", text: "Il n'a pas encore de numéro : la suppression n'affecte pas la numérotation.", okLabel: "Supprimer", danger: true });
+        if (!ok) return;
+        try { await deleteDraft(inv.id); $("detailDialog").close(); toast("Brouillon supprimé."); await refresh(); } catch (err) { toast(err.message, true); }
+      } else if (act === "pay") {
+        openPayment(inv);
+      } else if (act === "cancel") {
+        if (inv.state.paid > 0) {
+          toast("Cette facture a des paiements : supprimez-les avant de l'annuler.", true);
+          return;
+        }
+        $("cancelReason").value = "";
+        $("cancelTitle").textContent = `Annuler la facture ${inv.number}`;
+        showError("cancelError", "");
+        $("cancelDialog").showModal();
+      } else if (act === "send") {
+        sendInvoice(inv);
+      }
+    });
+
+    async function sendInvoice(inv) {
+      const c = clientById(inv.client_id);
+      const seller = state.settings?.legal_name || state.cabinetName;
+      const subject = `Facture ${inv.number} — ${seller}`;
+      const body = [
+        "Bonjour,",
+        "",
+        `Veuillez trouver ci-joint notre facture n° ${inv.number} du ${formatDate(inv.issue_date)}, d'un montant de ${formatMAD(inv.total_ttc)} TTC, à régler avant le ${formatDate(inv.due_date)}.`,
+        state.settings?.rib ? `\nRèglement par virement : ${state.settings.bank_name ? `${state.settings.bank_name}, ` : ""}RIB ${state.settings.rib}.` : "",
+        "",
+        "Cordialement,",
+        seller,
+      ].join("\n");
+      const ok = await confirmAction({
+        title: "Envoyer la facture",
+        text: `${c?.billing_email ? `Votre messagerie va s'ouvrir avec un message prêt pour ${c.billing_email}.` : "Ce client n'a pas d'email de facturation : votre messagerie va s'ouvrir sans destinataire."} Joignez-y le PDF (bouton Imprimer / PDF). La facture sera marquée comme envoyée.`,
+        okLabel: "Ouvrir la messagerie",
+      });
+      if (!ok) return;
+      window.location.href = `mailto:${encodeURIComponent(c?.billing_email || "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      try {
+        await markInvoiceSent(inv.id);
+        await refresh();
+        openDetail(inv.id);
+      } catch (err) { toast(err.message, true); }
+    }
+
+    // ---------- Paiement ----------
+    let payTarget = null;
+    function openPayment(inv) {
+      payTarget = inv;
+      $("paymentIntro").textContent = `Facture ${inv.number} — reste dû ${formatMAD(inv.state.remaining)}. Un paiement partiel est possible.`;
+      $("payAmount").value = inv.state.remaining.toFixed(2);
+      $("payAmount").max = inv.state.remaining.toFixed(2);
+      $("payDate").value = todayIso();
+      $("payMethod").innerHTML = methodOptions(inv.payment_method || "virement");
+      $("payRef").value = "";
+      showError("paymentError", "");
+      $("paymentDialog").showModal();
+      $("payAmount").select();
+    }
+    $("payCancelBtn").addEventListener("click", () => $("paymentDialog").close());
+    $("paymentForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const amount = round2($("payAmount").value);
+      if (!(amount > 0)) return showError("paymentError", "Indiquez un montant positif.");
+      if (amount > payTarget.state.remaining + 0.001) return showError("paymentError", `Le montant dépasse le reste dû (${formatMAD(payTarget.state.remaining)}).`);
+      if ($("payDate").value > todayIso()) return showError("paymentError", "La date de réception ne peut pas être dans le futur.");
+      await busy($("paySubmitBtn"), async () => {
+        try {
+          await addPayment({ invoiceId: payTarget.id, cabinetId: state.cabinetId, amount, paidOn: $("payDate").value, method: $("payMethod").value, reference: $("payRef").value });
+          $("paymentDialog").close();
+          const rest = round2(payTarget.state.remaining - amount);
+          toast(rest > 0 ? `Paiement enregistré. Reste dû : ${formatMAD(rest)}.` : `Facture ${payTarget.number} soldée.`);
+          await refresh();
+          openDetail(payTarget.id);
+        } catch (err) { showError("paymentError", err.message); }
+      });
+    });
+
+    // ---------- Annulation ----------
+    $("cancelCancelBtn").addEventListener("click", () => $("cancelDialog").close());
+    $("cancelForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const reason = $("cancelReason").value.trim();
+      if (!reason) return showError("cancelError", "Indiquez le motif : il figure sur l'avoir.");
+      await busy($("cancelSubmitBtn"), async () => {
+        try {
+          const credit = await cancelInvoice(state.detail.id, reason);
+          $("cancelDialog").close();
+          toast(`Avoir ${credit.number} créé : la facture ${state.detail.number} est annulée.`);
+          await refresh();
+          openDetail(credit.id);
+        } catch (err) { showError("cancelError", err.message); }
+      });
+    });
+
+    // ---------- Démarrage ----------
+    const membership = await requireCabinetSession().catch((err) => {
+      $("billNote").hidden = false;
+      $("billNote").textContent = err.message;
+      return null;
+    });
+    if (membership) {
+      state.cabinetId = membership.cabinet_id;
+      state.cabinetName = membership.cabinet.name;
+      $("sidebarMount").innerHTML = sidebarHtml({ cabinetName: membership.cabinet.name, active: "billing", role: membership.role });
+      bindSidebarMobile();
+      document.getElementById("signOutBtn")?.addEventListener("click", async () => {
+        await signOut();
+        window.location.href = "login.html";
+      });
+      $("billSubtitle").textContent = `${membership.cabinet.name} — honoraires et encaissements`;
+      initLucide();
+      if (!["owner", "admin"].includes(membership.role)) {
+        $("billNote").hidden = false;
+        $("billNote").textContent = "La facturation est réservée au responsable du cabinet et aux administrateurs.";
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("client")) state.filter.client = params.get("client");
+        await refresh();
+        showTab(params.get("tab") || "invoices");
+        if (params.get("new")) openEditor({ clientId: Number(params.get("client")) || null });
+        if (params.get("invoice")) openDetail(Number(params.get("invoice")));
+      }
+    }
+  </script>
+</body>
+</html>

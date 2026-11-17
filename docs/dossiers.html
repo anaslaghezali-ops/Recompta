@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=jobs6" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc3" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc4" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -148,6 +148,7 @@
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth9";
     import { createClient, requireCabinetSession } from "./dossiers-client.js?v=dash2";
+    import { openClientEditor } from "./client-edit.js?v=edit1";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -155,7 +156,7 @@
       renderBadge,
       renderPriorityBadge,
       sidebarHtml,
-    } from "./dashboard-ui.js?v=team1";
+    } from "./dashboard-ui.js?v=bill1";
     import {
       computePortfolioKpis,
       listPortfolioRows,
@@ -390,7 +391,8 @@
           <div class="dash-portfolio-col status">
             ${renderPriorityBadge(row.priority)}
           </div>
-          <div class="dash-portfolio-col">
+          <div class="dash-portfolio-col rc-portfolio-actions">
+            ${canCreateClients ? `<button type="button" class="dash-btn dash-btn-sm dash-btn-ghost rc-icon-btn" data-edit-client="${escapeHtml(row.clientId)}" aria-label="Modifier ${escapeHtml(row.name)}" title="Modifier le client"><i data-lucide="pencil"></i></button>` : ""}
             <button type="button" class="dash-btn dash-btn-sm dash-portfolio-open" data-open-client="${escapeHtml(row.clientId)}">
               Ouvrir
             </button>
@@ -418,6 +420,7 @@
           openWorkspace(clientId);
         });
         row.addEventListener("keydown", (event) => {
+          if (event.target.closest("button")) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             openWorkspace(clientId);
@@ -430,6 +433,18 @@
           openWorkspace(btn.dataset.openClient);
         });
       });
+      portfolioRows.querySelectorAll("[data-edit-client]").forEach((btn) => {
+        btn.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          try {
+            const saved = await openClientEditor(Number(btn.dataset.editClient));
+            if (saved) await refreshClients();
+          } catch (error) {
+            window.alert(error.message || "Impossible d'ouvrir la fiche du client.");
+          }
+        });
+      });
+      initLucide();
     }
 
     function renderPortfolio() {
@@ -506,6 +521,7 @@
       sidebarMount.innerHTML = sidebarHtml({
         cabinetName: membership.cabinet.name,
         active: "portfolio",
+        role: membership.role,
       });
       document.getElementById("topbarSubtitle").textContent =
         `${membership.cabinet.name} — ${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}`;
