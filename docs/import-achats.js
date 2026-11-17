@@ -24,7 +24,7 @@ import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
 } from "./field-confidence.js";
-import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
+import { escapeHtml, initLucide } from "./dashboard-ui.js?v=team1";
 import {
   JOB_STATUS_LABELS,
   aggregateActiveImportJobs,

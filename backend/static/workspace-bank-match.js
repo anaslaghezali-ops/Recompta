@@ -14,7 +14,7 @@ import {
   logDossierActivity,
   saveDossierWorkspace,
 } from "./dossier-persistence.js?v=persist5";
-import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
+import { escapeHtml } from "./dashboard-ui.js?v=team1";
 
 function formatMad(amount) {
   return Number(amount).toLocaleString("fr-FR", {

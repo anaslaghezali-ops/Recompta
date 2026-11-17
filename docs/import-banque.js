@@ -19,7 +19,7 @@ import {
   startBankImportUpload,
   startImportJobPolling,
 } from "./import-jobs-client.js?v=jobs12";
-import { escapeHtml, initLucide } from "./dashboard-ui.js?v=portfolio1";
+import { escapeHtml, initLucide } from "./dashboard-ui.js?v=team1";
 import {
   createWorkspaceSaver,
   formatFileSize,

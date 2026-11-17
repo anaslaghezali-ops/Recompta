@@ -1,5 +1,5 @@
 import { loadClientSupplierNotebook } from "./suppliers-client.js?v=sup2";
-import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
+import { escapeHtml } from "./dashboard-ui.js?v=team1";
 
 function formatAmount(value) {
   return Number(value || 0).toLocaleString("fr-FR", {

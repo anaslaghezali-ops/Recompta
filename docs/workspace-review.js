@@ -41,7 +41,7 @@ import {
 } from "./document-preview.js?v=preview9";
 import { rememberOfficialSupplierName } from "./suppliers-client.js?v=sup2";
 import { periodToMmaaaa } from "./dossiers-client.js?v=dash2";
-import { escapeHtml } from "./dashboard-ui.js?v=portfolio1";
+import { escapeHtml } from "./dashboard-ui.js?v=team1";
 
 const DESIGNATIONS = [
   "MATIERES CONSOMMABLES",
