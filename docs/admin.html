@@ -3,106 +3,121 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recompta — Admin cabinets</title>
-  <link rel="stylesheet" href="styles.css?v=admin1" />
+  <title>Recompta — Administration</title>
+  <link rel="stylesheet" href="admin.css?v=admin3" />
 </head>
-<body>
-  <header class="hero">
-    <div class="hero-top">
-      <div class="hero-content">
-        <p class="eyebrow">Recompta</p>
-        <h1>Administration</h1>
-        <p class="subtitle">Créez les cabinets comptables et le compte du responsable (owner).</p>
-      </div>
-      <div class="hero-auth">
-        <a href="index.html" class="hero-auth-link">Accueil</a>
-        <a href="production.html" class="hero-auth-link">Outil TVA</a>
-        <button type="button" id="signOutBtn" class="hero-auth-link">Déconnexion</button>
-      </div>
+<body class="adm">
+  <header class="adm-top">
+    <div class="adm-top-inner">
+      <a class="adm-brand" href="admin.html">
+        <strong>Recompta</strong>
+        <span>Administration</span>
+      </a>
+      <nav aria-label="Navigation">
+        <button type="button" id="settingsBtn">Paramètres</button>
+        <a href="index.html">Site public</a>
+        <button type="button" id="signOutBtn">Déconnexion</button>
+      </nav>
     </div>
   </header>
 
-  <main class="container admin-layout">
-    <section class="card">
-      <h2>Nouveau cabinet</h2>
-      <form id="createCabinetForm" class="admin-form">
-        <div class="grid two">
-          <label>Nom du cabinet
-            <input id="cabinetName" type="text" required minlength="2" placeholder="Cabinet Dupont" />
-          </label>
-          <label>Identifiant (slug)
-            <input id="cabinetSlug" type="text" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="cabinet-dupont" />
-          </label>
-        </div>
-        <p class="hint">Le slug sert d’identifiant technique (minuscules, chiffres, tirets).</p>
-        <div class="grid two">
-          <label>Email du responsable
-            <input id="ownerEmail" type="email" required autocomplete="off" />
-          </label>
-          <label>Nom affiché (optionnel)
-            <input id="displayName" type="text" autocomplete="off" />
-          </label>
-        </div>
-        <label>Mot de passe initial
-          <input id="ownerPassword" type="password" required minlength="6" autocomplete="new-password" />
-        </label>
-        <p class="hint error" id="formError" hidden></p>
-        <p class="hint success" id="formOk" hidden></p>
-        <div class="actions">
-          <button class="primary" type="submit" id="submitBtn">Créer le cabinet</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="card">
-      <h2>Crédits vision IA (Freemium)</h2>
-      <p class="hint">Quota mensuel de scans IA par cabinet. PDF natifs et CSV banque restent gratuits.</p>
-      <form id="creditsDefaultForm" class="admin-form">
-        <div class="grid two">
-          <label>Quota mensuel par défaut
-            <input id="defaultCreditsQuota" type="number" min="0" max="100000" step="1" required />
-          </label>
-          <div class="actions" style="align-self:end;">
-            <button class="primary" type="submit" id="saveDefaultCreditsBtn">Enregistrer le défaut</button>
-          </div>
-        </div>
-        <p class="hint error" id="creditsDefaultError" hidden></p>
-        <p class="hint success" id="creditsDefaultOk" hidden></p>
-      </form>
-    </section>
-
-    <section class="card">
-      <div class="section-header">
-        <h2>Cabinets existants</h2>
-        <button type="button" class="secondary small" id="refreshBtn">Actualiser</button>
+  <main class="adm-main">
+    <div class="adm-head">
+      <div>
+        <h1>Cabinets</h1>
+        <p class="adm-summary" id="summary">Chargement des cabinets…</p>
       </div>
-      <p class="hint" id="listHint">Chargement…</p>
-      <div class="table-wrap" id="tableWrap" hidden>
-        <table class="admin-table" id="cabinetsTable">
-          <thead>
-            <tr>
-              <th>Cabinet</th>
-              <th>Slug</th>
-              <th>Responsable</th>
-              <th>Crédits IA</th>
-              <th>Créé le</th>
-            </tr>
-          </thead>
-          <tbody id="cabinetsBody"></tbody>
-        </table>
+      <button type="button" class="btn btn-primary" id="newCabinetBtn">Nouveau cabinet</button>
+    </div>
+
+    <div class="adm-banner" id="serviceBanner" role="status" hidden></div>
+
+    <div class="adm-toolbar">
+      <input type="search" class="adm-search" id="search" placeholder="Rechercher un cabinet, un nom ou un email" aria-label="Rechercher" />
+      <div class="adm-seg" role="group" aria-label="Filtrer les cabinets" id="filters">
+        <button type="button" data-filter="all" aria-pressed="true">Tous<span class="count" data-count="all"></span></button>
+        <button type="button" data-filter="active" aria-pressed="false">Actifs<span class="count" data-count="active"></span></button>
+        <button type="button" data-filter="suspended" aria-pressed="false">Suspendus<span class="count" data-count="suspended"></span></button>
+        <button type="button" data-filter="blocked" aria-pressed="false">Comptes bloqués<span class="count" data-count="blocked"></span></button>
       </div>
-    </section>
+    </div>
+
+    <div class="adm-table-wrap">
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th scope="col">Cabinet</th>
+            <th scope="col">Comptes</th>
+            <th scope="col">Statut</th>
+            <th scope="col">Scans IA ce mois</th>
+            <th scope="col">Dernière connexion</th>
+            <th scope="col" class="col-actions"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="adm-empty" id="emptyState" hidden></div>
+    </div>
   </main>
+
+  <!-- Panneau latéral : gérer un cabinet / créer un cabinet -->
+  <dialog class="panel" id="panel" aria-labelledby="panelTitle">
+    <div class="panel-inner" id="panelInner"></div>
+  </dialog>
+
+  <!-- Confirmation -->
+  <dialog class="modal" id="confirmDialog" aria-labelledby="confirmTitle">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmText"></p>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" id="confirmCancel">Annuler</button>
+      <button type="button" class="btn btn-danger-solid" id="confirmOk"></button>
+    </div>
+  </dialog>
+
+  <!-- Paramètres -->
+  <dialog class="modal" id="settingsDialog" aria-labelledby="settingsTitle">
+    <form class="form" id="settingsForm" method="dialog">
+      <div>
+        <h2 id="settingsTitle">Paramètres</h2>
+        <p>Le quota par défaut s'applique à tous les cabinets qui n'ont pas de quota personnalisé. Les PDF natifs et les relevés CSV ne consomment pas de scans.</p>
+      </div>
+      <label class="field">
+        <span>Scans IA par mois et par cabinet</span>
+        <input type="number" id="defaultQuota" min="0" max="100000" step="1" required />
+      </label>
+      <p class="form-error" id="settingsError" hidden></p>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" id="settingsCancel">Annuler</button>
+        <button type="submit" class="btn btn-primary" id="settingsSave">Enregistrer le quota</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts" aria-live="polite" popover="manual"></div>
+
+  <style>
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap;
+    }
+  </style>
 
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth6";
     import {
       createCabinetWithOwner,
+      generatePassword,
       guardSuperAdminPage,
       isValidSlug,
-      listCabinetsWithOwners,
+      listCabinetsWithMembers,
+      loadAccountStatuses,
+      renameCabinet,
+      setAccountBlocked,
+      setCabinetActive,
       slugify,
-    } from "./admin-client.js?v=admin2";
+      updateAccount,
+    } from "./admin-client.js?v=admin3";
     import {
       listAdminCabinetVisionCredits,
       loadAdminVisionCreditsSettings,
@@ -110,212 +125,687 @@
       saveAdminVisionCreditsDefault,
     } from "./credits-client.js?v=credits3";
 
-    const form = document.getElementById("createCabinetForm");
-    const cabinetName = document.getElementById("cabinetName");
-    const cabinetSlug = document.getElementById("cabinetSlug");
-    const ownerEmail = document.getElementById("ownerEmail");
-    const displayName = document.getElementById("displayName");
-    const ownerPassword = document.getElementById("ownerPassword");
-    const formError = document.getElementById("formError");
-    const formOk = document.getElementById("formOk");
-    const submitBtn = document.getElementById("submitBtn");
-    const listHint = document.getElementById("listHint");
-    const tableWrap = document.getElementById("tableWrap");
-    const cabinetsBody = document.getElementById("cabinetsBody");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const signOutBtn = document.getElementById("signOutBtn");
-    const creditsDefaultForm = document.getElementById("creditsDefaultForm");
-    const defaultCreditsQuota = document.getElementById("defaultCreditsQuota");
-    const creditsDefaultError = document.getElementById("creditsDefaultError");
-    const creditsDefaultOk = document.getElementById("creditsDefaultOk");
-    const saveDefaultCreditsBtn = document.getElementById("saveDefaultCreditsBtn");
+    const $ = (id) => document.getElementById(id);
+    const rowsEl = $("rows");
+    const emptyEl = $("emptyState");
+    const summaryEl = $("summary");
+    const bannerEl = $("serviceBanner");
+    const panel = $("panel");
+    const panelInner = $("panelInner");
 
-    let creditsByCabinet = {};
+    const state = {
+      cabinets: [],
+      statuses: null, // null = service comptes indisponible
+      statusError: "",
+      credits: {},
+      defaultQuota: 10,
+      filter: "all",
+      query: "",
+      openCabinetId: null,
+      editingUserId: null,
+    };
 
-    let slugTouched = false;
+    const ROLE_LABELS = { owner: "Responsable", admin: "Administrateur", comptable: "Comptable" };
 
-    function showError(message) {
-      formError.hidden = !message;
-      formError.textContent = message || "";
-      formOk.hidden = true;
+    // ---------- Utilitaires ----------
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[c]));
     }
 
-    function showOk(message) {
-      formOk.hidden = !message;
-      formOk.textContent = message || "";
-      formError.hidden = true;
+    const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+    function relativeTime(iso) {
+      if (!iso) return null;
+      const diff = (Date.parse(iso) - Date.now()) / 1000;
+      const steps = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+      for (const [unit, sec] of steps) {
+        if (Math.abs(diff) >= sec) return rtf.format(Math.round(diff / sec), unit);
+      }
+      return "à l'instant";
     }
-
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      }[char]));
-    }
-
     function formatDate(iso) {
-      if (!iso) return "—";
-      try {
-        return new Date(iso).toLocaleString("fr-FR");
-      } catch {
-        return iso;
+      if (!iso) return "";
+      return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+    }
+    function plural(n, one, many) {
+      return `${n} ${n > 1 ? many : one}`;
+    }
+
+    function toast(message, isError = false, duration = null) {
+      const el = document.createElement("div");
+      el.className = `toast${isError ? " is-error" : ""}`;
+      el.textContent = message;
+      const box = $("toasts");
+      box.appendChild(el);
+      // Au-dessus des panneaux ouverts (top layer).
+      if (box.showPopover) {
+        if (box.matches(":popover-open")) box.hidePopover();
+        box.showPopover();
       }
+      setTimeout(() => {
+        el.remove();
+        if (!box.children.length && box.hidePopover && box.matches(":popover-open")) box.hidePopover();
+      }, duration ?? (isError ? 7000 : 4000));
     }
 
-    function showCreditsDefaultError(message) {
-      creditsDefaultError.hidden = !message;
-      creditsDefaultError.textContent = message || "";
-      creditsDefaultOk.hidden = true;
+    function confirmAction({ title, text, okLabel }) {
+      const dialog = $("confirmDialog");
+      $("confirmTitle").textContent = title;
+      $("confirmText").textContent = text;
+      $("confirmOk").textContent = okLabel;
+      dialog.showModal();
+      return new Promise((resolve) => {
+        const done = (value) => {
+          dialog.close();
+          $("confirmOk").onclick = null;
+          $("confirmCancel").onclick = null;
+          resolve(value);
+        };
+        $("confirmOk").onclick = () => done(true);
+        $("confirmCancel").onclick = () => done(false);
+        dialog.oncancel = () => done(false);
+      });
     }
 
-    function showCreditsDefaultOk(message) {
-      creditsDefaultOk.hidden = !message;
-      creditsDefaultOk.textContent = message || "";
-      creditsDefaultError.hidden = true;
-    }
-
-    async function loadCreditsSettings() {
+    async function withBusy(button, fn) {
+      const label = button.textContent;
+      button.disabled = true;
       try {
-        const settings = await loadAdminVisionCreditsSettings();
-        defaultCreditsQuota.value = String(settings?.default_monthly_quota ?? 10);
-        const rows = await listAdminCabinetVisionCredits();
-        creditsByCabinet = Object.fromEntries(rows.map((row) => [row.cabinet_id, row]));
-      } catch (err) {
-        showCreditsDefaultError(err.message || "Impossible de charger les crédits.");
-      }
-    }
-
-    async function refreshList() {
-      listHint.hidden = false;
-      listHint.textContent = "Chargement…";
-      tableWrap.hidden = true;
-      try {
-        const rows = await listCabinetsWithOwners();
-        if (!rows.length) {
-          listHint.textContent = "Aucun cabinet pour l’instant.";
-          return;
-        }
-        listHint.hidden = true;
-        tableWrap.hidden = false;
-        cabinetsBody.innerHTML = rows.map((row) => {
-          const credit = creditsByCabinet[row.id] || {};
-          const effective = credit.effective_quota ?? defaultCreditsQuota.value ?? 10;
-          const used = credit.used ?? 0;
-          const remaining = credit.remaining ?? Math.max(effective - used, 0);
-          const override = credit.monthly_quota_override;
-          return `
-          <tr data-cabinet-id="${row.id}">
-            <td>${escapeHtml(row.name)}</td>
-            <td><code>${escapeHtml(row.slug)}</code></td>
-            <td>${escapeHtml(row.owner?.email || "—")}</td>
-            <td>
-              <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
-                <input type="number" min="0" max="100000" step="1" class="cabinet-quota-input" data-cabinet-id="${row.id}" value="${override ?? ""}" placeholder=" défaut (${effective})" style="width:7rem;" />
-                <span class="hint">${remaining}/${effective} restants</span>
-                <button type="button" class="secondary small save-cabinet-quota" data-cabinet-id="${row.id}">OK</button>
-              </div>
-            </td>
-            <td>${escapeHtml(formatDate(row.created_at))}</td>
-          </tr>
-        `;
-        }).join("");
-        document.querySelectorAll(".save-cabinet-quota").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const cabinetId = Number(btn.dataset.cabinetId);
-            const input = document.querySelector(`.cabinet-quota-input[data-cabinet-id="${cabinetId}"]`);
-            try {
-              await saveAdminCabinetVisionQuota(cabinetId, input?.value ?? "");
-              showCreditsDefaultOk(`Quota cabinet #${cabinetId} mis à jour.`);
-              await loadCreditsSettings();
-              await refreshList();
-            } catch (err) {
-              showCreditsDefaultError(err.message || "Échec de la mise à jour.");
-            }
-          });
-        });
-      } catch (err) {
-        listHint.textContent = err.message || "Impossible de charger la liste.";
-      }
-    }
-
-    await guardSuperAdminPage();
-    await loadCreditsSettings();
-
-    creditsDefaultForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      showCreditsDefaultError("");
-      showCreditsDefaultOk("");
-      saveDefaultCreditsBtn.disabled = true;
-      try {
-        await saveAdminVisionCreditsDefault(defaultCreditsQuota.value);
-        showCreditsDefaultOk("Quota mensuel par défaut enregistré.");
-        await loadCreditsSettings();
-        await refreshList();
-      } catch (err) {
-        showCreditsDefaultError(err.message || "Échec de l'enregistrement.");
+        return await fn();
       } finally {
-        saveDefaultCreditsBtn.disabled = false;
+        button.disabled = false;
+        button.textContent = label;
+      }
+    }
+
+    // ---------- Données dérivées ----------
+    function memberStatus(member) {
+      const auth = state.statuses?.[member.user_id];
+      const blocked = auth ? auth.blocked : !member.is_active;
+      return { blocked, lastSignIn: auth?.last_sign_in_at || null, known: Boolean(auth) };
+    }
+
+    function creditFor(cabinetId) {
+      const row = state.credits[cabinetId] || {};
+      const quota = row.effective_quota ?? state.defaultQuota;
+      // Le compteur ne se remet à zéro qu'au prochain scan : on l'affiche à 0 si la période est passée.
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const stale = row.period_start && new Date(`${row.period_start}T00:00:00`) < monthStart;
+      const used = stale ? 0 : (row.used ?? 0);
+      return { quota, used, override: row.monthly_quota_override ?? null };
+    }
+
+    function cabinetView(cabinet) {
+      const members = cabinet.members.map((m) => ({ ...m, ...memberStatus(m) }));
+      const blockedCount = members.filter((m) => m.blocked).length;
+      const lastSignIn = members
+        .map((m) => m.lastSignIn)
+        .filter(Boolean)
+        .sort()
+        .pop() || null;
+      return { ...cabinet, members, blockedCount, lastSignIn, credit: creditFor(cabinet.id) };
+    }
+
+    function meterHtml(credit, large = false) {
+      const { used, quota } = credit;
+      const pct = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : (used > 0 ? 100 : 0);
+      const level = pct >= 100 ? " is-full" : pct >= 80 ? " is-high" : "";
+      const remaining = Math.max(quota - used, 0);
+      const note = quota === 0 ? "aucun scan autorisé" : remaining === 0 ? "quota atteint" : `${remaining} restants`;
+      return `
+        <div class="meter${level}${large ? " meter-large" : ""}">
+          <div class="meter-figures"><b>${used} / ${quota}</b><span class="muted">${note}</span></div>
+          <div class="meter-track" role="progressbar" aria-valuemin="0" aria-valuemax="${quota}" aria-valuenow="${used}" aria-label="Scans IA utilisés">
+            <div class="meter-fill" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+    }
+
+    function statusPill(view) {
+      if (!view.is_active) return `<span class="pill pill-stop">Suspendu</span>`;
+      if (view.blockedCount) return `<span class="pill pill-warn">${plural(view.blockedCount, "compte bloqué", "comptes bloqués")}</span>`;
+      return `<span class="pill pill-ok">Actif</span>`;
+    }
+
+    // ---------- Liste ----------
+    function matches(view) {
+      const q = state.query.trim().toLowerCase();
+      if (q) {
+        const hay = [view.name, view.slug, ...view.members.flatMap((m) => [m.email, m.display_name])]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (state.filter === "active") return view.is_active;
+      if (state.filter === "suspended") return !view.is_active;
+      if (state.filter === "blocked") return view.blockedCount > 0;
+      return true;
+    }
+
+    function renderSummary(views) {
+      const accounts = views.reduce((n, v) => n + v.members.length, 0);
+      const blocked = views.reduce((n, v) => n + v.blockedCount, 0);
+      const suspended = views.filter((v) => !v.is_active).length;
+      const scans = views.reduce((n, v) => n + v.credit.used, 0);
+      const month = new Date().toLocaleDateString("fr-FR", { month: "long" });
+      const parts = [
+        `<b>${plural(views.length, "cabinet", "cabinets")}</b> et <b>${plural(accounts, "compte", "comptes")}</b>`,
+      ];
+      if (suspended) parts.push(`<span class="is-alert">${plural(suspended, "cabinet suspendu", "cabinets suspendus")}</span>`);
+      if (blocked) parts.push(`<span class="is-alert">${plural(blocked, "compte bloqué", "comptes bloqués")}</span>`);
+      summaryEl.innerHTML = `${parts.join(", ")}. <b>${plural(scans, "scan IA", "scans IA")}</b> utilisés en ${month}, quota par défaut de ${state.defaultQuota} par cabinet.`;
+
+      const counts = {
+        all: views.length,
+        active: views.filter((v) => v.is_active).length,
+        suspended,
+        blocked: views.filter((v) => v.blockedCount > 0).length,
+      };
+      document.querySelectorAll("[data-count]").forEach((el) => {
+        el.textContent = counts[el.dataset.count];
+      });
+    }
+
+    function renderList() {
+      const views = state.cabinets.map(cabinetView);
+      renderSummary(views);
+      const shown = views.filter(matches);
+
+      if (!views.length) {
+        rowsEl.innerHTML = "";
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = `<strong>Aucun cabinet pour l'instant</strong>Créez le premier cabinet avec le bouton « Nouveau cabinet ».`;
+        return;
+      }
+      if (!shown.length) {
+        rowsEl.innerHTML = "";
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = `<strong>Aucun cabinet ne correspond</strong>Modifiez la recherche ou choisissez un autre filtre.`;
+        return;
+      }
+      emptyEl.hidden = true;
+
+      rowsEl.innerHTML = shown.map((v) => {
+        const owner = v.owner ? v.members.find((m) => m.user_id === v.owner.user_id) : v.members[0];
+        const others = v.members.length - (owner ? 1 : 0);
+        const ownerLine = owner
+          ? `<div class="acc-main">${esc(owner.email || "Email inconnu")}</div>`
+          : `<div class="acc-main muted">Aucun compte</div>`;
+        const subParts = [];
+        if (owner?.display_name) subParts.push(esc(owner.display_name));
+        if (others > 0) subParts.push(`${plural(others, "autre compte", "autres comptes")}`);
+        if (owner?.blocked) subParts.unshift(`<span class="is-alert">Bloqué</span>`);
+        const last = v.lastSignIn
+          ? `<span title="${esc(formatDate(v.lastSignIn))}">${esc(relativeTime(v.lastSignIn))}</span>`
+          : `<span class="muted">${state.statuses ? "Jamais" : "—"}</span>`;
+        return `
+          <tr data-id="${v.id}" class="${v.is_active ? "" : "is-suspended"}">
+            <td><div class="cab-name">${esc(v.name)}</div><div class="cab-slug">${esc(v.slug)}</div></td>
+            <td>${ownerLine}${subParts.length ? `<div class="acc-sub">${subParts.join(", ")}</div>` : ""}</td>
+            <td>${statusPill(v)}</td>
+            <td>${meterHtml(v.credit)}</td>
+            <td>${last}</td>
+            <td class="col-actions"><button type="button" class="btn btn-ghost btn-small" data-open="${v.id}">Gérer</button></td>
+          </tr>`;
+      }).join("");
+    }
+
+    rowsEl.addEventListener("click", (event) => {
+      const row = event.target.closest("tr[data-id]");
+      if (row) openCabinet(Number(row.dataset.id));
+    });
+
+    // ---------- Panneau « Gérer » ----------
+    function accountHtml(member, cabinet) {
+      const editing = state.editingUserId === member.user_id;
+      const canManage = Boolean(state.statuses);
+      const lastLine = member.lastSignIn
+        ? `Dernière connexion ${esc(relativeTime(member.lastSignIn))}`
+        : canManage ? "Ne s'est jamais connecté" : "";
+      const blockBtn = member.blocked
+        ? `<button type="button" class="btn btn-ok btn-small" data-unblock="${member.user_id}" ${canManage ? "" : "disabled"}>Débloquer</button>`
+        : `<button type="button" class="btn btn-danger btn-small" data-block="${member.user_id}" ${canManage ? "" : "disabled"}>Bloquer</button>`;
+      return `
+        <div class="account${member.blocked ? " is-blocked" : ""}">
+          <div class="account-top">
+            <div class="account-id">
+              <div class="acc-main">${esc(member.display_name || member.email || "Compte sans nom")}</div>
+              <div class="acc-sub">${member.display_name ? `${esc(member.email)}<br />` : ""}<span class="role-tag">${ROLE_LABELS[member.role] || esc(member.role)}</span>${lastLine ? `, ${lastLine.charAt(0).toLowerCase()}${lastLine.slice(1)}` : ""}</div>
+              ${member.blocked ? `<div style="margin-top:0.4rem"><span class="pill pill-stop">Bloqué</span></div>` : ""}
+            </div>
+            <div class="account-actions">
+              <button type="button" class="btn btn-ghost btn-small" data-edit="${member.user_id}" ${canManage ? "" : "disabled"} aria-expanded="${editing}">${editing ? "Fermer" : "Modifier"}</button>
+              ${blockBtn}
+            </div>
+          </div>
+          ${editing ? `
+          <form class="form" data-edit-form="${member.user_id}" novalidate>
+            <div class="grid-2">
+              <label class="field"><span>Nom affiché</span>
+                <input type="text" name="display_name" value="${esc(member.display_name || "")}" autocomplete="off" /></label>
+              <label class="field"><span>Email de connexion</span>
+                <input type="email" name="email" value="${esc(member.email || "")}" autocomplete="off" required /></label>
+            </div>
+            <label class="field"><span>Nouveau mot de passe</span>
+              <div class="field-row">
+                <input type="text" name="password" placeholder="Laisser vide pour ne pas changer" autocomplete="new-password" spellcheck="false" />
+                <button type="button" class="btn btn-ghost btn-small" data-generate>Générer</button>
+              </div>
+              <small>8 caractères minimum. Transmettez-le au titulaire du compte, puis demandez-lui de le changer.</small>
+            </label>
+            <p class="form-error" hidden></p>
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" data-edit="${member.user_id}">Annuler</button>
+              <button type="submit" class="btn btn-primary">Enregistrer les modifications</button>
+            </div>
+          </form>` : ""}
+        </div>`;
+    }
+
+    function renderPanel() {
+      const cabinet = state.cabinets.find((c) => c.id === state.openCabinetId);
+      if (!cabinet) return;
+      const v = cabinetView(cabinet);
+      const { credit } = v;
+      const usesDefault = credit.override === null;
+
+      panelInner.innerHTML = `
+        <div class="panel-head">
+          <div class="panel-head-text">
+            <h2 id="panelTitle">${esc(v.name)}</h2>
+            <div class="cab-slug">${esc(v.slug)}, créé le ${esc(formatDate(v.created_at))}</div>
+            <div class="panel-head-meta">${statusPill(v)}</div>
+          </div>
+          <button type="button" class="panel-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="panel-body">
+          <section class="panel-section">
+            <h3>${plural(v.members.length, "compte", "comptes")}</h3>
+            <p>Un compte bloqué ne peut plus se connecter et perd l'accès aux dossiers du cabinet.</p>
+            ${state.statuses ? "" : `<div class="adm-banner" style="margin:0.5rem 0 0">${esc(state.statusError)}</div>`}
+            ${v.members.length ? v.members.map((m) => accountHtml(m, v)).join("") : `<p class="muted">Aucun compte rattaché à ce cabinet.</p>`}
+          </section>
+
+          <section class="panel-section">
+            <h3>Scans IA ce mois</h3>
+            <p>Les scans IA servent à lire les factures photographiées ou scannées.</p>
+            ${meterHtml(credit, true)}
+            <form class="form" id="quotaForm">
+              <div class="choice">
+                <label><input type="radio" name="quotaMode" value="default" ${usesDefault ? "checked" : ""} /> Quota par défaut (${state.defaultQuota} par mois)</label>
+                <label><input type="radio" name="quotaMode" value="custom" ${usesDefault ? "" : "checked"} /> Quota personnalisé
+                  <input type="number" name="quota" min="0" max="100000" step="1" value="${usesDefault ? "" : credit.override}" aria-label="Quota personnalisé" /></label>
+              </div>
+              <p class="form-error" hidden></p>
+              <div class="form-actions"><button type="submit" class="btn btn-primary">Enregistrer le quota</button></div>
+            </form>
+          </section>
+
+          <section class="panel-section">
+            <h3>Cabinet</h3>
+            <form class="form" id="renameForm">
+              <label class="field"><span>Nom du cabinet</span>
+                <input type="text" name="name" value="${esc(v.name)}" required minlength="2" ${state.statuses ? "" : "disabled"} /></label>
+              <p class="form-error" hidden></p>
+              <div class="form-actions"><button type="submit" class="btn btn-primary" ${state.statuses ? "" : "disabled"}>Renommer</button></div>
+            </form>
+          </section>
+
+          <section class="panel-section">
+            ${v.is_active ? `
+              <div class="danger-zone">
+                <div><strong>Suspendre le cabinet</strong><p>Bloque tous ses comptes. Les données sont conservées.</p></div>
+                <button type="button" class="btn btn-danger" id="suspendBtn" ${state.statuses ? "" : "disabled"}>Suspendre</button>
+              </div>` : `
+              <div class="danger-zone">
+                <div><strong>Cabinet suspendu</strong><p>Réactiver débloque tous ses comptes.</p></div>
+                <button type="button" class="btn btn-ok" id="reactivateBtn" ${state.statuses ? "" : "disabled"}>Réactiver</button>
+              </div>`}
+          </section>
+        </div>`;
+    }
+
+    function openCabinet(id) {
+      state.openCabinetId = id;
+      state.editingUserId = null;
+      renderPanel();
+      if (!panel.open) panel.showModal();
+    }
+
+    function closePanel() {
+      panel.close();
+    }
+    panel.addEventListener("close", () => {
+      state.openCabinetId = null;
+      state.editingUserId = null;
+    });
+    panel.addEventListener("click", (event) => {
+      if (event.target === panel) closePanel(); // clic sur le fond
+    });
+
+    function formError(form, message) {
+      const el = form.querySelector(".form-error");
+      el.hidden = !message;
+      el.textContent = message || "";
+    }
+
+    async function reloadAll({ keepPanel = true } = {}) {
+      await loadData();
+      renderList();
+      if (keepPanel && panel.open && state.openCabinetId) renderPanel();
+    }
+
+    panelInner.addEventListener("click", async (event) => {
+      const t = event.target.closest("button");
+      if (!t) return;
+
+      if (t.hasAttribute("data-close")) return closePanel();
+
+      if (t.dataset.edit) {
+        state.editingUserId = state.editingUserId === t.dataset.edit ? null : t.dataset.edit;
+        renderPanel();
+        panelInner.querySelector(`[data-edit-form] input[name="display_name"]`)?.focus();
+        return;
+      }
+
+      if (t.hasAttribute("data-generate")) {
+        const input = t.closest(".field-row").querySelector("input");
+        input.value = generatePassword();
+        input.select();
+        return;
+      }
+
+      const cabinet = state.cabinets.find((c) => c.id === state.openCabinetId);
+      const member = cabinet?.members.find((m) => m.user_id === (t.dataset.block || t.dataset.unblock));
+
+      if (t.dataset.block && member) {
+        const ok = await confirmAction({
+          title: `Bloquer ${member.email} ?`,
+          text: "Ce compte ne pourra plus se connecter ni voir les dossiers du cabinet. Vous pourrez le débloquer à tout moment.",
+          okLabel: "Bloquer le compte",
+        });
+        if (!ok) return;
+        await withBusy(t, async () => {
+          try {
+            await setAccountBlocked(member.user_id, true);
+            toast(`Compte ${member.email} bloqué.`);
+            await reloadAll();
+          } catch (err) { toast(err.message, true); }
+        });
+        return;
+      }
+
+      if (t.dataset.unblock && member) {
+        await withBusy(t, async () => {
+          try {
+            await setAccountBlocked(member.user_id, false);
+            toast(`Compte ${member.email} débloqué.`);
+            await reloadAll();
+          } catch (err) { toast(err.message, true); }
+        });
+        return;
+      }
+
+      if (t.id === "suspendBtn" && cabinet) {
+        const ok = await confirmAction({
+          title: `Suspendre ${cabinet.name} ?`,
+          text: `Les ${plural(cabinet.members.length, "compte", "comptes")} de ce cabinet seront bloqués. Les dossiers et documents sont conservés.`,
+          okLabel: "Suspendre le cabinet",
+        });
+        if (!ok) return;
+        await withBusy(t, async () => {
+          try {
+            await setCabinetActive(cabinet.id, false);
+            toast(`Cabinet ${cabinet.name} suspendu.`);
+            await reloadAll();
+          } catch (err) { toast(err.message, true); }
+        });
+        return;
+      }
+
+      if (t.id === "reactivateBtn" && cabinet) {
+        await withBusy(t, async () => {
+          try {
+            await setCabinetActive(cabinet.id, true);
+            toast(`Cabinet ${cabinet.name} réactivé.`);
+            await reloadAll();
+          } catch (err) { toast(err.message, true); }
+        });
       }
     });
 
-    signOutBtn.addEventListener("click", async () => {
+    panelInner.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const submit = form.querySelector('button[type="submit"]');
+      const cabinet = state.cabinets.find((c) => c.id === state.openCabinetId);
+      formError(form, "");
+
+      // Modifier un compte
+      if (form.dataset.editForm) {
+        const member = cabinet?.members.find((m) => m.user_id === form.dataset.editForm);
+        if (!member) return;
+        const data = new FormData(form);
+        const changes = {};
+        const email = String(data.get("email") || "").trim().toLowerCase();
+        const name = String(data.get("display_name") || "").trim();
+        const password = String(data.get("password") || "");
+        if (email !== (member.email || "")) changes.email = email;
+        if (name !== (member.display_name || "")) changes.display_name = name;
+        if (password) {
+          if (password.length < 8) return formError(form, "Le mot de passe doit contenir au moins 8 caractères.");
+          changes.password = password;
+        }
+        if (!Object.keys(changes).length) return formError(form, "Aucune modification à enregistrer.");
+        await withBusy(submit, async () => {
+          try {
+            await updateAccount(member.user_id, changes);
+            state.editingUserId = null;
+            toast(changes.password
+              ? `Compte mis à jour. Nouveau mot de passe : ${password}`
+              : "Compte mis à jour.", false, changes.password ? 15000 : null);
+            await reloadAll();
+          } catch (err) { formError(form, err.message); }
+        });
+        return;
+      }
+
+      // Quota du cabinet
+      if (form.id === "quotaForm" && cabinet) {
+        const data = new FormData(form);
+        const mode = data.get("quotaMode");
+        const value = mode === "default" ? "" : String(data.get("quota") || "");
+        if (mode === "custom" && value === "") return formError(form, "Indiquez le nombre de scans par mois.");
+        await withBusy(submit, async () => {
+          try {
+            await saveAdminCabinetVisionQuota(cabinet.id, value);
+            toast("Quota enregistré.");
+            await reloadAll();
+          } catch (err) { formError(form, err.message); }
+        });
+        return;
+      }
+
+      // Renommer
+      if (form.id === "renameForm" && cabinet) {
+        const name = String(new FormData(form).get("name") || "").trim();
+        if (name.length < 2) return formError(form, "Le nom doit contenir au moins 2 caractères.");
+        if (name === cabinet.name) return formError(form, "Le nom n'a pas changé.");
+        await withBusy(submit, async () => {
+          try {
+            await renameCabinet(cabinet.id, name);
+            toast(`Cabinet renommé en ${name}.`);
+            await reloadAll();
+          } catch (err) { formError(form, err.message); }
+        });
+      }
+    });
+
+    // Focus sur le champ quota quand on choisit « personnalisé »
+    panelInner.addEventListener("change", (event) => {
+      if (event.target.name === "quotaMode" && event.target.value === "custom") {
+        panelInner.querySelector('#quotaForm input[name="quota"]').focus();
+      }
+      if (event.target.name === "quota") {
+        panelInner.querySelector('#quotaForm input[value="custom"]').checked = true;
+      }
+    });
+
+    // ---------- Nouveau cabinet ----------
+    function openNewCabinet() {
+      state.openCabinetId = null;
+      panelInner.innerHTML = `
+        <div class="panel-head">
+          <div class="panel-head-text">
+            <h2 id="panelTitle">Nouveau cabinet</h2>
+            <div class="cab-slug">Le responsable pourra se connecter dès la création.</div>
+          </div>
+          <button type="button" class="panel-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="panel-body">
+          <form class="form" id="createForm" novalidate style="padding-top:1.25rem">
+            <label class="field"><span>Nom du cabinet</span>
+              <input type="text" name="cabinet_name" required minlength="2" placeholder="Cabinet Benjelloun" autocomplete="off" /></label>
+            <label class="field"><span>Identifiant</span>
+              <input type="text" name="slug" required placeholder="cabinet-benjelloun" autocomplete="off" />
+              <small>Rempli automatiquement. Minuscules, chiffres et tirets.</small></label>
+            <div class="grid-2">
+              <label class="field"><span>Email du responsable</span>
+                <input type="email" name="email" required autocomplete="off" /></label>
+              <label class="field"><span>Nom du responsable</span>
+                <input type="text" name="display_name" autocomplete="off" placeholder="Facultatif" /></label>
+            </div>
+            <label class="field"><span>Mot de passe initial</span>
+              <div class="field-row">
+                <input type="text" name="password" required minlength="8" autocomplete="new-password" spellcheck="false" />
+                <button type="button" class="btn btn-ghost btn-small" data-generate>Générer</button>
+              </div>
+              <small>8 caractères minimum. Notez-le pour le transmettre au responsable.</small></label>
+            <p class="form-error" hidden></p>
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+              <button type="submit" class="btn btn-primary">Créer le cabinet</button>
+            </div>
+          </form>
+        </div>`;
+      if (!panel.open) panel.showModal();
+      const form = $("createForm");
+      let slugTouched = false;
+      form.elements.cabinet_name.focus();
+      form.elements.cabinet_name.addEventListener("input", () => {
+        if (!slugTouched) form.elements.slug.value = slugify(form.elements.cabinet_name.value);
+      });
+      form.elements.slug.addEventListener("input", () => { slugTouched = form.elements.slug.value.trim().length > 0; });
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        formError(form, "");
+        const f = form.elements;
+        const slug = f.slug.value.trim().toLowerCase();
+        if (f.cabinet_name.value.trim().length < 2) return formError(form, "Indiquez le nom du cabinet.");
+        if (!isValidSlug(slug)) return formError(form, "L'identifiant ne peut contenir que des minuscules, des chiffres et des tirets.");
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.value.trim())) return formError(form, "Indiquez un email valide pour le responsable.");
+        if (f.password.value.length < 8) return formError(form, "Le mot de passe doit contenir au moins 8 caractères.");
+        const submit = form.querySelector('button[type="submit"]');
+        await withBusy(submit, async () => {
+          try {
+            const result = await createCabinetWithOwner({
+              cabinetName: f.cabinet_name.value,
+              slug,
+              ownerEmail: f.email.value,
+              ownerPassword: f.password.value,
+              displayName: f.display_name.value,
+            });
+            toast(`Cabinet ${f.cabinet_name.value.trim()} créé. Mot de passe du responsable : ${f.password.value}`, false, 15000);
+            await reloadAll({ keepPanel: false });
+            if (result?.cabinet?.id) openCabinet(result.cabinet.id);
+            else closePanel();
+          } catch (err) {
+            formError(form, err.message || "La création a échoué.");
+          }
+        });
+      });
+    }
+    $("newCabinetBtn").addEventListener("click", openNewCabinet);
+
+    // ---------- Paramètres ----------
+    $("settingsBtn").addEventListener("click", () => {
+      $("defaultQuota").value = state.defaultQuota;
+      $("settingsError").hidden = true;
+      $("settingsDialog").showModal();
+    });
+    $("settingsCancel").addEventListener("click", () => $("settingsDialog").close());
+    $("settingsForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const btn = $("settingsSave");
+      await withBusy(btn, async () => {
+        try {
+          await saveAdminVisionCreditsDefault($("defaultQuota").value);
+          $("settingsDialog").close();
+          toast("Quota par défaut enregistré.");
+          await reloadAll();
+        } catch (err) {
+          $("settingsError").hidden = false;
+          $("settingsError").textContent = err.message;
+        }
+      });
+    });
+
+    // ---------- Recherche et filtres ----------
+    $("search").addEventListener("input", (event) => {
+      state.query = event.target.value;
+      renderList();
+    });
+    $("filters").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-filter]");
+      if (!btn) return;
+      state.filter = btn.dataset.filter;
+      document.querySelectorAll("#filters button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      renderList();
+    });
+
+    $("signOutBtn").addEventListener("click", async () => {
       await signOut();
       window.location.href = "login.html";
     });
 
-    cabinetName.addEventListener("input", () => {
-      if (!slugTouched) {
-        cabinetSlug.value = slugify(cabinetName.value);
+    // ---------- Chargement ----------
+    async function loadData() {
+      const [cabinets, settings, credits, statuses] = await Promise.all([
+        listCabinetsWithMembers(),
+        loadAdminVisionCreditsSettings().catch(() => null),
+        listAdminCabinetVisionCredits().catch(() => []),
+        loadAccountStatuses().catch((err) => ({ __error: err.message })),
+      ]);
+      state.cabinets = cabinets;
+      state.defaultQuota = settings?.default_monthly_quota ?? state.defaultQuota;
+      state.credits = Object.fromEntries((credits || []).map((row) => [row.cabinet_id, row]));
+      if (statuses && statuses.__error) {
+        state.statuses = null;
+        state.statusError = statuses.__error;
+      } else {
+        state.statuses = statuses;
+        state.statusError = "";
       }
-    });
-    cabinetSlug.addEventListener("input", () => {
-      slugTouched = cabinetSlug.value.trim().length > 0;
-    });
+      bannerEl.hidden = Boolean(state.statuses);
+      bannerEl.textContent = state.statuses
+        ? ""
+        : `Modification et blocage des comptes indisponibles pour l'instant. ${state.statusError}`;
+    }
 
-    refreshBtn.addEventListener("click", async () => {
-      await loadCreditsSettings();
-      await refreshList();
-    });
-
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      showError("");
-      showOk("");
-      const slug = cabinetSlug.value.trim().toLowerCase();
-      if (!isValidSlug(slug)) {
-        showError("Slug invalide.");
-        return;
-      }
-      submitBtn.disabled = true;
+    const session = await guardSuperAdminPage();
+    if (session) {
       try {
-        await createCabinetWithOwner({
-          cabinetName: cabinetName.value,
-          slug,
-          ownerEmail: ownerEmail.value,
-          ownerPassword: ownerPassword.value,
-          displayName: displayName.value,
-        });
-        showOk(`Cabinet « ${cabinetName.value.trim()} » créé. Le responsable peut se connecter sur login.html.`);
-        form.reset();
-        slugTouched = false;
-        await loadCreditsSettings();
-        await refreshList();
+        await loadData();
+        renderList();
       } catch (err) {
-        let msg = err.message || "Échec de la création.";
-        if (/failed to fetch|network/i.test(msg)) {
-          msg += " Déployez l’Edge Function admin-create-cabinet (voir docs/ADMIN.md).";
-        }
-        showError(msg);
-      } finally {
-        submitBtn.disabled = false;
+        summaryEl.textContent = "";
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = `<strong>Impossible de charger les cabinets</strong>${esc(err.message)}`;
       }
-    });
-
-    await loadCreditsSettings();
-    await refreshList();
+    }
   </script>
 </body>
 </html>

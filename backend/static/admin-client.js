@@ -127,6 +127,113 @@ export async function createCabinetWithOwner({
   }
 }
 
+/**
+ * Cabinets + tous leurs membres (pas seulement le responsable).
+ */
+export async function listCabinetsWithMembers() {
+  await requireSuperAdminSession();
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase non configuré");
+
+  const [cabRes, memRes] = await Promise.all([
+    supabase
+      .from("cabinets")
+      .select("id, name, slug, is_active, created_at, signup_source")
+      .order("created_at", { ascending: false }),
+    supabase.from("cabinet_members").select("cabinet_id, user_id, role, is_active, created_at"),
+  ]);
+  if (cabRes.error) throw cabRes.error;
+  if (memRes.error) throw memRes.error;
+
+  const members = memRes.data || [];
+  const userIds = [...new Set(members.map((m) => m.user_id))];
+  let profiles = [];
+  if (userIds.length) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id, email, display_name")
+      .in("user_id", userIds);
+    if (error) throw error;
+    profiles = data || [];
+  }
+  const profileByUser = Object.fromEntries(profiles.map((p) => [p.user_id, p]));
+  const roleOrder = { owner: 0, admin: 1, comptable: 2 };
+
+  return (cabRes.data || []).map((cabinet) => {
+    const cabMembers = members
+      .filter((m) => m.cabinet_id === cabinet.id)
+      .map((m) => ({ ...m, ...(profileByUser[m.user_id] || {}) }))
+      .sort((a, b) => (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9));
+    return {
+      ...cabinet,
+      members: cabMembers,
+      owner: cabMembers.find((m) => m.role === "owner") || null,
+    };
+  });
+}
+
+async function callManageAccounts(action, payload = {}) {
+  const session = await requireSuperAdminSession();
+  let response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/admin-manage-accounts`, {
+      method: "POST",
+      headers: authHeaders(session),
+      body: JSON.stringify({ action, ...payload }),
+    });
+  } catch {
+    throw new Error(
+      "Le service de gestion des comptes ne répond pas. Déployez l'Edge Function admin-manage-accounts (voir docs/ADMIN.md).",
+    );
+  }
+  let body = {};
+  try {
+    body = await response.json();
+  } catch {
+    body = {};
+  }
+  if (response.status === 404) {
+    throw new Error(
+      "Le service de gestion des comptes n'est pas encore déployé (Edge Function admin-manage-accounts, voir docs/ADMIN.md).",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(body.error || `Erreur serveur (${response.status})`);
+  }
+  return body;
+}
+
+/** État Auth des comptes : { [user_id]: { blocked, last_sign_in_at, ... } } */
+export async function loadAccountStatuses() {
+  const body = await callManageAccounts("list");
+  return Object.fromEntries((body.users || []).map((u) => [u.id, u]));
+}
+
+export function updateAccount(userId, changes) {
+  return callManageAccounts("update_user", { user_id: userId, ...changes });
+}
+
+export function setAccountBlocked(userId, blocked) {
+  return callManageAccounts("set_blocked", { user_id: userId, blocked });
+}
+
+export function renameCabinet(cabinetId, name) {
+  return callManageAccounts("update_cabinet", { cabinet_id: cabinetId, name });
+}
+
+export function setCabinetActive(cabinetId, active) {
+  return callManageAccounts("set_cabinet_active", { cabinet_id: cabinetId, active });
+}
+
+/** Mot de passe lisible : 3 blocs de 4 caractères sans ambiguïté (pas de 0/O, 1/l). */
+export function generatePassword() {
+  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  const chars = [...bytes].map((n) => alphabet[n % alphabet.length]).join("");
+  return `${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8, 12)}`;
+}
+
 export async function guardSuperAdminPage() {
   const session = await getSession();
   if (!session?.user) {

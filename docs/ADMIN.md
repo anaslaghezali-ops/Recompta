@@ -1,6 +1,25 @@
-# Admin cabinets (étape 2)
+# Espace administrateur
 
-Page super-admin : créer un **cabinet** + le **compte owner** (email / mot de passe).
+Page super-admin (`admin.html`) :
+
+- liste des cabinets avec recherche, filtres (actifs, suspendus, comptes bloqués) et jauge de scans IA du mois ;
+- panneau **Gérer** par cabinet : modifier un compte (nom, email, mot de passe), bloquer / débloquer un compte, quota de scans IA, renommer, suspendre / réactiver le cabinet ;
+- **Nouveau cabinet** : création du cabinet et du compte responsable ;
+- **Paramètres** : quota de scans IA par défaut.
+
+## Edge Function `admin-manage-accounts` (obligatoire pour modifier et bloquer)
+
+Code : `supabase/functions/admin-manage-accounts/index.ts`. Elle vérifie que l'appelant est super-admin, puis utilise la clé `service_role` côté serveur.
+
+```bash
+supabase functions deploy admin-manage-accounts --project-ref pbyoxfxngfutoiqjirkx
+```
+
+Ou Dashboard Supabase → **Edge Functions** → **Deploy a new function** → nom `admin-manage-accounts` → coller le code (JWT verification activée).
+
+Bloquer un compte : bannissement Supabase Auth (plus de connexion ni de renouvellement de session) **et** `cabinet_members.is_active = false` (les règles RLS coupent l'accès aux dossiers immédiatement). Suspendre un cabinet applique la même chose à tous ses comptes et passe `cabinets.is_active` à `false`. Les comptes super-admin ne peuvent pas être modifiés depuis cet écran.
+
+## Création de cabinet
 
 URL : `docs/admin.html` (lien **Admin cabinets** dans l’en-tête si vous êtes super-admin).
 
