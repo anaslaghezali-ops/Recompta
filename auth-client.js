@@ -73,6 +73,81 @@ export async function signUp(email, password) {
   return data;
 }
 
+export function slugifyCabinetName(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+/**
+ * Inscription self-serve : crée compte Auth + cabinet + membership owner.
+ * Nécessite l'Edge Function signup-cabinet déployée sur Supabase.
+ */
+export async function signUpCabinet({ email, password, cabinetName, displayName = "" }) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase n'est pas configuré (clé anon manquante).");
+  }
+
+  const trimmedEmail = String(email || "").trim().toLowerCase();
+  const trimmedCabinet = String(cabinetName || "").trim();
+  const trimmedDisplay = String(displayName || "").trim();
+
+  if (!trimmedCabinet || trimmedCabinet.length < 2) {
+    throw new Error("Nom du cabinet requis (2 caractères minimum).");
+  }
+  if (!trimmedEmail || !trimmedEmail.includes("@")) {
+    throw new Error("Email invalide.");
+  }
+  if (!password || password.length < 6) {
+    throw new Error("Mot de passe requis (6 caractères minimum).");
+  }
+
+  let response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/functions/v1/signup-cabinet`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: trimmedEmail,
+        password,
+        cabinet_name: trimmedCabinet,
+        display_name: trimmedDisplay,
+      }),
+    });
+  } catch {
+    throw new Error(
+      "SIGNUP_FUNCTION_UNAVAILABLE: déployez signup-cabinet sur Supabase (voir docs/DEPLOY_SIGNUP.md).",
+    );
+  }
+
+  let body = {};
+  try {
+    body = await response.json();
+  } catch {
+    body = {};
+  }
+
+  if (response.status === 404) {
+    throw new Error(
+      "SIGNUP_FUNCTION_UNAVAILABLE: déployez signup-cabinet sur Supabase (voir docs/DEPLOY_SIGNUP.md).",
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(body.error || body.message || `Inscription impossible (${response.status})`);
+  }
+
+  return signIn(trimmedEmail, password);
+}
+
 export async function signOut() {
   const supabase = getSupabase();
   if (!supabase) return;

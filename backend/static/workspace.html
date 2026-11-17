@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="dashboard.css?v=carnet-load1" />
+  <link rel="stylesheet" href="dashboard.css?v=modal-font1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
@@ -28,6 +28,10 @@
           </div>
         </div>
         <div class="dash-topbar-actions">
+          <span class="dash-credits-pill" id="topbarCredits" hidden title="Crédits scans IA ce mois (PDF natifs gratuits)">
+            <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
+            <span id="topbarCreditsText">—</span>
+          </span>
           <button type="button" class="dash-btn" id="newPeriodBtn">
             <i data-lucide="calendar-plus"></i> Nouvelle période
           </button>
@@ -535,6 +539,17 @@
     </form>
   </dialog>
 
+  <dialog id="creditsInfoDialog" class="dash-modal">
+    <form method="dialog" class="dash-modal-inner" id="creditsInfoForm">
+      <h3 id="creditsInfoTitle">Crédits scans IA</h3>
+      <p id="creditsInfoMessage" class="hint" style="white-space:pre-line;"></p>
+      <div class="dash-form-actions">
+        <button type="submit" class="dash-btn" id="creditsInfoCancel" value="cancel" hidden>Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="creditsInfoConfirm" value="confirm">OK</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="reviewFieldBulkDialog" class="dash-modal">
     <form method="dialog" class="dash-modal-inner">
       <h3 id="reviewFieldBulkTitle">Valeur modifiée</h3>
@@ -559,6 +574,7 @@
       requireCabinetSession,
       STATUS_META,
     } from "./dossiers-client.js?v=dash2";
+    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
     import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist5";
     import {
       DOC_TYPE_ICONS,
@@ -592,8 +608,8 @@
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
       importJobPageUrl,
-    } from "./import-jobs-client.js?v=jobs28";
-    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api6";
+    } from "./import-jobs-client.js?v=jobs29";
+    import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api7";
     import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace15";
     import {
       bindSidebarMobile,
@@ -621,6 +637,42 @@
     const periodError = document.getElementById("periodError");
     const periodSelect = document.getElementById("periodSelect");
     const periodBar = document.getElementById("periodBar");
+    const creditsInfoDialog = document.getElementById("creditsInfoDialog");
+    const creditsInfoTitle = document.getElementById("creditsInfoTitle");
+    const creditsInfoMessage = document.getElementById("creditsInfoMessage");
+    const creditsInfoCancel = document.getElementById("creditsInfoCancel");
+    const creditsInfoConfirm = document.getElementById("creditsInfoConfirm");
+
+    function openCreditsDialog({
+      title,
+      message,
+      confirmLabel = "OK",
+      cancelLabel = null,
+    } = {}) {
+      return new Promise((resolve) => {
+        if (!creditsInfoDialog) {
+          resolve(Boolean(cancelLabel ? window.confirm(`${title}\n\n${message}`) : (window.alert(`${title}\n\n${message}`), true)));
+          return;
+        }
+        creditsInfoTitle.textContent = title || "Crédits scans IA";
+        creditsInfoMessage.textContent = message || "";
+        creditsInfoConfirm.textContent = confirmLabel;
+        if (cancelLabel) {
+          creditsInfoCancel.hidden = false;
+          creditsInfoCancel.textContent = cancelLabel;
+        } else {
+          creditsInfoCancel.hidden = true;
+        }
+
+        const onClose = () => {
+          creditsInfoDialog.removeEventListener("close", onClose);
+          resolve(creditsInfoDialog.returnValue === "confirm");
+        };
+        creditsInfoDialog.addEventListener("close", onClose);
+        creditsInfoDialog.returnValue = "";
+        creditsInfoDialog.showModal();
+      });
+    }
 
     let cabinetId = null;
     let client = null;
@@ -646,6 +698,7 @@
     let analysisLaunchQueued = 0;
     let analysisProgress = null;
     let serverHealthOk = null;
+    let serverVisionCreditsOk = false;
     let bankMatchController = null;
     let bankMatchInFlight = false;
     let bankExtractInFlight = false;
@@ -750,10 +803,17 @@
       try {
         const health = await fetchServerHealth(apiUrl);
         serverHealthOk = true;
-        statusEl.textContent = health.ai_verified ? "Serveur connecté — IA active" : "Serveur connecté";
-        statusEl.dataset.tone = "ok";
+        serverVisionCreditsOk = health?.vision_credits_enforced === true;
+        if (!serverVisionCreditsOk) {
+          statusEl.textContent = "Serveur IA obsolète (crédits) — redéployez freemium";
+          statusEl.dataset.tone = "warn";
+        } else {
+          statusEl.textContent = health.ai_verified ? "Serveur connecté — IA + crédits" : "Serveur connecté — crédits OK";
+          statusEl.dataset.tone = "ok";
+        }
       } catch (error) {
         serverHealthOk = false;
+        serverVisionCreditsOk = false;
         statusEl.textContent = quiet
           ? "Connexion en attente — réessayez dans quelques secondes"
           : (error.message || "Serveur injoignable");
@@ -1382,7 +1442,7 @@
       }
     }
 
-    async function queueServerExtraction({ docType, emptyMessage }) {
+    async function queueServerExtraction({ docType, emptyMessage, expectedExtractCount = null }) {
       persistAnalysisApiSettings();
       const apiUrl = await refreshAnalysisServerStatus({ quiet: false });
       if (!apiUrl) {
@@ -1391,6 +1451,17 @@
           title: "URL serveur manquante",
           message: "Collez l'URL publique du Codespace (port 8000) dans le champ ci-dessous, puis relancez.",
           variant: "warn",
+        });
+        return 0;
+      }
+
+      if (!serverVisionCreditsOk) {
+        document.getElementById("analysisServerConfig")?.setAttribute("open", "");
+        showWorkspaceToast({
+          title: "Serveur IA obsolète",
+          message: "Les crédits scans ne sont pas appliqués. Sur le Codespace : git checkout freemium && git pull && redémarrez uvicorn. L'API /api/health doit renvoyer vision_credits_enforced: true.",
+          variant: "warn",
+          durationMs: 20000,
         });
         return 0;
       }
@@ -1432,14 +1503,30 @@
           break;
         }
 
+        if (round > 0 && docType === "invoice") {
+          const creditsNow = await loadMyVisionCredits({ cabinetId });
+          if (creditsDepleted(creditsNow)) break;
+        }
+
         if (round === 0) {
-          batchTotal = pendingAtLaunch;
+          const capped = expectedExtractCount != null
+            ? Math.min(pendingAtLaunch, Math.max(0, Number(expectedExtractCount) || 0))
+            : pendingAtLaunch;
+          batchTotal = capped || pendingAtLaunch;
           analysisProgress = { processed: 0, total: batchTotal };
         }
+
+        const creditsForCap = docType === "invoice"
+          ? await loadMyVisionCredits({ cabinetId })
+          : null;
+        const maxDocuments = creditsForCap?.cabinet_id != null
+          ? Math.max(0, Number(creditsForCap.remaining || 0))
+          : null;
 
         const result = await launchDossierAnalysis(apiUrl, selectedDossierId, {
           docType,
           clientIce: client?.ice || "",
+          maxDocuments,
         });
         const queuedJobs = result.queued_jobs || 0;
         const skippedInflight = result.skipped_inflight || 0;
@@ -1540,6 +1627,36 @@
     async function handleLaunchExtraction() {
       if (!selectedDossierId || analysisInFlight || activeImportJob || bankExtractInFlight) return;
 
+      await refreshPendingAnalysis({ forceDocuments: true });
+      const pendingBefore = invoicePendingCount;
+
+      const credits = await loadMyVisionCredits({ cabinetId });
+      if (creditsDepleted(credits)) {
+        await openCreditsDialog({
+          title: "Quota épuisé",
+          message: "Plus de crédits scans IA ce mois.\n\nContactez l'administrateur ou attendez le prochain mois.",
+          confirmLabel: "Compris",
+        });
+        return;
+      }
+
+      const remainingCredits = Number(credits?.remaining || 0);
+      if (credits?.cabinet_id && pendingBefore > remainingCredits) {
+        const accepted = await openCreditsDialog({
+          title: "Crédits insuffisants",
+          message: (
+            `Vous avez ${remainingCredits} crédit${remainingCredits > 1 ? "s" : ""} IA `
+            + `pour ${pendingBefore} scan${pendingBefore > 1 ? "s" : ""} en attente.\n\n`
+            + `Seul${remainingCredits > 1 ? "s" : ""} ${remainingCredits} document${remainingCredits > 1 ? "s" : ""} `
+            + `sera${remainingCredits > 1 ? "ont" : ""} extrait${remainingCredits > 1 ? "s" : ""}. `
+            + `Les ${pendingBefore - remainingCredits} autres resteront en attente faute de crédits.`
+          ),
+          confirmLabel: `Extraire ${remainingCredits} scan${remainingCredits > 1 ? "s" : ""}`,
+          cancelLabel: "Annuler",
+        });
+        if (!accepted) return;
+      }
+
       analysisInFlight = true;
       analysisLaunchQueued = 0;
       renderProductionCard();
@@ -1549,6 +1666,7 @@
         queuedJobs = await queueServerExtraction({
           docType: "invoice",
           emptyMessage: "Toutes les factures importées ont déjà été extraites.",
+          expectedExtractCount: credits?.cabinet_id != null ? remainingCredits : null,
         });
       } catch (error) {
         if (queuedJobs > 0) {
@@ -1575,21 +1693,38 @@
         await reloadCockpit(selectedDossierId);
         await refreshPendingAnalysis({ forceDocuments: true });
         await refreshPendingAnalysis({ forceDocuments: true });
+        await refreshTopbarCredits();
         await renderProductionCard();
-        if (queuedJobs > 0 && invoicePendingCount === 0 && cockpit?.lineCount > 0) {
-          showWorkspaceToast({
-            title: "Extraction terminée",
-            message: `${cockpit.lineCount} ligne(s) disponibles en revue.`,
-            variant: "success",
-            durationMs: 10000,
-          });
-        } else if (queuedJobs > 0 && invoicePendingCount > 0) {
-          showWorkspaceToast({
-            title: "Extraction incomplète",
-            message: `${invoicePendingCount} document(s) n'ont pas pu être extraits. Vérifiez les scans ou relancez l'extraction.`,
-            variant: "warn",
-            durationMs: 14000,
-          });
+
+        if (queuedJobs > 0) {
+          const pendingAfter = invoicePendingCount;
+          const extractedDocs = Math.max(0, pendingBefore - pendingAfter);
+          const creditsAfter = await loadMyVisionCredits({ cabinetId });
+          const stoppedByCredits = pendingAfter > 0 && creditsDepleted(creditsAfter);
+
+          if (pendingAfter === 0) {
+            showWorkspaceToast({
+              title: "Extraction terminée",
+              message: `${cockpit?.lineCount || extractedDocs} ligne(s) disponibles en revue.`,
+              variant: "success",
+              durationMs: 10000,
+            });
+          } else if (stoppedByCredits) {
+            await openCreditsDialog({
+              title: extractedDocs > 0 ? "Extraction partielle terminée" : "Quota épuisé",
+              message: extractedDocs > 0
+                ? `${extractedDocs} facture(s) extraite(s).\n\n${pendingAfter} scan(s) non extraits — quota IA épuisé ce mois.`
+                : `${pendingAfter} scan(s) non extraits — plus de crédits IA ce mois.`,
+              confirmLabel: "Compris",
+            });
+          } else {
+            showWorkspaceToast({
+              title: "Extraction incomplète",
+              message: `${pendingAfter} document(s) n'ont pas pu être extraits. Vérifiez les scans ou relancez l'extraction.`,
+              variant: "warn",
+              durationMs: 14000,
+            });
+          }
         }
       }
     }
@@ -2597,6 +2732,34 @@
       newPeriodDialog.showModal();
     }
 
+    function updateTopbarCredits(credits) {
+      const topbar = document.getElementById("topbarCredits");
+      const topbarText = document.getElementById("topbarCreditsText");
+      if (!topbar || !topbarText || !credits?.cabinet_id) {
+        if (topbar) topbar.hidden = true;
+        return;
+      }
+      topbar.hidden = false;
+      topbarText.textContent = `${credits.remaining}/${credits.quota} scans IA`;
+      topbar.classList.toggle("depleted", creditsDepleted(credits));
+      topbar.title = formatCreditsLabel(credits) + " · PDF natifs gratuits";
+      initLucide();
+    }
+
+    async function refreshTopbarCredits() {
+      try {
+        const credits = await loadMyVisionCredits({ cabinetId });
+        if (credits) {
+          updateTopbarCredits(credits);
+        } else {
+          document.getElementById("topbarCredits")?.setAttribute("hidden", "");
+        }
+      } catch (err) {
+        console.warn("[credits] refreshTopbarCredits:", err?.message || err);
+        document.getElementById("topbarCredits")?.setAttribute("hidden", "");
+      }
+    }
+
     periodMonth.innerHTML = MONTH_LABELS.map((label, i) =>
       `<option value="${i + 1}">${label}</option>`,
     ).join("");
@@ -2616,6 +2779,7 @@
             active: "portfolio",
           });
           bindSidebarMobile();
+          await refreshTopbarCredits();
           document.getElementById("signOutBtn")?.addEventListener("click", async () => {
             await signOut();
             window.location.href = "login.html";

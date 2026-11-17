@@ -1276,6 +1276,18 @@ async def _extract_with_ai_cascade(
     """Modèle économique par défaut, escalade vers un modèle plus capable si incohérent."""
     from vat_intelligence import result_needs_escalation
     from vat_multi_rate import AI_MULTI_RATE_ESCALATION_SUFFIX, result_has_blended_summary
+    from vision_credits import ensure_vision_credit_available, get_active_cabinet_id
+
+    cabinet_id = get_active_cabinet_id()
+    ok, credit_message = await ensure_vision_credit_available(cabinet_id)
+    if not ok:
+        return ExtractionResult(
+            filename=filename,
+            lines=[],
+            confidence="low",
+            engine="ai",
+            warnings=[credit_message],
+        )
 
     result = await _extract_with_openai_images(filename, images)
 

@@ -18,6 +18,7 @@ from normalize_results import (
 )
 from supabase_service import SupabaseService, _document_identity_keys
 from supplier_notebook import apply_official_supplier_names
+from vision_credits import cabinet_id_for_dossier, reset_active_cabinet_id, set_active_cabinet_id
 from zip_utils import iter_invoice_files, storage_path_for_zip_member
 
 IMPORT_QUEUE_BUCKET = "import-queue"
@@ -258,6 +259,9 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
 
     await db.update_job_file(file_id, {"status": "processing"})
 
+    cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
+    credits_token = set_active_cabinet_id(cabinet_id)
+
     try:
         content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
 
@@ -343,6 +347,8 @@ async def process_bank_import_job(job: dict[str, Any], db: SupabaseService) -> d
                 "processed_at": _iso_now(),
             },
         )
+    finally:
+        reset_active_cabinet_id(credits_token)
 
     await db.update_job(
         job_id,
@@ -523,11 +529,21 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     failed = 0
     extraction_results: list[ExtractionResult] = []
     semaphore = asyncio.Semaphore(extraction_concurrency())
+    cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
+    if cabinet_id is None:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "vision credits: cabinet_id introuvable pour dossier %s — extractions IA bloquées",
+            dossier_id,
+        )
+    credits_token = set_active_cabinet_id(cabinet_id)
 
     async def process_item(item: dict[str, Any]) -> ExtractionResult:
         nonlocal processed, failed
         filename = item["filename"]
         source_id = item["source_id"]
+        item_token = set_active_cabinet_id(cabinet_id)
         async with semaphore:
             try:
                 result = await extract_invoice(filename, item["content"], item["mime_type"])
@@ -550,6 +566,8 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     lines=[],
                     warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
                 )
+            finally:
+                reset_active_cabinet_id(item_token)
 
     token = activate_client_ice_exclusions(client_ice)
     new_lines: list[dict[str, Any]] = []
@@ -622,8 +640,17 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             )
     finally:
         deactivate_client_ice_exclusions(token)
+        reset_active_cabinet_id(credits_token)
 
     total = len(work_items)
+    credit_blocked = 0
+    for result in extraction_results:
+        for warning in result.warnings or []:
+            text = str(warning or "").lower()
+            if "quota" in text and ("crédit" in text or "credit" in text):
+                credit_blocked += 1
+                break
+
     if processed == 0:
         final_status = "failed"
         warning_bits = []
@@ -631,10 +658,27 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             for warning in (result.warnings or [])[:2]:
                 if warning and warning not in warning_bits:
                     warning_bits.append(warning)
-        error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
+        if credit_blocked > 0:
+            error_summary = (
+                f"{credit_blocked} scan(s) non extraits — quota IA épuisé ce mois."
+            )
+        else:
+            error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
     elif failed > 0 or archive_failures > 0:
         final_status = "completed"
-        error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
+        other_failed = max(failed + archive_failures - credit_blocked, 0)
+        if credit_blocked > 0 and other_failed == 0:
+            error_summary = (
+                f"{processed} extrait(s) — {credit_blocked} scan(s) non extraits "
+                f"(quota IA épuisé)."
+            )
+        elif credit_blocked > 0:
+            error_summary = (
+                f"{failed + archive_failures} fichier(s) en erreur sur {total} "
+                f"dont {credit_blocked} faute de crédits."
+            )
+        else:
+            error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
     else:
         final_status = "completed"
         error_summary = None

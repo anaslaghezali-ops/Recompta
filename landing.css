@@ -431,6 +431,24 @@ a { color: inherit; }
   font-size: 0.95rem;
 }
 
+.lp-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.lp-cta-box .lp-btn-outline {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+}
+
+.lp-cta-box .lp-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #fff;
+}
+
 .lp-cta-box .lp-btn-primary {
   background: #fff;
   color: var(--lp-accent);

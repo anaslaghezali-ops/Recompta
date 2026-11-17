@@ -25,6 +25,10 @@
           </div>
         </div>
         <div class="dash-topbar-actions">
+          <span class="dash-credits-pill" id="topbarCredits" hidden title="Crédits scans IA ce mois (PDF natifs gratuits)">
+            <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
+            <span id="topbarCreditsText">—</span>
+          </span>
           <label class="dash-search">
             <i data-lucide="search"></i>
             <input id="searchInput" type="search" placeholder="Rechercher un client ou ICE…" />
@@ -72,6 +76,14 @@
           <div>
             <strong id="importBannerTitle">Imports en cours</strong>
             <p id="importBannerText">—</p>
+          </div>
+        </div>
+
+        <div class="dash-portfolio-banner" id="creditsBanner" hidden style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;">
+          <i data-lucide="sparkles"></i>
+          <div>
+            <strong id="creditsBannerTitle">Crédits vision IA</strong>
+            <p id="creditsBannerText">—</p>
           </div>
         </div>
 
@@ -153,6 +165,7 @@
       showImportCompletionToast,
       startImportCompletionWatcher,
     } from "./import-jobs-client.js?v=jobs13";
+    import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
 
     const portfolioRows = document.getElementById("portfolioRows");
     const portfolioList = document.getElementById("portfolioList");
@@ -181,6 +194,63 @@
     let searchQuery = "";
     let importPollTimer = null;
     let stopCompletionWatcher = null;
+
+    function updateCreditsBanner(credits) {
+      const banner = document.getElementById("creditsBanner");
+      const topbar = document.getElementById("topbarCredits");
+      const topbarText = document.getElementById("topbarCreditsText");
+      if (!credits?.cabinet_id) {
+        if (banner) banner.hidden = true;
+        if (topbar) topbar.hidden = true;
+        return;
+      }
+      const depleted = creditsDepleted(credits);
+      const pillLabel = `${credits.remaining}/${credits.quota} scans IA`;
+      if (topbar && topbarText) {
+        topbar.hidden = false;
+        topbarText.textContent = pillLabel;
+        topbar.classList.toggle("depleted", depleted);
+        topbar.title = formatCreditsLabel(credits) + " · PDF natifs gratuits";
+      }
+      if (!banner) {
+        initLucide();
+        return;
+      }
+      banner.hidden = false;
+      document.getElementById("creditsBannerTitle").textContent = "Crédits vision IA (scans)";
+      document.getElementById("creditsBannerText").textContent = formatCreditsLabel(credits)
+        + " · PDF natifs et CSV banque = gratuits";
+      if (creditsDepleted(credits)) {
+        banner.style.background = "#fef2f2";
+        banner.style.borderColor = "#fecaca";
+        banner.style.color = "#991b1b";
+        document.getElementById("creditsBannerText").textContent =
+          "Quota épuisé ce mois — les scans IA sont bloqués jusqu'au prochain mois (ou contactez l'administrateur).";
+      } else {
+        banner.style.background = "#eff6ff";
+        banner.style.borderColor = "#bfdbfe";
+        banner.style.color = "#1e3a8a";
+        document.getElementById("creditsBannerText").textContent = formatCreditsLabel(credits)
+          + " · PDF natifs et CSV banque = gratuits";
+      }
+      initLucide();
+    }
+
+    async function refreshCreditsBanner() {
+      try {
+        const credits = await loadMyVisionCredits({ cabinetId });
+        if (credits) {
+          updateCreditsBanner(credits);
+        } else {
+          document.getElementById("creditsBanner")?.setAttribute("hidden", "");
+          document.getElementById("topbarCredits")?.setAttribute("hidden", "");
+        }
+      } catch (err) {
+        console.warn("[credits] refreshCreditsBanner:", err?.message || err);
+        document.getElementById("creditsBanner")?.setAttribute("hidden", "");
+        document.getElementById("topbarCredits")?.setAttribute("hidden", "");
+      }
+    }
 
     function updateImportBanner(rows) {
       const banner = document.getElementById("importBanner");
@@ -442,13 +512,17 @@
         window.location.href = "login.html";
       });
       await refreshClients();
+      await refreshCreditsBanner();
       initLucide();
     }
 
     document.getElementById("openNewClientBtn").addEventListener("click", openNewClientModal);
     document.getElementById("emptyNewClientBtn")?.addEventListener("click", openNewClientModal);
     document.getElementById("cancelClientBtn").addEventListener("click", () => newClientDialog.close());
-    document.getElementById("refreshBtn").addEventListener("click", refreshClients);
+    document.getElementById("refreshBtn").addEventListener("click", async () => {
+      await refreshClients();
+      await refreshCreditsBanner();
+    });
 
     searchInput.addEventListener("input", () => {
       searchQuery = searchInput.value.trim();
