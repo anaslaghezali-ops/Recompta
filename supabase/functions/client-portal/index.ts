@@ -177,12 +177,21 @@ Deno.serve(async (req) => {
 
       // Compte technique sans mot de passe ni email réel : la connexion se fait uniquement par le lien.
       const suffix = base64url(crypto.getRandomValues(new Uint8Array(6))).toLowerCase().replace(/[^a-z0-9]/g, "x");
-      const { data: created, error: createError } = await admin.auth.admin.createUser({
-        email: `client-${clientId}-${suffix}@portail.recompta.invalid`,
-        email_confirm: true,
-        app_metadata: { portal_client_id: clientId },
-        user_metadata: { display_name: contact.contact_name || client.name, portal: true },
-      });
+      // Aucun email n'est jamais envoyé à cette adresse technique ; domaine réservé en priorité.
+      let created: { user: { id: string } | null } | null = null;
+      let createError: { message: string } | null = null;
+      for (const domain of ["portail.recompta.invalid", "portail.recompta.app"]) {
+        const res = await admin.auth.admin.createUser({
+          email: `client-${clientId}-${suffix}@${domain}`,
+          email_confirm: true,
+          app_metadata: { portal_client_id: clientId },
+          user_metadata: { display_name: contact.contact_name || client.name, portal: true },
+        });
+        created = res.data;
+        createError = res.error;
+        if (!createError && created?.user) break;
+        if (!/email/i.test(createError?.message || "")) break;
+      }
       if (createError || !created?.user) return json({ error: createError?.message || "Création de l'accès impossible" }, 500);
 
       const { error: insertError } = await admin.from("client_portal_access").insert({
