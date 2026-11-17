@@ -269,3 +269,11 @@
   .rc-sheet-title dl div { justify-content: flex-start; }
   .rc-sheet-client { margin-left: 0; width: auto; }
 }
+.rc-bill-seller-missing {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0.75rem 0.95rem; margin-bottom: 0.25rem;
+  background: var(--rc-warn-wash); border: 1px solid #f1d8a8; border-radius: var(--rc-radius-m);
+}
+.rc-bill-seller-missing[hidden] { display: none; }
+.rc-bill-seller-missing div { flex: 1; }
+.rc-bill-seller-missing p { margin: 0.15rem 0 0; font-size: 0.86rem; color: var(--rc-ink-2); line-height: 1.4; }
