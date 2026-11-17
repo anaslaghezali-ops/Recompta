@@ -20,6 +20,21 @@ export function authErrorMessage(error) {
   if (/banned/i.test(message)) {
     return "Ce compte est bloqué. Contactez l'administrateur de Recompta.";
   }
+  if (/invalid login credentials/i.test(message)) {
+    return "Email ou mot de passe incorrect.";
+  }
+  if (/email not confirmed/i.test(message)) {
+    return "Cette adresse email n'a pas encore été confirmée.";
+  }
+  if (/rate limit|too many requests/i.test(message)) {
+    return "Trop de tentatives. Patientez quelques minutes avant de réessayer.";
+  }
+  if (/password should be at least|weak password/i.test(message)) {
+    return "Le mot de passe doit contenir au moins 8 caractères.";
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return "Connexion impossible. Vérifiez votre accès internet puis réessayez.";
+  }
   if (/invalid api key/i.test(message)) {
     return "Clé API refusée (souvent un ancien fichier en cache). Faites Ctrl+Shift+R. Vérifiez SUPABASE_ANON_KEY dans docs/auth-client.js (projet pbyoxfxngfutoiqjirkx).";
   }
@@ -149,6 +164,37 @@ export async function signUpCabinet({ email, password, cabinetName, displayName 
   }
 
   return signIn(trimmedEmail, password);
+}
+
+/** Envoie le mail de réinitialisation ; le lien revient sur login.html#type=recovery. */
+export async function requestPasswordReset(email) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase n'est pas configuré (clé anon manquante).");
+  const redirectTo = new URL("login.html", window.location.href).href;
+  const { error } = await supabase.auth.resetPasswordForEmail(String(email || "").trim().toLowerCase(), { redirectTo });
+  if (error) throw error;
+}
+
+/** Après ouverture du lien de réinitialisation : définit le nouveau mot de passe. */
+export async function updatePassword(password) {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase n'est pas configuré (clé anon manquante).");
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+}
+
+/** Vrai si la page a été ouverte depuis un lien de réinitialisation de mot de passe. */
+export function isPasswordRecoveryUrl() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const query = new URLSearchParams(window.location.search);
+  return hash.get("type") === "recovery" || query.get("type") === "recovery";
+}
+
+export function onAuthEvent(callback) {
+  const supabase = getSupabase();
+  if (!supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange((event, session) => callback(event, session));
+  return () => data.subscription.unsubscribe();
 }
 
 export async function signOut() {

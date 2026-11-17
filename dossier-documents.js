@@ -1,4 +1,4 @@
-import { getSupabase } from "./auth-client.js?v=auth6";
+import { getSupabase } from "./auth-client.js?v=auth9";
 import {
   expandUploadedFiles,
   isZipFile,

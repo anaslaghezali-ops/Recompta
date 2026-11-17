@@ -2,7 +2,7 @@ import {
   getSession,
   getSupabase,
   isSuperAdmin,
-} from "./auth-client.js?v=auth6";
+} from "./auth-client.js?v=auth9";
 
 const MONTH_LABELS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
