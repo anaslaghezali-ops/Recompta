@@ -151,3 +151,19 @@ button { font: inherit; }
   .pt-head { padding-top: 2.4rem; }
   .pt-head h1 { font-size: 2rem; }
 }
+
+/* Mon mot de passe */
+.pt-account summary { cursor: pointer; font-weight: 600; font-size: 1rem; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+.pt-account summary::-webkit-details-marker { display: none; }
+.pt-account summary::after { content: "+"; font-weight: 400; font-size: 1.3rem; color: var(--pt-muted); }
+.pt-account[open] summary::after { content: "–"; }
+.pt-account-email { margin: 0.6rem 0 0.8rem; color: var(--pt-ink-2); font-size: 0.92rem; overflow-wrap: anywhere; }
+.pt-account form { display: grid; gap: 0.6rem; }
+.pt-field { display: grid; gap: 0.25rem; font-size: 0.86rem; color: var(--pt-muted); }
+.pt-field input { font: inherit; font-size: 1rem; color: var(--pt-ink); padding: 0.6rem 0.75rem; min-height: 2.75rem; border: 1px solid #c6d0dc; border-radius: 8px; }
+.pt-account .pt-btn { justify-self: start; }
+.pt-form-msg { margin: 0; font-size: 0.88rem; }
+.pt-form-msg.is-ok { color: var(--pt-ok); }
+.pt-form-msg.is-error { color: var(--pt-stop); }
+.pt-hint { margin: 0.7rem 0 0; font-size: 0.84rem; color: var(--pt-muted); }
+.pt-login-btn { display: inline-block; margin-top: 0.6rem; text-decoration: none; }

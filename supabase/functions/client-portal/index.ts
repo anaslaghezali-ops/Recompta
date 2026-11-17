@@ -10,10 +10,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.86.0";
  *
  * Côté cabinet (membre actif ayant accès au client) :
  * - status   { client_id }
- * - invite   { client_id, portal_url, contact_name?, contact_phone?, contact_email? }
+ * - invite   { client_id, portal_url, contact_name?, contact_phone?, login_email? }
+ *              login_email renseigné : identifiants email + mot de passe (générés) en plus du lien
+ * - set_login { client_id, login_email } : crée ou change l'email de connexion, nouveau mot de passe
+ * - reset_password { client_id }    : nouveau mot de passe (le cabinet le transmet au client)
  * - new_link { client_id, portal_url } : nouveau lien (l'ancien ne marche plus), réactive l'accès
  * - revoke   { client_id }             : coupe l'accès (lien invalidé, sessions bloquées)
- * - update_contact { client_id, contact_name?, contact_phone?, contact_email? }
+ * - update_contact { client_id, contact_name?, contact_phone? }
  *
  * Le lien contient un jeton aléatoire de 256 bits ; seule son empreinte SHA-256 est stockée.
  * Le compte portail n'est membre d'aucun cabinet : les règles RLS ne lui ouvrent que son espace.
@@ -66,6 +69,29 @@ function portalLink(portalUrl: unknown, token: string): string | null {
   url.search = "";
   url.hash = `acces=${token}`;
   return url.toString();
+}
+
+const TECH_DOMAINS = ["portail.recompta.invalid", "portail.recompta.app"];
+const isTechnicalEmail = (email: string | null | undefined) => !email || TECH_DOMAINS.some((d) => email.endsWith(`@${d}`));
+
+function newPassword() {
+  // 12 caractères lisibles (sans 0/O, 1/l/I), au moins une majuscule, une minuscule et un chiffre.
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ", lower = "abcdefghijkmnopqrstuvwxyz", digits = "23456789";
+  const all = upper + lower + digits;
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const chars = [...bytes].map((b) => all[b % all.length]);
+  chars[0] = upper[bytes[0] % upper.length];
+  chars[5] = lower[bytes[5] % lower.length];
+  chars[9] = digits[bytes[9] % digits.length];
+  return chars.join("");
+}
+
+function friendlyAuthError(message: string) {
+  if (/already been registered|already registered|already exists|duplicate/i.test(message)) {
+    return "Un compte Recompta existe déjà avec cet email : utilisez une autre adresse";
+  }
+  if (/email/i.test(message)) return "Adresse email refusée";
+  return message || "Opération impossible";
 }
 
 const ACCESS_COLUMNS = "client_id, cabinet_id, user_id, contact_name, contact_phone, contact_email, is_active, created_at, link_created_at, last_used_at";
@@ -145,7 +171,10 @@ Deno.serve(async (req) => {
 
   async function loadAccess() {
     const { data } = await admin.from("client_portal_access").select(ACCESS_COLUMNS).eq("client_id", clientId).maybeSingle();
-    return data;
+    if (!data) return null;
+    const { data: u } = await admin.auth.admin.getUserById(data.user_id);
+    const email = u?.user?.email || null;
+    return { ...data, login_email: isTechnicalEmail(email) ? null : email };
   }
 
   async function setBanned(userId: string, banned: boolean) {
@@ -153,13 +182,17 @@ Deno.serve(async (req) => {
   }
 
   function contactFields(src: Record<string, unknown>) {
-    const email = cleanText(src.contact_email, 160);
-    if (email && !emailPattern.test(email)) return "Adresse email du contact invalide";
     return {
       contact_name: cleanText(src.contact_name),
       contact_phone: cleanText(src.contact_phone, 40),
-      contact_email: email ? email.toLowerCase() : null,
     };
+  }
+
+  function loginEmail(src: Record<string, unknown>): string | null | false {
+    const email = cleanText(src.login_email, 160);
+    if (!email) return null;
+    if (!emailPattern.test(email)) return false;
+    return email.toLowerCase();
   }
 
   try {
@@ -173,24 +206,33 @@ Deno.serve(async (req) => {
       const link = portalLink(body.portal_url, token);
       if (!link) return json({ error: "Adresse du portail invalide" }, 400);
       const contact = contactFields(body);
-      if (typeof contact === "string") return json({ error: contact }, 400);
+      const email = loginEmail(body);
+      if (email === false) return json({ error: "Adresse email de connexion invalide" }, 400);
+      const password = email ? newPassword() : null;
 
-      // Compte technique sans mot de passe ni email réel : la connexion se fait uniquement par le lien.
-      const suffix = base64url(crypto.getRandomValues(new Uint8Array(6))).toLowerCase().replace(/[^a-z0-9]/g, "x");
-      // Aucun email n'est jamais envoyé à cette adresse technique ; domaine réservé en priorité.
       let created: { user: { id: string } | null } | null = null;
       let createError: { message: string } | null = null;
-      for (const domain of ["portail.recompta.invalid", "portail.recompta.app"]) {
-        const res = await admin.auth.admin.createUser({
-          email: `client-${clientId}-${suffix}@${domain}`,
-          email_confirm: true,
-          app_metadata: { portal_client_id: clientId },
-          user_metadata: { display_name: contact.contact_name || client.name, portal: true },
-        });
+      const meta = {
+        email_confirm: true,
+        app_metadata: { portal_client_id: clientId },
+        user_metadata: { display_name: contact.contact_name || client.name, portal: true },
+      };
+      if (email) {
+        // Identifiants email + mot de passe ; le lien rapide reste disponible.
+        const res = await admin.auth.admin.createUser({ email, password: password!, ...meta });
         created = res.data;
         createError = res.error;
-        if (!createError && created?.user) break;
-        if (!/email/i.test(createError?.message || "")) break;
+        if (createError) return json({ error: friendlyAuthError(createError.message) }, 400);
+      } else {
+        // Compte technique sans email réel : connexion uniquement par le lien. Aucun email n'y est jamais envoyé.
+        const suffix = base64url(crypto.getRandomValues(new Uint8Array(6))).toLowerCase().replace(/[^a-z0-9]/g, "x");
+        for (const domain of TECH_DOMAINS) {
+          const res = await admin.auth.admin.createUser({ email: `client-${clientId}-${suffix}@${domain}`, ...meta });
+          created = res.data;
+          createError = res.error;
+          if (!createError && created?.user) break;
+          if (!/email/i.test(createError?.message || "")) break;
+        }
       }
       if (createError || !created?.user) return json({ error: createError?.message || "Création de l'accès impossible" }, 500);
 
@@ -206,7 +248,7 @@ Deno.serve(async (req) => {
         await admin.auth.admin.deleteUser(created.user.id);
         throw insertError;
       }
-      return json({ link, access: await loadAccess() });
+      return json({ link, password, access: await loadAccess() });
     }
 
     const access = await loadAccess();
@@ -232,9 +274,25 @@ Deno.serve(async (req) => {
       return json({ ok: true, access: await loadAccess() });
     }
 
+    if (action === "set_login") {
+      const email = loginEmail(body);
+      if (!email) return json({ error: "Indiquez une adresse email valide" }, 400);
+      const password = newPassword();
+      const { error } = await admin.auth.admin.updateUserById(access.user_id, { email, email_confirm: true, password });
+      if (error) return json({ error: friendlyAuthError(error.message) }, 400);
+      return json({ password, access: await loadAccess() });
+    }
+
+    if (action === "reset_password") {
+      if (!access.login_email) return json({ error: "Ce client n'a pas encore d'email de connexion" }, 400);
+      const password = newPassword();
+      const { error } = await admin.auth.admin.updateUserById(access.user_id, { password });
+      if (error) return json({ error: error.message }, 400);
+      return json({ password, access: await loadAccess() });
+    }
+
     if (action === "update_contact") {
       const contact = contactFields(body);
-      if (typeof contact === "string") return json({ error: contact }, 400);
       const { error } = await admin.from("client_portal_access").update(contact).eq("client_id", clientId);
       if (error) throw error;
       return json({ ok: true, access: await loadAccess() });

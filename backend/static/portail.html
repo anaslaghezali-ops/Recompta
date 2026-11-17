@@ -8,7 +8,7 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=portal1" />
+  <link rel="stylesheet" href="portal.css?v=portal2" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="pt">
@@ -67,6 +67,18 @@
         <ul class="pt-sent" id="ptSent"></ul>
       </section>
 
+      <details class="pt-section pt-account" id="ptAccount" hidden>
+        <summary>Mon mot de passe</summary>
+        <p class="pt-account-email" id="ptLoginEmail"></p>
+        <form id="ptPwdForm" novalidate>
+          <label class="pt-field"><span>Nouveau mot de passe</span>
+            <input type="password" id="ptPwd" autocomplete="new-password" minlength="8" required /></label>
+          <p class="pt-form-msg" id="ptPwdMsg" role="status" hidden></p>
+          <button type="submit" class="pt-btn" id="ptPwdBtn">Changer mon mot de passe</button>
+        </form>
+        <p class="pt-hint">En cas d'oubli, demandez un nouveau mot de passe à votre cabinet.</p>
+      </details>
+
       <footer class="pt-foot">
         <p><i data-lucide="lock"></i> <span id="ptFootText">Vos documents sont transmis uniquement à votre cabinet comptable.</span></p>
         <button type="button" class="pt-link" id="ptSignOut">Se déconnecter de cet appareil</button>
@@ -78,7 +90,9 @@
     import { getSupabase, signOut } from "./auth-client.js?v=auth10";
     import {
       PORTAL_DOC_TYPES,
+      changeMyPassword,
       checkPortalFile,
+      myLoginEmail,
       ensurePeriod,
       exchangeAccessToken,
       listMyRequests,
@@ -86,7 +100,7 @@
       loadPortalContext,
       periodLabelCap,
       uploadPortalFile,
-    } from "./portal-client.js?v=portal2";
+    } from "./portal-client.js?v=portal3";
 
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -250,9 +264,27 @@
       if (resend) return pickFiles({ docType: resend.dataset.resend });
     });
     $("ptPeriod").addEventListener("change", () => { state.periodKey = $("ptPeriod").value; render(); });
+    const LOGIN_BUTTON = '<p><a class="pt-btn pt-login-btn" href="login.html">Se connecter avec mon email</a></p>';
     $("ptSignOut").addEventListener("click", async () => {
       await signOut();
-      showState("Vous êtes déconnecté. Utilisez le lien envoyé par votre cabinet pour revenir.", { error: true });
+      showState("Vous êtes déconnecté. Reconnectez-vous avec votre email et votre mot de passe, ou avec le lien envoyé par votre cabinet.", { error: true, html: LOGIN_BUTTON });
+    });
+    $("ptPwdForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const msg = $("ptPwdMsg");
+      $("ptPwdBtn").disabled = true;
+      try {
+        await changeMyPassword($("ptPwd").value);
+        $("ptPwd").value = "";
+        msg.className = "pt-form-msg is-ok";
+        msg.textContent = "Mot de passe changé. Utilisez-le à votre prochaine connexion.";
+      } catch (err) {
+        msg.className = "pt-form-msg is-error";
+        msg.textContent = err.message;
+      } finally {
+        msg.hidden = false;
+        $("ptPwdBtn").disabled = false;
+      }
     });
 
     async function refreshLists() {
@@ -268,12 +300,12 @@
           await exchangeAccessToken(match[1]);
         } catch (err) {
           const { data } = await getSupabase().auth.getSession();
-          if (!data?.session) return showState(err.message, { error: true });
+          if (!data?.session) return showState(err.message, { error: true, html: LOGIN_BUTTON });
         }
       }
       const { data } = await getSupabase().auth.getSession();
       if (!data?.session) {
-        return showState("Pour ouvrir votre espace, utilisez le lien personnel envoyé par votre cabinet comptable.", { error: true });
+        return showState("Pour ouvrir votre espace, connectez-vous avec l'email et le mot de passe transmis par votre cabinet, ou ouvrez le lien personnel qu'il vous a envoyé.", { error: true, html: LOGIN_BUTTON });
       }
       const ctx = await loadPortalContext().catch(() => null);
       if (!ctx) {
@@ -283,6 +315,9 @@
         return showState("Votre accès a été désactivé. Contactez votre cabinet comptable pour obtenir un nouveau lien.", { error: true });
       }
       state.ctx = ctx;
+      const loginEmail = await myLoginEmail().catch(() => null);
+      $("ptAccount").hidden = !loginEmail;
+      if (loginEmail) $("ptLoginEmail").textContent = `Vous vous connectez avec ${loginEmail}.`;
       await refreshLists();
       state.periodKey = defaultPeriodKey();
       $("ptState").hidden = true;

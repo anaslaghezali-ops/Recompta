@@ -13,8 +13,11 @@ import {
   markUploadsSeen,
   periodLabel,
   periodLabelCap,
+  loginUrl,
   portalInvite,
   portalNewLink,
+  portalResetPassword,
+  portalSetLogin,
   portalRevoke,
   portalStatus,
   portalUpdateContact,
@@ -22,7 +25,7 @@ import {
   rejectUpload,
   setRequestStatus,
   uploadPreviewUrl,
-} from "./portal-client.js?v=portal2";
+} from "./portal-client.js?v=portal3";
 
 const esc = (v) => escapeHtml(v ?? "");
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—");
@@ -35,7 +38,7 @@ const REQUEST_STATUS = {
 };
 
 export function createWorkspacePortal({ mountEl, tabButton, getContext, toast }) {
-  const state = { access: null, requests: [], uploads: [], dossierId: null, link: null, loaded: false };
+  const state = { access: null, requests: [], uploads: [], dossierId: null, link: null, password: null, loaded: false };
   const ctx = () => getContext();
 
   function setBadge(n) {
@@ -70,12 +73,12 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         <section class="rc-panel rc-portal-access">
           <header class="rc-panel-head"><div>
             <h2>Accès du client</h2>
-            <p>${esc(clientName)} n'a pas encore d'espace. Une fois créé, vous lui transmettez un lien personnel : il dépose ses factures et relevés sans mot de passe, directement dans ses périodes.</p>
+            <p>${esc(clientName)} n'a pas encore d'espace. Il y déposera ses factures et relevés, directement dans ses périodes. Avec un email, il se connecte par email et mot de passe sur la page de connexion habituelle ; un lien rapide sans mot de passe est aussi fourni.</p>
           </div></header>
           <form class="rc-form rc-portal-invite" data-form="invite" novalidate>
             <label class="rc-field"><span>Nom du contact</span><input name="contact_name" type="text" autocomplete="off" placeholder="Prénom Nom" /></label>
             <label class="rc-field"><span>Téléphone</span><input name="contact_phone" type="tel" autocomplete="off" placeholder="facultatif" /></label>
-            <label class="rc-field"><span>Email</span><input name="contact_email" type="email" autocomplete="off" placeholder="facultatif" /></label>
+            <label class="rc-field"><span>Email de connexion</span><input name="login_email" type="email" autocomplete="off" placeholder="client@societe.ma" /><small>Recommandé. Sans email, l'accès se fait uniquement par le lien.</small></label>
             <div class="rc-portal-invite-actions"><button type="submit" class="dash-btn dash-btn-primary" data-act="invite"><i data-lucide="user-plus"></i> Créer l'accès du client</button></div>
           </form>
         </section>`;
@@ -83,13 +86,17 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
     const status = a.is_active
       ? '<span class="rc-bill-status is-ok">Actif</span>'
       : '<span class="rc-bill-status is-muted">Accès coupé</span>';
-    const contact = [a.contact_name, a.contact_phone, a.contact_email].filter(Boolean).map(esc).join(" · ") || "Aucun contact renseigné";
+    const contact = [a.contact_name, a.contact_phone].filter(Boolean).map(esc).join(" · ") || "Aucun contact renseigné";
+    const login = a.login_email
+      ? `Connexion : <strong>${esc(a.login_email)}</strong> · <button type="button" class="rc-link" data-act="reset-password">Nouveau mot de passe</button> · <button type="button" class="rc-link" data-act="edit-login">Changer l'email</button>`
+      : 'Connexion par lien uniquement · <button type="button" class="rc-link" data-act="edit-login">Créer des identifiants email + mot de passe</button>';
     return `
       <section class="rc-panel rc-portal-access">
         <header class="rc-panel-head">
           <div>
             <h2>Accès du client ${status}</h2>
             <p>${contact} · <button type="button" class="rc-link" data-act="edit-contact">Modifier</button></p>
+            <p>${login}</p>
             <p class="rc-portal-meta">Dernière visite : ${a.last_used_at ? fmtDateTime(a.last_used_at) : "jamais"} · lien créé le ${fmtDate(a.link_created_at)}</p>
           </div>
           <div class="rc-panel-tools">
@@ -97,24 +104,35 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
             <button type="button" class="dash-btn dash-btn-sm ${a.is_active ? "" : "dash-btn-primary"}" data-act="new-link">${a.is_active ? "Nouveau lien" : "Réactiver avec un nouveau lien"}</button>
           </div>
         </header>
-        ${state.link ? linkBox(state.link) : ""}
+        ${state.link || state.password ? credentialsBox() : ""}
+        <form class="rc-form rc-portal-invite" data-form="login" hidden novalidate>
+          <label class="rc-field"><span>Email de connexion du client</span><input name="login_email" type="email" value="${esc(a.login_email)}" placeholder="client@societe.ma" /></label>
+          <div class="rc-portal-invite-actions"><button type="submit" class="dash-btn dash-btn-primary">${a.login_email ? "Changer l'email et créer un nouveau mot de passe" : "Créer les identifiants"}</button></div>
+        </form>
         <form class="rc-form rc-portal-invite" data-form="contact" hidden novalidate>
           <label class="rc-field"><span>Nom du contact</span><input name="contact_name" type="text" value="${esc(a.contact_name)}" /></label>
           <label class="rc-field"><span>Téléphone</span><input name="contact_phone" type="tel" value="${esc(a.contact_phone)}" /></label>
-          <label class="rc-field"><span>Email</span><input name="contact_email" type="email" value="${esc(a.contact_email)}" /></label>
           <div class="rc-portal-invite-actions"><button type="submit" class="dash-btn dash-btn-primary">Enregistrer</button></div>
         </form>
       </section>`;
   }
 
-  function linkBox(link) {
+  function credentialsBox() {
+    const email = state.access?.login_email;
+    const rows = [];
+    if (state.password && email) {
+      rows.push(`<div><dt>Adresse de connexion</dt><dd>${esc(loginUrl())}</dd></div>`);
+      rows.push(`<div><dt>Email</dt><dd>${esc(email)}</dd></div>`);
+      rows.push(`<div><dt>Mot de passe</dt><dd><code>${esc(state.password)}</code></dd></div>`);
+    }
+    if (state.link) rows.push(`<div><dt>Lien rapide</dt><dd class="rc-portal-link-url">${esc(state.link)}</dd></div>`);
     return `
       <div class="rc-portal-link">
-        <p><strong>Lien personnel du client</strong> — affiché une seule fois. Envoyez-le maintenant ; en cas de perte, générez-en un nouveau (l'ancien cessera de fonctionner).</p>
+        <p><strong>À transmettre au client</strong> — affiché une seule fois. ${state.password ? "Il pourra changer son mot de passe depuis son espace. " : ""}En cas de perte, générez-en un nouveau (l'ancien cessera de fonctionner).</p>
+        <dl class="rc-portal-creds">${rows.join("")}</dl>
         <div class="rc-portal-link-row">
-          <input type="text" readonly value="${esc(link)}" aria-label="Lien personnel du client" />
-          <button type="button" class="dash-btn dash-btn-sm dash-btn-primary" data-act="copy-link"><i data-lucide="copy"></i> Copier le lien</button>
-          <button type="button" class="dash-btn dash-btn-sm" data-act="copy-invite"><i data-lucide="mail"></i> Copier un message d'invitation</button>
+          <button type="button" class="dash-btn dash-btn-sm dash-btn-primary" data-act="copy-invite"><i data-lucide="copy"></i> Copier le message pour le client</button>
+          ${state.link ? '<button type="button" class="dash-btn dash-btn-sm" data-act="copy-link"><i data-lucide="link"></i> Copier le lien seul</button>' : ""}
         </div>
       </div>`;
   }
@@ -202,14 +220,28 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
 
   function inviteMessage(link) {
     const { cabinetName, clientName } = ctx();
-    return `Bonjour${state.access?.contact_name ? ` ${state.access.contact_name}` : ""},\n\n${cabinetName} vous ouvre un espace sécurisé pour nous transmettre les factures et relevés de ${clientName}.\n\nVotre lien personnel (à garder pour vous) :\n${link}\n\nAucun mot de passe : il suffit de l'ouvrir, puis de prendre vos documents en photo ou de choisir les fichiers.`;
+    const email = state.access?.login_email;
+    const parts = [
+      `Bonjour${state.access?.contact_name ? ` ${state.access.contact_name}` : ""},`,
+      "",
+      `${cabinetName} vous ouvre un espace sécurisé pour nous transmettre les factures et relevés de ${clientName}.`,
+    ];
+    if (state.password && email) {
+      parts.push("", "Vos identifiants :", `Adresse : ${loginUrl()}`, `Email : ${email}`, `Mot de passe : ${state.password}`,
+        "(vous pourrez le changer depuis votre espace)");
+    }
+    if (link) {
+      parts.push("", state.password ? "Ou, sans mot de passe, votre lien personnel (à garder pour vous) :" : "Votre lien personnel (à garder pour vous, aucun mot de passe) :", link);
+    }
+    parts.push("", "Il suffit ensuite de prendre vos documents en photo ou de choisir les fichiers.");
+    return parts.join("\n");
   }
 
   function reminderMessage() {
     const { cabinetName } = ctx();
     const open = state.requests.filter((r) => r.status === "open");
     const lines = open.map((r) => `- ${r.label} (${dossierName(r.dossier_id).toLowerCase()})`).join("\n");
-    return `Bonjour${state.access?.contact_name ? ` ${state.access.contact_name}` : ""},\n\nPour avancer sur votre déclaration, il nous manque encore :\n${lines}\n\nVous pouvez les déposer dans votre espace : ${portalUrl()}\n(si l'espace vous demande de vous reconnecter, ouvrez le lien personnel que nous vous avons envoyé)\n\nMerci,\n${cabinetName}`;
+    return `Bonjour${state.access?.contact_name ? ` ${state.access.contact_name}` : ""},\n\nPour avancer sur votre déclaration, il nous manque encore :\n${lines}\n\nVous pouvez les déposer dans votre espace : ${portalUrl()}\n(connectez-vous avec vos identifiants ou votre lien personnel)\n\nMerci,\n${cabinetName}`;
   }
 
   // ---------- Chargement ----------
@@ -257,14 +289,26 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         const res = await portalInvite(clientId, formValues(form));
         state.access = res.access;
         state.link = res.link;
+        state.password = res.password || null;
         render();
-        toast({ title: "Accès créé", message: "Envoyez maintenant le lien au client.", variant: "success" });
+        toast({ title: "Accès créé", message: "Copiez le message et transmettez-le au client.", variant: "success" });
       });
     } else if (form.dataset.form === "contact") {
       await run(button, async () => {
         const res = await portalUpdateContact(clientId, formValues(form));
         state.access = res.access;
         render();
+      });
+    } else if (form.dataset.form === "login") {
+      const email = formValues(form).login_email;
+      if (!email) return form.elements.login_email.focus();
+      await run(button, async () => {
+        const res = await portalSetLogin(clientId, email);
+        state.access = res.access;
+        state.password = res.password;
+        state.link = null;
+        render();
+        toast({ title: "Identifiants créés", message: "Transmettez l'email et le mot de passe au client.", variant: "success" });
       });
     } else if (form.dataset.form === "request") {
       const { label, doc_type: docType } = formValues(form);
@@ -296,9 +340,21 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         await navigator.clipboard.writeText(text);
         toast({ title: act === "copy-link" ? "Lien copié" : "Message copié", message: "Collez-le dans un email ou un message au client.", variant: "success", durationMs: 4000 });
       } catch {
-        if (act === "copy-link") mountEl.querySelector(".rc-portal-link input")?.select();
-        else window.prompt("Copiez ce message :", text);
+        window.prompt("Copiez ce texte :", text);
       }
+    } else if (act === "edit-login") {
+      const form = mountEl.querySelector('[data-form="login"]');
+      form.hidden = !form.hidden;
+      if (!form.hidden) form.elements.login_email.focus();
+    } else if (act === "reset-password") {
+      if (!window.confirm("Générer un nouveau mot de passe ? L'ancien ne fonctionnera plus.")) return;
+      await run(el, async () => {
+        const res = await portalResetPassword(clientId);
+        state.access = res.access;
+        state.password = res.password;
+        state.link = null;
+        render();
+      });
     } else if (act === "edit-contact") {
       const form = mountEl.querySelector('[data-form="contact"]');
       form.hidden = !form.hidden;
@@ -308,14 +364,16 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         const res = await portalNewLink(clientId);
         state.access = res.access;
         state.link = res.link;
+        state.password = null;
         render();
       });
     } else if (act === "revoke") {
-      if (!window.confirm("Couper l'accès du client ? Son lien et ses connexions ne fonctionneront plus. Les documents déjà déposés sont conservés.")) return;
+      if (!window.confirm("Couper l'accès du client ? Son lien, son mot de passe et ses connexions ne fonctionneront plus. Les documents déjà déposés sont conservés.")) return;
       await run(el, async () => {
         const res = await portalRevoke(clientId);
         state.access = res.access;
         state.link = null;
+        state.password = null;
         render();
         toast({ title: "Accès coupé", message: "Le client ne peut plus se connecter.", variant: "success" });
       });

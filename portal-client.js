@@ -68,6 +68,9 @@ async function callFunction(payload, { anonymous = false } = {}) {
 
 export const portalStatus = (clientId) => callFunction({ action: "status", client_id: clientId });
 export const portalInvite = (clientId, contact) => callFunction({ action: "invite", client_id: clientId, portal_url: portalUrl(), ...contact });
+export const portalSetLogin = (clientId, loginEmail) => callFunction({ action: "set_login", client_id: clientId, login_email: loginEmail });
+export const portalResetPassword = (clientId) => callFunction({ action: "reset_password", client_id: clientId });
+export const loginUrl = () => new URL("login.html", window.location.href).href.split("#")[0].split("?")[0];
 export const portalNewLink = (clientId) => callFunction({ action: "new_link", client_id: clientId, portal_url: portalUrl() });
 export const portalRevoke = (clientId) => callFunction({ action: "revoke", client_id: clientId });
 export const portalUpdateContact = (clientId, contact) => callFunction({ action: "update_contact", client_id: clientId, ...contact });
@@ -211,6 +214,19 @@ export async function uploadPortalFile({ dossierId, docType, file, requestId = n
   });
   fail(error);
   return data;
+}
+
+/** Email de connexion du client (null si accès par lien uniquement). */
+export async function myLoginEmail() {
+  const { data } = await db().auth.getUser();
+  const email = data?.user?.email || "";
+  return /@portail\.recompta\.(invalid|app)$/.test(email) ? null : email;
+}
+
+export async function changeMyPassword(password) {
+  if (String(password || "").length < 8) throw new Error("8 caractères minimum.");
+  const { error } = await db().auth.updateUser({ password });
+  if (error) throw new Error(/different|same/i.test(error.message) ? "Choisissez un mot de passe différent de l'actuel." : error.message);
 }
 
 export async function listMyRequests() {
