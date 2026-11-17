@@ -8,7 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=jobs6" />
   <link rel="stylesheet" href="workspace-ui.css?v=rc4" />
-  <link rel="stylesheet" href="billing.css?v=bill1" />
+  <link rel="stylesheet" href="billing.css?v=bill2" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -38,7 +38,7 @@
         <div class="rc-bill-setup" id="setupBanner" hidden>
           <i data-lucide="building-2"></i>
           <div>
-            <strong>Complétez les informations légales du cabinet</strong>
+            <strong>Complétez les informations légales de votre cabinet</strong>
             <p id="setupMissing">—</p>
           </div>
           <button type="button" class="dash-btn dash-btn-sm" data-goto="settings">Compléter</button>
@@ -205,6 +205,13 @@
         <h3 id="editorTitle">Nouvelle facture</h3>
         <button type="button" class="dash-btn dash-btn-ghost dash-btn-sm" id="editorCloseBtn" aria-label="Fermer"><i data-lucide="x"></i></button>
       </header>
+      <div class="rc-bill-seller-missing" id="edSellerMissing" hidden>
+        <div>
+          <strong>Les informations de votre cabinet sont incomplètes</strong>
+          <p id="edSellerMissingText">—</p>
+        </div>
+        <button type="button" class="dash-btn dash-btn-sm" id="edGotoSettings">Compléter mon cabinet</button>
+      </div>
       <div class="rc-bill-editor-meta">
         <label class="rc-field span-2"><span>Client</span><select id="edClient" required></select>
           <small id="edClientHint"></small></label>
@@ -680,7 +687,12 @@
       await busy($("settingsSaveBtn"), async () => {
         try {
           state.settings = await saveBillingSettings(state.cabinetId, values);
-          toast("Informations du cabinet enregistrées.");
+          const drafts = state.invoices.filter((i) => i.status === "draft").length;
+          const stillMissing = missingLegalFields(state.settings).filter((m) => SELLER_REQUIRED.includes(m));
+          toast(stillMissing.length
+            ? `Enregistré. Il manque encore : ${stillMissing.join(", ")}.`
+            : drafts ? `Informations du cabinet enregistrées. Vous pouvez maintenant émettre ${drafts > 1 ? "vos brouillons" : "votre brouillon"} (onglet Factures).`
+              : "Informations du cabinet enregistrées.");
           render();
         } catch (err) { showError("settingsError", err.message); }
       });
@@ -794,6 +806,15 @@
         : `ICE ${esc(c.ice)} · ${esc([c.billing_address, c.billing_city].filter(Boolean).join(", "))}`;
     }
 
+    const SELLER_REQUIRED = ["raison sociale", "adresse du siège", "ICE", "IF"];
+    function updateSellerNotice() {
+      const missing = missingLegalFields(state.settings).filter((m) => SELLER_REQUIRED.includes(m));
+      $("edSellerMissing").hidden = !missing.length;
+      $("edSellerMissingText").textContent = missing.length
+        ? `Il manque : ${missing.join(", ")} de votre cabinet (l'émetteur de la facture). Vous pouvez préparer et enregistrer le brouillon ; l'émission sera possible une fois ces informations renseignées.`
+        : "";
+    }
+
     async function openEditor({ invoiceId = null, clientId = null } = {}) {
       showError("editorError", "");
       $("edClient").innerHTML = '<option value="">Choisir un client…</option>'
@@ -815,6 +836,7 @@
       $("edLines").innerHTML = lines.map(lineRow).join("");
       updateTotals();
       updateClientHint();
+      updateSellerNotice();
       $("editorDialog").showModal();
       initLucide();
       (inv ? $("edLines").querySelector(".ed-label") : $("edClient")).focus();
@@ -856,6 +878,21 @@
       if (b) openClientDialog(Number(b.dataset.editClient));
     });
     const closeEditor = () => $("editorDialog").close();
+    $("edGotoSettings").addEventListener("click", async () => {
+      const hasContent = Number($("edClient").value) && readLines().some((l) => l.label.trim() || l.unit_price_ht);
+      if (hasContent && !validateEditor({ forIssue: false })) {
+        try {
+          const id = await persistDraft();
+          state.editing = { id };
+          toast("Brouillon enregistré. Complétez les informations de votre cabinet, puis émettez la facture.");
+        } catch (e) { showError("editorError", e.message); return; }
+      }
+      closeEditor();
+      await refresh();
+      showTab("settings");
+      const first = [...$("settingsForm").elements].find((el) => el.name && ["legal_name", "address", "ice", "if_number"].includes(el.name) && !el.value.trim());
+      (first || $("settingsForm").elements.legal_name).focus();
+    });
     $("editorCloseBtn").addEventListener("click", closeEditor);
     $("edCancelBtn").addEventListener("click", closeEditor);
 
@@ -903,7 +940,11 @@
       const err = validateEditor({ forIssue: true });
       if (err) return showError("editorError", err);
       const missing = missingLegalFields(state.settings).filter((m) => ["raison sociale", "adresse du siège", "ICE", "IF"].includes(m));
-      if (missing.length) return showError("editorError", `Avant d'émettre, complétez dans Réglages : ${missing.join(", ")}. Vous pouvez enregistrer le brouillon en attendant.`);
+      if (missing.length) {
+        updateSellerNotice();
+        $("edSellerMissing").scrollIntoView({ block: "nearest" });
+        return showError("editorError", `Impossible d'émettre : il manque des informations de votre cabinet (${missing.join(", ")}), pas du client. Cliquez sur « Compléter mon cabinet » en haut : votre brouillon sera enregistré.`);
+      }
       showError("editorError", "");
       const ttc = computeTotals(readLines()).ttc;
       const c = clientById($("edClient").value);
