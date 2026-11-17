@@ -17,6 +17,9 @@ export function isSupabaseConfigured() {
 
 export function authErrorMessage(error) {
   const message = error?.message || "Échec de la connexion.";
+  if (/banned/i.test(message)) {
+    return "Ce compte est bloqué. Contactez l'administrateur de Recompta.";
+  }
   if (/invalid api key/i.test(message)) {
     return "Clé API refusée (souvent un ancien fichier en cache). Faites Ctrl+Shift+R. Vérifiez SUPABASE_ANON_KEY dans docs/auth-client.js (projet pbyoxfxngfutoiqjirkx).";
   }
