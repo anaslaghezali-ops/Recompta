@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=modal-font1" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc6" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc7" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -1132,7 +1132,7 @@
 
     async function ensurePortalController() {
       if (portalController) return portalController;
-      const { createWorkspacePortal } = await import("./workspace-portal.js?v=portal2");
+      const { createWorkspacePortal } = await import("./workspace-portal.js?v=portal3");
       portalController = createWorkspacePortal({
         mountEl: document.getElementById("portalPanel"),
         tabButton: document.getElementById("portalTabBtn"),

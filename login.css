@@ -212,3 +212,5 @@ body.auth {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+.auth-client-note { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--line, #e2e8f0); font-size: 0.86rem; }
