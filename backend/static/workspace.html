@@ -38,6 +38,9 @@
             <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
             <span id="topbarCreditsText">—</span>
           </span>
+          <a class="dash-btn" id="clientBillingLink" href="facturation.html" hidden>
+            <i data-lucide="receipt-text"></i> Facturation
+          </a>
           <button type="button" class="dash-btn" id="newPeriodBtn">
             <i data-lucide="calendar-plus"></i> Nouvelle période
           </button>
@@ -612,7 +615,7 @@
       renderBadge,
       renderPriorityBadge,
       sidebarHtml,
-    } from "./dashboard-ui.js?v=team1";
+    } from "./dashboard-ui.js?v=bill1";
 
     const params = new URLSearchParams(window.location.search);
     const clientId = Number(params.get("client"));
@@ -2744,7 +2747,13 @@
           sidebarMount.innerHTML = sidebarHtml({
             cabinetName: membership.cabinet.name,
             active: "portfolio",
+            role: membership.role,
           });
+          const billingLink = document.getElementById("clientBillingLink");
+          if (billingLink && ["owner", "admin"].includes(membership.role)) {
+            billingLink.href = `facturation.html?client=${clientId}`;
+            billingLink.hidden = false;
+          }
           bindSidebarMobile();
           await refreshTopbarCredits();
           document.getElementById("signOutBtn")?.addEventListener("click", async () => {

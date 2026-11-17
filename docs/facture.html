@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facture — Recompta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="billing.css?v=bill1" />
+</head>
+<body class="rc-print-body">
+  <div class="rc-print-bar" id="printBar">
+    <a href="facturation.html" class="rc-print-back">Retour à la facturation</a>
+    <span id="printHint"></span>
+    <button type="button" id="printBtn" disabled>Imprimer ou enregistrer en PDF</button>
+  </div>
+  <main class="rc-sheet" id="sheet">
+    <p class="rc-sheet-loading">Chargement de la facture…</p>
+  </main>
+
+  <script type="module">
+    import { requireCabinetSession } from "./dossiers-client.js?v=dash2";
+    import {
+      PAYMENT_METHODS,
+      amountInWords,
+      computeTotals,
+      formatDate,
+      formatMAD,
+      listBillingClients,
+      loadBillingSettings,
+      loadInvoice,
+    } from "./billing-client.js?v=bill1";
+
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const sheet = document.getElementById("sheet");
+    const line = (label, value) => (value ? `<span>${label} ${esc(value)}</span>` : "");
+
+    function fail(message) {
+      sheet.innerHTML = `<p class="rc-sheet-loading">${esc(message)}</p>`;
+    }
+
+    async function main() {
+      const membership = await requireCabinetSession();
+      if (!membership) return;
+      const id = Number(new URLSearchParams(window.location.search).get("id"));
+      if (!id) return fail("Aucune facture indiquée.");
+      const inv = await loadInvoice(id);
+      const isDraft = inv.status === "draft";
+
+      // Une facture émise s'imprime avec les mentions figées à l'émission ;
+      // un brouillon utilise les informations actuelles.
+      let seller = inv.seller_snapshot;
+      let client = inv.client_snapshot;
+      if (isDraft || !seller || !client) {
+        const [settings, clients] = await Promise.all([loadBillingSettings(inv.cabinet_id), listBillingClients(inv.cabinet_id)]);
+        seller = { ...settings, cabinet_name: membership.cabinet.name };
+        const c = clients.find((x) => x.id === inv.client_id) || {};
+        client = { name: c.name, ice: c.ice, if: c.billing_if, address: c.billing_address, city: c.billing_city, email: c.billing_email, phone: c.billing_phone };
+      }
+      let original = null;
+      if (inv.credits_invoice_id) {
+        try { original = await loadInvoice(inv.credits_invoice_id); } catch { original = null; }
+      }
+
+      const isCredit = inv.kind === "credit_note";
+      const title = isCredit ? "Avoir" : "Facture";
+      const number = inv.number || "Brouillon";
+      document.title = `${title} ${number} — ${seller.legal_name || seller.cabinet_name || "Recompta"}`;
+
+      const t = computeTotals(inv.lines);
+      const ht = isDraft ? t.ht : Number(inv.total_ht);
+      const vat = isDraft ? t.vat : Number(inv.total_vat);
+      const ttc = isDraft ? t.ttc : Number(inv.total_ttc);
+      const rates = Object.entries(t.byRate).filter(([, v]) => v.ht !== 0).sort((a, b) => Number(b[0]) - Number(a[0]));
+      const rc = seller.rc_number ? `${seller.rc_number}${seller.rc_city ? ` (${seller.rc_city})` : ""}` : "";
+      const legalLine = [
+        seller.legal_name,
+        seller.legal_form && seller.capital ? `${seller.legal_form} au capital de ${seller.capital}` : seller.legal_form,
+        seller.ice && `ICE ${seller.ice}`,
+        seller.if_number && `IF ${seller.if_number}`,
+        seller.tp_number && `TP ${seller.tp_number}`,
+        rc && `RC ${rc}`,
+      ].filter(Boolean).join(" · ");
+
+      sheet.innerHTML = `
+        ${isDraft ? '<div class="rc-sheet-watermark" aria-hidden="true">Brouillon</div>' : ""}
+        ${inv.status === "cancelled" ? '<div class="rc-sheet-watermark" aria-hidden="true">Annulée</div>' : ""}
+        <header class="rc-sheet-head">
+          <div class="rc-sheet-seller">
+            <strong>${esc(seller.legal_name || seller.cabinet_name || "")}</strong>
+            ${seller.legal_form ? `<span>${esc(seller.legal_form)}${seller.capital ? ` au capital de ${esc(seller.capital)}` : ""}</span>` : ""}
+            ${line("", seller.address)}
+            ${line("", seller.city)}
+            ${line("ICE", seller.ice)}
+            ${line("Tél.", seller.phone)}
+            ${line("", seller.email)}
+          </div>
+          <div class="rc-sheet-title">
+            <h1>${title}</h1>
+            <p class="rc-sheet-number">N° ${esc(number)}</p>
+            <dl>
+              <div><dt>Date</dt><dd>${formatDate(inv.issue_date)}</dd></div>
+              ${!isCredit && inv.due_date ? `<div><dt>Échéance</dt><dd>${formatDate(inv.due_date)}</dd></div>` : ""}
+              ${original ? `<div><dt>Facture annulée</dt><dd>${esc(original.number)} du ${formatDate(original.issue_date)}</dd></div>` : ""}
+            </dl>
+          </div>
+        </header>
+
+        <section class="rc-sheet-client">
+          <span class="rc-sheet-label">Facturé à</span>
+          <strong>${esc(client.name || "")}</strong>
+          ${line("", client.address)}
+          ${line("", client.city)}
+          ${line("ICE", client.ice)}
+          ${line("IF", client.if)}
+        </section>
+
+        ${isCredit && inv.reason ? `<p class="rc-sheet-reason">Motif : ${esc(inv.reason)}</p>` : ""}
+
+        <table class="rc-sheet-lines">
+          <thead>
+            <tr><th>Désignation</th><th class="num">Qté</th><th class="num">Prix unitaire HT</th><th class="num">TVA</th><th class="num">Total HT</th></tr>
+          </thead>
+          <tbody>
+            ${inv.lines.map((l) => `
+              <tr>
+                <td>${esc(l.label)}</td>
+                <td class="num">${Number(l.quantity).toLocaleString("fr-FR")}</td>
+                <td class="num">${formatMAD(l.unit_price_ht)}</td>
+                <td class="num">${Number(l.vat_rate)} %</td>
+                <td class="num">${formatMAD(l.total_ht ?? Number(l.quantity) * Number(l.unit_price_ht))}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+
+        <div class="rc-sheet-bottom">
+          <div class="rc-sheet-words">
+            <p>Arrêté${isCredit ? " le présent avoir" : "e la présente facture"} à la somme de :</p>
+            <strong>${esc(amountInWords(ttc))} TTC${ttc < 0 ? " (en faveur du client)" : ""}</strong>
+            ${!isCredit ? `
+              <dl class="rc-sheet-pay">
+                ${inv.payment_method ? `<div><dt>Mode de règlement</dt><dd>${esc(PAYMENT_METHODS[inv.payment_method] || inv.payment_method)}</dd></div>` : ""}
+                ${seller.bank_name ? `<div><dt>Banque</dt><dd>${esc(seller.bank_name)}</dd></div>` : ""}
+                ${seller.rib ? `<div><dt>RIB</dt><dd>${esc(seller.rib.replace(/(\d{3})(\d{3})(\d{16})(\d{2})/, "$1 $2 $3 $4"))}</dd></div>` : ""}
+              </dl>` : ""}
+          </div>
+          <dl class="rc-sheet-totals">
+            <div><dt>Total HT</dt><dd>${formatMAD(ht)}</dd></div>
+            ${rates.map(([r, v]) => `<div><dt>TVA ${r} %</dt><dd>${formatMAD(v.vat)}</dd></div>`).join("") || `<div><dt>TVA</dt><dd>${formatMAD(vat)}</dd></div>`}
+            <div class="is-total"><dt>Total TTC</dt><dd>${formatMAD(ttc)}</dd></div>
+          </dl>
+        </div>
+
+        ${inv.notes ? `<p class="rc-sheet-notes">${esc(inv.notes)}</p>` : ""}
+
+        <footer class="rc-sheet-foot">
+          ${seller.footer_note ? `<p>${esc(seller.footer_note)}</p>` : ""}
+          <p>${esc(legalLine)}</p>
+        </footer>`;
+
+      const btn = document.getElementById("printBtn");
+      btn.disabled = false;
+      btn.addEventListener("click", () => window.print());
+      document.getElementById("printHint").textContent = isDraft
+        ? "Aperçu d'un brouillon : le numéro sera attribué à l'émission."
+        : "Dans la fenêtre d'impression, choisissez « Enregistrer au format PDF » pour l'envoyer.";
+    }
+
+    main().catch((err) => fail(err.message || "Impossible d'afficher la facture."));
+  </script>
+</body>
+</html>

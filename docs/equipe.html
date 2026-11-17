@@ -180,7 +180,7 @@
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth9";
     import { requireCabinetSession } from "./dossiers-client.js?v=dash2";
-    import { bindSidebarMobile, escapeHtml, initLucide, sidebarHtml } from "./dashboard-ui.js?v=team1";
+    import { bindSidebarMobile, escapeHtml, initLucide, sidebarHtml } from "./dashboard-ui.js?v=bill1";
     import {
       ROLE_LABELS,
       addTeamMember,
@@ -576,7 +576,7 @@
       return null;
     });
     if (membership) {
-      $("sidebarMount").innerHTML = sidebarHtml({ cabinetName: membership.cabinet.name, active: "team" });
+      $("sidebarMount").innerHTML = sidebarHtml({ cabinetName: membership.cabinet.name, active: "team", role: membership.role });
       bindSidebarMobile();
       document.getElementById("signOutBtn")?.addEventListener("click", async () => {
         await signOut();

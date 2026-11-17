@@ -155,7 +155,7 @@
       renderBadge,
       renderPriorityBadge,
       sidebarHtml,
-    } from "./dashboard-ui.js?v=team1";
+    } from "./dashboard-ui.js?v=bill1";
     import {
       computePortfolioKpis,
       listPortfolioRows,
@@ -506,6 +506,7 @@
       sidebarMount.innerHTML = sidebarHtml({
         cabinetName: membership.cabinet.name,
         active: "portfolio",
+        role: membership.role,
       });
       document.getElementById("topbarSubtitle").textContent =
         `${membership.cabinet.name} — ${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}`;

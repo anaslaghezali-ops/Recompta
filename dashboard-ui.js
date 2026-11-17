@@ -24,7 +24,8 @@ export function renderPriorityBadge(priority) {
   return `<span class="dash-priority-badge dash-priority-${tone}">${escapeHtml(priority?.label || "")}</span>`;
 }
 
-export function sidebarHtml({ cabinetName, active }) {
+export function sidebarHtml({ cabinetName, active, role = null }) {
+  const canBill = role === "owner" || role === "admin";
   return `
     <aside class="dash-sidebar" id="dashSidebar">
       <div class="dash-brand">
@@ -41,6 +42,9 @@ export function sidebarHtml({ cabinetName, active }) {
         <a href="equipe.html" class="${active === "team" ? "active" : ""}">
           <i data-lucide="users"></i> Équipe
         </a>
+        ${canBill ? `<a href="facturation.html" class="${active === "billing" ? "active" : ""}">
+          <i data-lucide="receipt-text"></i> Facturation
+        </a>` : ""}
       </nav>
       <div class="dash-nav-footer">
         <button type="button" class="dash-btn dash-btn-ghost" id="signOutBtn" style="width:100%;justify-content:flex-start;">
