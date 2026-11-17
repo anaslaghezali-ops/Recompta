@@ -11,7 +11,7 @@ import {
   findDuplicateLineIndexes,
   normalizeExtractionResults,
   setExtractionContext,
-} from "./extract-client.js?v=ifdot1";
+} from "./extract-client.js?v=dedup1";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
 import {
   applyConfidenceToInput,

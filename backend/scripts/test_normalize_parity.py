@@ -100,6 +100,21 @@ def synthetic() -> list[ExtractionResult]:
           lines=[L(fact_num="O5", m_ht=2000, tva=300, m_ttc=2300, taux=0.2, lib_frss="OMI")]),
         R(filename="omi6.pdf", engine="ai", raw_text="",
           lines=[L(fact_num="O6", m_ht=1100, tva=100, m_ttc=1100, taux=0.1, lib_frss="OMI")]),
+        # Doublons d'un même document (cas réels juillet 2026)
+        R(filename="heberjahiz_337929-26-DJ.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="337929-26-DJ", m_ht=139, tva=27.8, m_ttc=166.8, taux=0.2, lib_frss="heberjahiz"),
+                 L(fact_num="07-04-2026", m_ht=139, tva=27.8, m_ttc=166.8, taux=0.2, lib_frss="heberjahiz")]),
+        R(filename="achibest_032025.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="FV26-032025", m_ht=0, tva=10, m_ttc=0, taux=0.1, lib_frss="AICHIBEST"),
+                 L(fact_num="FV26-032025", m_ht=2755, tva=551, m_ttc=3306, taux=0.2, lib_frss="AICHIBEST")]),
+        R(filename="probun_deux_livraisons.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="FAC0111", m_ht=500, tva=0, m_ttc=500, taux=0, lib_frss="Probun"),
+                 L(fact_num="FAC0112", m_ht=500, tva=0, m_ttc=500, taux=0, lib_frss="Probun")]),
+        # Dossier « Autres » qui mélange des fournisseurs
+        R(filename="Autres/a.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="X1", m_ht=100, tva=20, m_ttc=120, taux=0.2, lib_frss="GLOVO", ice_frs="002086928000050")]),
+        R(filename="Autres/b.pdf", engine="ai", raw_text="",
+          lines=[L(fact_num="X2", m_ht=100, tva=20, m_ttc=120, taux=0.2, lib_frss="PROXY")]),
         # Taux 0
         R(filename="nu.pdf", engine="ai", raw_text="",
           lines=[L(fact_num="N1", m_ht=500, tva=0, m_ttc=500, taux=0, lib_frss="NU")]),
