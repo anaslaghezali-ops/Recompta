@@ -1367,7 +1367,6 @@ td.row-actions .view-btn { min-height: 1.9rem; padding: 0 0.6rem; font-size: 0.8
   border: 1px solid var(--rc-line-strong); border-radius: var(--rc-radius-s); background: #fff; color: var(--rc-ink);
 }
 .rc-portal-req-form input { flex: 1; min-width: 0; }
-.rc-portal-wa { text-decoration: none; }
 .rc-portal-empty { margin: 0 0 1rem; padding: 0.9rem 1rem; border: 1px dashed var(--rc-line-strong); border-radius: var(--rc-radius-m); color: var(--rc-muted); font-size: 0.9rem; }
 .rc-portal-table td { white-space: nowrap; }
 .rc-portal-table td.rc-portal-file { white-space: normal; overflow-wrap: anywhere; }

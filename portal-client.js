@@ -139,19 +139,6 @@ export async function uploadPreviewUrl(storagePath) {
   return data?.signedUrl;
 }
 
-/** Numéro marocain → format international pour WhatsApp (06… → 2126…). */
-export function whatsappNumber(phone) {
-  let digits = String(phone || "").replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("0") && digits.length === 10) digits = `212${digits.slice(1)}`;
-  return digits.length >= 9 ? digits : "";
-}
-
-export function whatsappUrl(phone, text) {
-  const num = whatsappNumber(phone);
-  return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
-}
-
 // ---------------------------------------------------------------------------
 // Côté client (portail)
 // ---------------------------------------------------------------------------

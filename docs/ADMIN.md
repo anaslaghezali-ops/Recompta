@@ -91,7 +91,7 @@ Un collaborateur (rôle `comptable`) n'accède qu'aux clients qui lui sont attri
 
 Chaque client d'un cabinet peut recevoir un espace (`portail.html`) pour déposer ses factures et relevés.
 
-- **Accès** : depuis l'onglet « Portail client » de l'espace client, le cabinet crée l'accès et envoie un lien personnel (WhatsApp ou email). Pas de mot de passe : le lien contient un jeton aléatoire dont seule l'empreinte SHA-256 est stockée. « Nouveau lien » invalide l'ancien ; « Couper l'accès » bloque le compte.
+- **Accès** : depuis l'onglet « Portail client » de l'espace client, le cabinet crée l'accès et transmet un lien personnel (bouton « Copier le lien »). Pas de mot de passe : le lien contient un jeton aléatoire dont seule l'empreinte SHA-256 est stockée. « Nouveau lien » invalide l'ancien ; « Couper l'accès » bloque le compte.
 - **Dépôts** : factures et relevés arrivent dans `dossier_documents` de la période (prêts à extraire) ; l'extraction reste lancée par le comptable. « Autre document » reste dans le suivi du portail. Un document peut être marqué « À renvoyer » avec un motif affiché au client.
 - **Pièces demandées** : table `document_requests`, visible par le client ; passe à « Reçue » au dépôt.
 - **Sécurité** : le compte portail n'est membre d'aucun cabinet. Les règles RLS ne lui ouvrent que sa fiche client, son cabinet (nom), ses périodes, ses demandes et ses dépôts ; il peut déposer des fichiers mais ni les relire ni les supprimer.

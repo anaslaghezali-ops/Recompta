@@ -22,8 +22,7 @@ import {
   rejectUpload,
   setRequestStatus,
   uploadPreviewUrl,
-  whatsappUrl,
-} from "./portal-client.js?v=portal1";
+} from "./portal-client.js?v=portal2";
 
 const esc = (v) => escapeHtml(v ?? "");
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—");
@@ -71,11 +70,11 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         <section class="rc-panel rc-portal-access">
           <header class="rc-panel-head"><div>
             <h2>Accès du client</h2>
-            <p>${esc(clientName)} n'a pas encore d'espace. Une fois créé, vous lui envoyez un lien personnel (par WhatsApp ou email) : il dépose ses factures et relevés sans mot de passe, directement dans ses périodes.</p>
+            <p>${esc(clientName)} n'a pas encore d'espace. Une fois créé, vous lui transmettez un lien personnel : il dépose ses factures et relevés sans mot de passe, directement dans ses périodes.</p>
           </div></header>
           <form class="rc-form rc-portal-invite" data-form="invite" novalidate>
             <label class="rc-field"><span>Nom du contact</span><input name="contact_name" type="text" autocomplete="off" placeholder="Prénom Nom" /></label>
-            <label class="rc-field"><span>Téléphone WhatsApp</span><input name="contact_phone" type="tel" autocomplete="off" placeholder="06 12 34 56 78" /></label>
+            <label class="rc-field"><span>Téléphone</span><input name="contact_phone" type="tel" autocomplete="off" placeholder="facultatif" /></label>
             <label class="rc-field"><span>Email</span><input name="contact_email" type="email" autocomplete="off" placeholder="facultatif" /></label>
             <div class="rc-portal-invite-actions"><button type="submit" class="dash-btn dash-btn-primary" data-act="invite"><i data-lucide="user-plus"></i> Créer l'accès du client</button></div>
           </form>
@@ -101,7 +100,7 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         ${state.link ? linkBox(state.link) : ""}
         <form class="rc-form rc-portal-invite" data-form="contact" hidden novalidate>
           <label class="rc-field"><span>Nom du contact</span><input name="contact_name" type="text" value="${esc(a.contact_name)}" /></label>
-          <label class="rc-field"><span>Téléphone WhatsApp</span><input name="contact_phone" type="tel" value="${esc(a.contact_phone)}" /></label>
+          <label class="rc-field"><span>Téléphone</span><input name="contact_phone" type="tel" value="${esc(a.contact_phone)}" /></label>
           <label class="rc-field"><span>Email</span><input name="contact_email" type="email" value="${esc(a.contact_email)}" /></label>
           <div class="rc-portal-invite-actions"><button type="submit" class="dash-btn dash-btn-primary">Enregistrer</button></div>
         </form>
@@ -114,8 +113,8 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
         <p><strong>Lien personnel du client</strong> — affiché une seule fois. Envoyez-le maintenant ; en cas de perte, générez-en un nouveau (l'ancien cessera de fonctionner).</p>
         <div class="rc-portal-link-row">
           <input type="text" readonly value="${esc(link)}" aria-label="Lien personnel du client" />
-          <button type="button" class="dash-btn dash-btn-sm" data-act="copy-link"><i data-lucide="copy"></i> Copier</button>
-          <a class="dash-btn dash-btn-sm dash-btn-primary" data-act="wa-link" target="_blank" rel="noopener"><i data-lucide="message-circle"></i> Envoyer par WhatsApp</a>
+          <button type="button" class="dash-btn dash-btn-sm dash-btn-primary" data-act="copy-link"><i data-lucide="copy"></i> Copier le lien</button>
+          <button type="button" class="dash-btn dash-btn-sm" data-act="copy-invite"><i data-lucide="mail"></i> Copier un message d'invitation</button>
         </div>
       </div>`;
   }
@@ -162,7 +161,7 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
             <input name="label" type="text" placeholder="Autre demande : ex. contrat de bail, facture Lydec…" aria-label="Pièce demandée" />
             <button type="submit" class="dash-btn dash-btn-sm">Ajouter</button>
           </form>
-          ${state.access?.is_active && openCount ? `<a class="dash-btn dash-btn-sm rc-portal-wa" data-act="wa-remind" target="_blank" rel="noopener"><i data-lucide="message-circle"></i> Relancer par WhatsApp</a>` : ""}
+          ${state.access?.is_active && openCount ? `<button type="button" class="dash-btn dash-btn-sm" data-act="copy-remind"><i data-lucide="clipboard-copy"></i> Copier un message de relance</button>` : ""}
         </div>
       </section>`;
   }
@@ -198,10 +197,6 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
 
   function render() {
     mountEl.innerHTML = accessCard() + requestsCard() + uploadsCard();
-    const wa = mountEl.querySelector('[data-act="wa-link"]');
-    if (wa) wa.href = whatsappUrl(state.access?.contact_phone, inviteMessage(state.link));
-    const remind = mountEl.querySelector('[data-act="wa-remind"]');
-    if (remind) remind.href = whatsappUrl(state.access?.contact_phone, reminderMessage());
     initLucide();
   }
 
@@ -214,7 +209,7 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
     const { cabinetName } = ctx();
     const open = state.requests.filter((r) => r.status === "open");
     const lines = open.map((r) => `- ${r.label} (${dossierName(r.dossier_id).toLowerCase()})`).join("\n");
-    return `Bonjour${state.access?.contact_name ? ` ${state.access.contact_name}` : ""},\n\nPour avancer sur votre déclaration, il nous manque encore :\n${lines}\n\nVous pouvez les déposer dans votre espace : ${portalUrl()}\n(ouvrez votre lien personnel si l'espace vous demande de vous reconnecter)\n\nMerci,\n${cabinetName}`;
+    return `Bonjour${state.access?.contact_name ? ` ${state.access.contact_name}` : ""},\n\nPour avancer sur votre déclaration, il nous manque encore :\n${lines}\n\nVous pouvez les déposer dans votre espace : ${portalUrl()}\n(si l'espace vous demande de vous reconnecter, ouvrez le lien personnel que nous vous avons envoyé)\n\nMerci,\n${cabinetName}`;
   }
 
   // ---------- Chargement ----------
@@ -295,9 +290,15 @@ export function createWorkspacePortal({ mountEl, tabButton, getContext, toast })
     const { clientId, cabinetId } = ctx();
     const act = el.dataset.act;
 
-    if (act === "copy-link") {
-      try { await navigator.clipboard.writeText(state.link); toast({ title: "Lien copié", message: "Collez-le dans WhatsApp ou un email.", variant: "success", durationMs: 4000 }); }
-      catch { mountEl.querySelector(".rc-portal-link input")?.select(); }
+    if (act === "copy-link" || act === "copy-invite" || act === "copy-remind") {
+      const text = act === "copy-link" ? state.link : act === "copy-invite" ? inviteMessage(state.link) : reminderMessage();
+      try {
+        await navigator.clipboard.writeText(text);
+        toast({ title: act === "copy-link" ? "Lien copié" : "Message copié", message: "Collez-le dans un email ou un message au client.", variant: "success", durationMs: 4000 });
+      } catch {
+        if (act === "copy-link") mountEl.querySelector(".rc-portal-link input")?.select();
+        else window.prompt("Copiez ce message :", text);
+      }
     } else if (act === "edit-contact") {
       const form = mountEl.querySelector('[data-form="contact"]');
       form.hidden = !form.hidden;

@@ -1132,7 +1132,7 @@
 
     async function ensurePortalController() {
       if (portalController) return portalController;
-      const { createWorkspacePortal } = await import("./workspace-portal.js?v=portal1");
+      const { createWorkspacePortal } = await import("./workspace-portal.js?v=portal2");
       portalController = createWorkspacePortal({
         mountEl: document.getElementById("portalPanel"),
         tabButton: document.getElementById("portalTabBtn"),
