@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=jobs6" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc2" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc3" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -191,6 +191,7 @@
     };
 
     let cabinetId = null;
+    let canCreateClients = true;
     let userId = null;
     let allRows = [];
     let activeFilter = "all";
@@ -441,8 +442,14 @@
 
       if (!allRows.length) {
         listHint.hidden = false;
-        listHint.querySelector("h3").textContent = "Aucun client";
-        listHint.querySelector("p").textContent = "Ajoutez votre premier client pour commencer le suivi TVA.";
+        if (canCreateClients) {
+          listHint.querySelector("h3").textContent = "Aucun client pour l'instant";
+          listHint.querySelector("p").textContent = "Ajoutez votre premier client avec sa raison sociale et son ICE pour démarrer le suivi TVA.";
+        } else {
+          listHint.querySelector("h3").textContent = "Aucun client ne vous est attribué";
+          listHint.querySelector("p").textContent = "Demandez au responsable du cabinet de vous attribuer des clients depuis la page Équipe.";
+        }
+        document.getElementById("emptyNewClientBtn").hidden = !canCreateClients;
         portfolioList.hidden = true;
         initLucide();
         return;
@@ -491,6 +498,10 @@
     const membership = await requireCabinetSession();
     if (membership) {
       cabinetId = membership.cabinet_id;
+      // Seuls le responsable et les administrateurs créent des clients ;
+      // un collaborateur ne voit que les clients qui lui sont attribués.
+      canCreateClients = membership.role === "owner" || membership.role === "admin";
+      document.getElementById("openNewClientBtn").hidden = !canCreateClients;
       userId = membership.session?.user?.id || null;
       sidebarMount.innerHTML = sidebarHtml({
         cabinetName: membership.cabinet.name,

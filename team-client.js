@@ -38,7 +38,7 @@ export const ROLE_LABELS = {
 export const ROLE_HINTS = {
   owner: "Gère le cabinet, l'équipe et tous les dossiers.",
   admin: "Gère les collaborateurs et tous les dossiers.",
-  comptable: "Travaille sur tous les dossiers du cabinet.",
+  comptable: "Travaille uniquement sur les clients qui lui sont attribués.",
 };
 
 export const loadTeam = () => call("list");
@@ -46,6 +46,7 @@ export const addTeamMember = (member) => call("add", member);
 export const setTeamRole = (userId, role) => call("set_role", { user_id: userId, role });
 export const setTeamMemberActive = (userId, active) => call("set_active", { user_id: userId, active });
 export const resetTeamPassword = (userId, password) => call("reset_password", { user_id: userId, password });
+export const setTeamClients = (userId, clientIds) => call("set_clients", { user_id: userId, client_ids: clientIds });
 export const updateTeamProfile = (userId, displayName) => call("update_profile", { user_id: userId, display_name: displayName });
 
 /** Changer son propre mot de passe (session courante). */

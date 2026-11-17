@@ -12,6 +12,10 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
  * - set_active{ user_id, active }          : désactiver / réactiver un compte
  * - reset_password { user_id, password }   : nouveau mot de passe
  * - update_profile { user_id, display_name }
+ * - set_clients { user_id, client_ids }    : clients attribués à un collaborateur
+ *
+ * Les collaborateurs (comptable) n'accèdent qu'aux clients attribués
+ * (table client_assignments, appliquée par les règles RLS).
  *
  * Règles : on ne modifie jamais le responsable, ni son propre compte, ni un super-admin.
  * Un administrateur ne gère que les comptables.
@@ -125,6 +129,34 @@ Deno.serve(async (req) => {
     return member;
   }
 
+  /** Remplace la liste des clients attribués ; ne garde que des clients de ce cabinet. */
+  async function replaceAssignments(userId: string, rawIds: unknown[]): Promise<number[] | string> {
+    const wanted = [...new Set(rawIds.map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0))];
+    let valid: number[] = [];
+    if (wanted.length) {
+      const { data, error } = await admin
+        .from("cabinet_clients")
+        .select("id")
+        .eq("cabinet_id", cabinetId)
+        .in("id", wanted);
+      if (error) return error.message;
+      valid = (data || []).map((r: { id: number }) => r.id);
+    }
+    const { error: delError } = await admin
+      .from("client_assignments")
+      .delete()
+      .eq("cabinet_id", cabinetId)
+      .eq("user_id", userId);
+    if (delError) return delError.message;
+    if (valid.length) {
+      const { error: insError } = await admin
+        .from("client_assignments")
+        .insert(valid.map((clientId) => ({ client_id: clientId, user_id: userId, cabinet_id: cabinetId, created_by: caller.id })));
+      if (insError) return insError.message;
+    }
+    return valid;
+  }
+
   try {
     if (action === "list") {
       const members = await loadMembers();
@@ -138,9 +170,23 @@ Deno.serve(async (req) => {
         return [id, data?.user] as const;
       }));
       const authById = Object.fromEntries(users);
+      const { data: clientRows } = await admin
+        .from("cabinet_clients")
+        .select("id, name, ice")
+        .eq("cabinet_id", cabinetId)
+        .order("name", { ascending: true });
+      const { data: assignmentRows } = await admin
+        .from("client_assignments")
+        .select("client_id, user_id")
+        .eq("cabinet_id", cabinetId);
+      const assignmentsByUser: Record<string, number[]> = {};
+      for (const a of (assignmentRows || []) as { client_id: number; user_id: string }[]) {
+        (assignmentsByUser[a.user_id] ||= []).push(a.client_id);
+      }
       return json({
         cabinet: { id: cabinetId, name: cabinet.name },
         me: { user_id: caller.id, role: myRole, can_manage: canManage },
+        clients: canManage ? clientRows || [] : [],
         members: members.map((m) => {
           const p = byId[m.user_id] as { email?: string; display_name?: string } | undefined;
           const u = authById[m.user_id] as { email?: string; last_sign_in_at?: string; banned_until?: string } | undefined;
@@ -152,6 +198,7 @@ Deno.serve(async (req) => {
             display_name: p?.display_name || null,
             last_sign_in_at: u?.last_sign_in_at || null,
             created_at: m.created_at,
+            client_ids: assignmentsByUser[m.user_id] || [],
           };
         }),
       });
@@ -194,6 +241,10 @@ Deno.serve(async (req) => {
       if (profileError || memberError) {
         await admin.auth.admin.deleteUser(userId); // pas de compte orphelin
         return json({ error: (memberError || profileError)?.message || "Ajout impossible" }, 400);
+      }
+      if (role === "comptable" && Array.isArray(body.client_ids) && body.client_ids.length) {
+        const result = await replaceAssignments(userId, body.client_ids as unknown[]);
+        if (typeof result === "string") return json({ ok: true, user_id: userId, warning: result });
       }
       return json({ ok: true, user_id: userId });
     }
@@ -249,6 +300,18 @@ Deno.serve(async (req) => {
       const { error } = await admin.from("profiles").update({ display_name: name || null }).eq("user_id", target.user_id);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
+    }
+
+    if (action === "set_clients") {
+      const target = await targetMember(String(body.user_id || ""));
+      if (typeof target === "string") return json({ error: target }, 403);
+      if (target.role !== "comptable") {
+        return json({ error: "Les administrateurs ont déjà accès à tous les clients" }, 400);
+      }
+      if (!Array.isArray(body.client_ids)) return json({ error: "Liste de clients invalide" }, 400);
+      const result = await replaceAssignments(target.user_id, body.client_ids as unknown[]);
+      if (typeof result === "string") return json({ error: result }, 400);
+      return json({ ok: true, client_ids: result });
     }
 
     return json({ error: `Action inconnue : ${action}` }, 400);
