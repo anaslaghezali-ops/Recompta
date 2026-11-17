@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Équipe — Recompta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css?v=jobs6" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc2" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="rc-app">
+  <div class="dash-app" id="dashApp">
+    <div id="sidebarMount"></div>
+    <div class="dash-main">
+      <header class="dash-topbar rc-topbar">
+        <div class="dash-topbar-left">
+          <button type="button" class="dash-mobile-toggle dash-btn dash-btn-ghost" id="mobileNavToggle" aria-label="Menu">
+            <i data-lucide="menu"></i>
+          </button>
+          <div>
+            <h1>Équipe</h1>
+            <p class="rc-page-sub" id="teamSubtitle">Chargement…</p>
+          </div>
+        </div>
+        <div class="dash-topbar-actions">
+          <button type="button" class="dash-btn dash-btn-primary" id="addMemberBtn" hidden>
+            <i data-lucide="user-plus"></i> Ajouter un collaborateur
+          </button>
+        </div>
+      </header>
+
+      <main class="dash-content rc-content rc-team">
+        <div class="adm-note rc-team-note" id="teamNote" role="status" hidden></div>
+
+        <section class="rc-panel">
+          <header class="rc-panel-head">
+            <div>
+              <h2>Membres du cabinet</h2>
+              <p id="teamSummary">—</p>
+            </div>
+          </header>
+          <div class="rc-team-table-wrap">
+            <table class="rc-team-table">
+              <thead>
+                <tr>
+                  <th scope="col">Membre</th>
+                  <th scope="col">Rôle</th>
+                  <th scope="col">Statut</th>
+                  <th scope="col">Dernière connexion</th>
+                  <th scope="col" class="rc-team-actions-col"><span class="rc-sr">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="teamRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="rc-team-grid">
+          <section class="rc-panel">
+            <h2 class="rc-section-title">Rôles</h2>
+            <dl class="rc-roles">
+              <div><dt>Responsable</dt><dd>Gère le cabinet, l'équipe et tous les dossiers. Il y en a un par cabinet.</dd></div>
+              <div><dt>Administrateur</dt><dd>Ajoute et gère les collaborateurs, travaille sur tous les dossiers.</dd></div>
+              <div><dt>Collaborateur</dt><dd>Travaille sur tous les dossiers du cabinet : imports, revue, export.</dd></div>
+            </dl>
+          </section>
+
+          <section class="rc-panel">
+            <h2 class="rc-section-title">Mon mot de passe</h2>
+            <form class="rc-form" id="myPasswordForm" novalidate>
+              <label class="rc-field">
+                <span>Nouveau mot de passe</span>
+                <input type="password" id="myPassword" autocomplete="new-password" minlength="8" required />
+                <small>8 caractères minimum.</small>
+              </label>
+              <p class="rc-form-error" id="myPasswordError" hidden></p>
+              <div><button type="submit" class="dash-btn" id="myPasswordBtn">Changer mon mot de passe</button></div>
+            </form>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Ajouter un collaborateur -->
+  <dialog id="addDialog" class="dash-modal rc-team-dialog" aria-labelledby="addTitle">
+    <form class="dash-modal-inner rc-form" id="addForm" novalidate>
+      <h3 id="addTitle">Ajouter un collaborateur</h3>
+      <p class="rc-muted">Le compte est créé tout de suite. Transmettez l'email et le mot de passe à la personne : elle pourra changer son mot de passe depuis la page Équipe.</p>
+      <label class="rc-field"><span>Email professionnel</span>
+        <input type="email" id="addEmail" autocomplete="off" spellcheck="false" required /></label>
+      <label class="rc-field"><span>Nom</span>
+        <input type="text" id="addName" autocomplete="off" placeholder="Prénom Nom" /></label>
+      <label class="rc-field"><span>Rôle</span>
+        <select id="addRole">
+          <option value="comptable">Collaborateur</option>
+          <option value="admin">Administrateur</option>
+        </select></label>
+      <label class="rc-field"><span>Mot de passe initial</span>
+        <span class="rc-field-row">
+          <input type="text" id="addPassword" autocomplete="new-password" spellcheck="false" minlength="8" required />
+          <button type="button" class="dash-btn dash-btn-sm" id="addGenerateBtn">Générer</button>
+        </span>
+        <small>8 caractères minimum.</small></label>
+      <p class="rc-form-error" id="addError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="addCancelBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="addSubmitBtn">Créer le compte</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Identifiants à transmettre -->
+  <dialog id="credsDialog" class="dash-modal rc-team-dialog" aria-labelledby="credsTitle">
+    <div class="dash-modal-inner">
+      <h3 id="credsTitle">Compte créé</h3>
+      <p class="rc-muted" id="credsIntro">Transmettez ces identifiants à la personne.</p>
+      <div class="rc-creds" id="credsBox"></div>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="credsCopyBtn"><i data-lucide="copy"></i> Copier</button>
+        <button type="button" class="dash-btn dash-btn-primary" id="credsCloseBtn">Terminé</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Nouveau mot de passe pour un membre -->
+  <dialog id="pwdDialog" class="dash-modal rc-team-dialog" aria-labelledby="pwdTitle">
+    <form class="dash-modal-inner rc-form" id="pwdForm" novalidate>
+      <h3 id="pwdTitle">Nouveau mot de passe</h3>
+      <p class="rc-muted" id="pwdIntro">—</p>
+      <label class="rc-field"><span>Mot de passe</span>
+        <span class="rc-field-row">
+          <input type="text" id="pwdValue" autocomplete="new-password" spellcheck="false" minlength="8" required />
+          <button type="button" class="dash-btn dash-btn-sm" id="pwdGenerateBtn">Générer</button>
+        </span></label>
+      <p class="rc-form-error" id="pwdError" hidden></p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="pwdCancelBtn">Annuler</button>
+        <button type="submit" class="dash-btn dash-btn-primary" id="pwdSubmitBtn">Enregistrer le mot de passe</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Confirmation -->
+  <dialog id="confirmDialog" class="dash-modal rc-team-dialog" aria-labelledby="confirmTitle">
+    <div class="dash-modal-inner">
+      <h3 id="confirmTitle">—</h3>
+      <p class="rc-muted" id="confirmText">—</p>
+      <div class="dash-form-actions">
+        <button type="button" class="dash-btn" id="confirmCancelBtn">Annuler</button>
+        <button type="button" class="dash-btn danger" id="confirmOkBtn">Confirmer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="rc-toasts" id="toasts" aria-live="polite" popover="manual"></div>
+
+  <script type="module">
+    import { signOut } from "./auth-client.js?v=auth9";
+    import { requireCabinetSession } from "./dossiers-client.js?v=dash2";
+    import { bindSidebarMobile, escapeHtml, initLucide, sidebarHtml } from "./dashboard-ui.js?v=team1";
+    import {
+      ROLE_LABELS,
+      addTeamMember,
+      changeMyPassword,
+      generatePassword,
+      loadTeam,
+      resetTeamPassword,
+      setTeamMemberActive,
+      setTeamRole,
+    } from "./team-client.js?v=team1";
+
+    const $ = (id) => document.getElementById(id);
+    const state = { team: null, me: null };
+
+    // ---------- Utilitaires ----------
+    const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+    function relativeTime(iso) {
+      if (!iso) return null;
+      const diff = (Date.parse(iso) - Date.now()) / 1000;
+      for (const [unit, sec] of [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]]) {
+        if (Math.abs(diff) >= sec) return rtf.format(Math.round(diff / sec), unit);
+      }
+      return "à l'instant";
+    }
+    const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
+
+    function toast(message, isError = false) {
+      const box = $("toasts");
+      const el = document.createElement("div");
+      el.className = `rc-toast${isError ? " is-error" : ""}`;
+      el.textContent = message;
+      box.appendChild(el);
+      if (box.showPopover) {
+        if (box.matches(":popover-open")) box.hidePopover();
+        box.showPopover();
+      }
+      setTimeout(() => {
+        el.remove();
+        if (!box.children.length && box.matches?.(":popover-open")) box.hidePopover();
+      }, isError ? 7000 : 4000);
+    }
+
+    function showError(id, message) {
+      const el = $(id);
+      el.hidden = !message;
+      el.textContent = message || "";
+    }
+
+    async function busy(button, fn) {
+      const label = button.innerHTML;
+      button.disabled = true;
+      try { return await fn(); } finally { button.disabled = false; button.innerHTML = label; initLucide(); }
+    }
+
+    function confirmAction({ title, text, okLabel }) {
+      $("confirmTitle").textContent = title;
+      $("confirmText").textContent = text;
+      $("confirmOkBtn").textContent = okLabel;
+      $("confirmDialog").showModal();
+      return new Promise((resolve) => {
+        const done = (v) => { $("confirmDialog").close(); resolve(v); };
+        $("confirmOkBtn").onclick = () => done(true);
+        $("confirmCancelBtn").onclick = () => done(false);
+        $("confirmDialog").oncancel = () => done(false);
+      });
+    }
+
+    // ---------- Rendu ----------
+    function canManage(member) {
+      const me = state.me;
+      if (!me?.can_manage) return false;
+      if (member.user_id === me.user_id || member.role === "owner") return false;
+      if (me.role === "admin" && member.role === "admin") return false;
+      return true;
+    }
+
+    function roleCell(member) {
+      if (!canManage(member)) return `<span class="rc-role">${ROLE_LABELS[member.role] || escapeHtml(member.role)}</span>`;
+      const options = [["comptable", "Collaborateur"], ["admin", "Administrateur"]]
+        .filter(([value]) => value !== "admin" || state.me.role === "owner" || member.role === "admin")
+        .map(([value, label]) => `<option value="${value}" ${member.role === value ? "selected" : ""}>${label}</option>`)
+        .join("");
+      return `<select class="rc-role-select" data-role="${member.user_id}" aria-label="Rôle de ${escapeHtml(member.email || "")}">${options}</select>`;
+    }
+
+    function render() {
+      const { members, cabinet } = state.team;
+      const active = members.filter((m) => m.active).length;
+      $("teamSubtitle").textContent = cabinet.name;
+      $("teamSummary").textContent = `${plural(members.length, "membre", "membres")}, ${plural(active, "actif", "actifs")}.`
+        + (state.me.can_manage ? "" : " Seuls le responsable et les administrateurs peuvent modifier l'équipe.");
+      $("addMemberBtn").hidden = !state.me.can_manage;
+      $("addRole").querySelector('option[value="admin"]').hidden = state.me.role !== "owner";
+
+      $("teamRows").innerHTML = members.map((m) => {
+        const isMe = m.user_id === state.me.user_id;
+        const name = m.display_name || m.email || "Compte sans nom";
+        const last = m.last_sign_in_at
+          ? `<span title="${new Date(m.last_sign_in_at).toLocaleString("fr-FR")}">${escapeHtml(relativeTime(m.last_sign_in_at))}</span>`
+          : `<span class="rc-muted-inline">Jamais connecté</span>`;
+        const actions = canManage(m) ? `
+          <button type="button" class="dash-btn dash-btn-sm" data-password="${m.user_id}">Mot de passe</button>
+          ${m.active
+            ? `<button type="button" class="dash-btn dash-btn-sm danger" data-deactivate="${m.user_id}">Désactiver</button>`
+            : `<button type="button" class="dash-btn dash-btn-sm rc-btn-ok" data-activate="${m.user_id}">Réactiver</button>`}
+        ` : "";
+        return `
+          <tr class="${m.active ? "" : "is-inactive"}">
+            <td>
+              <div class="rc-member-name">${escapeHtml(name)}${isMe ? ' <span class="rc-you">vous</span>' : ""}</div>
+              ${m.display_name && m.email ? `<div class="rc-member-email">${escapeHtml(m.email)}</div>` : ""}
+            </td>
+            <td>${roleCell(m)}</td>
+            <td>${m.active ? '<span class="dash-badge dash-badge-success">Actif</span>' : '<span class="dash-badge dash-badge-danger">Désactivé</span>'}</td>
+            <td>${last}</td>
+            <td class="rc-team-actions">${actions}</td>
+          </tr>`;
+      }).join("");
+      initLucide();
+    }
+
+    async function refresh() {
+      try {
+        state.team = await loadTeam();
+        state.me = state.team.me;
+        $("teamNote").hidden = true;
+        render();
+      } catch (err) {
+        $("teamNote").hidden = false;
+        $("teamNote").textContent = err.message;
+        $("teamSummary").textContent = "";
+      }
+    }
+
+    // ---------- Actions sur la liste ----------
+    $("teamRows").addEventListener("change", async (event) => {
+      const select = event.target.closest("select[data-role]");
+      if (!select) return;
+      const member = state.team.members.find((m) => m.user_id === select.dataset.role);
+      select.disabled = true;
+      try {
+        await setTeamRole(member.user_id, select.value);
+        toast(`${member.email} est maintenant ${ROLE_LABELS[select.value].toLowerCase()}.`);
+        await refresh();
+      } catch (err) {
+        toast(err.message, true);
+        select.value = member.role;
+      } finally {
+        select.disabled = false;
+      }
+    });
+
+    let pwdTarget = null;
+    $("teamRows").addEventListener("click", async (event) => {
+      const btn = event.target.closest("button");
+      if (!btn) return;
+      const id = btn.dataset.password || btn.dataset.deactivate || btn.dataset.activate;
+      const member = state.team.members.find((m) => m.user_id === id);
+      if (!member) return;
+
+      if (btn.dataset.password) {
+        pwdTarget = member;
+        $("pwdIntro").textContent = `Pour ${member.display_name || member.email}. Transmettez-lui ce mot de passe.`;
+        $("pwdValue").value = generatePassword();
+        showError("pwdError", "");
+        $("pwdDialog").showModal();
+        $("pwdValue").select();
+        return;
+      }
+      if (btn.dataset.deactivate) {
+        const ok = await confirmAction({
+          title: `Désactiver ${member.display_name || member.email} ?`,
+          text: "Cette personne ne pourra plus se connecter ni voir les dossiers du cabinet. Son travail est conservé et vous pourrez la réactiver à tout moment.",
+          okLabel: "Désactiver le compte",
+        });
+        if (!ok) return;
+        await busy(btn, async () => {
+          try {
+            await setTeamMemberActive(member.user_id, false);
+            toast(`Compte de ${member.email} désactivé.`);
+            await refresh();
+          } catch (err) { toast(err.message, true); }
+        });
+        return;
+      }
+      if (btn.dataset.activate) {
+        await busy(btn, async () => {
+          try {
+            await setTeamMemberActive(member.user_id, true);
+            toast(`Compte de ${member.email} réactivé.`);
+            await refresh();
+          } catch (err) { toast(err.message, true); }
+        });
+      }
+    });
+
+    // ---------- Ajouter un collaborateur ----------
+    $("addMemberBtn").addEventListener("click", () => {
+      $("addForm").reset();
+      $("addPassword").value = generatePassword();
+      showError("addError", "");
+      $("addDialog").showModal();
+      $("addEmail").focus();
+    });
+    $("addGenerateBtn").addEventListener("click", () => { $("addPassword").value = generatePassword(); });
+    $("addCancelBtn").addEventListener("click", () => $("addDialog").close());
+    $("addForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("addError", "");
+      const email = $("addEmail").value.trim().toLowerCase();
+      const password = $("addPassword").value;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError("addError", "Indiquez une adresse email valide.");
+      if (password.length < 8) return showError("addError", "Le mot de passe doit contenir au moins 8 caractères.");
+      await busy($("addSubmitBtn"), async () => {
+        try {
+          await addTeamMember({ email, password, display_name: $("addName").value.trim(), role: $("addRole").value });
+          $("addDialog").close();
+          showCredentials("Compte créé", email, password);
+          await refresh();
+        } catch (err) {
+          showError("addError", err.message);
+        }
+      });
+    });
+
+    function showCredentials(title, email, password) {
+      const loginUrl = new URL("login.html", window.location.href).href;
+      $("credsTitle").textContent = title;
+      $("credsBox").innerHTML = `
+        <dl>
+          <div><dt>Adresse</dt><dd>${escapeHtml(loginUrl)}</dd></div>
+          <div><dt>Email</dt><dd>${escapeHtml(email)}</dd></div>
+          <div><dt>Mot de passe</dt><dd><code>${escapeHtml(password)}</code></dd></div>
+        </dl>`;
+      $("credsBox").dataset.copy = `Connexion Recompta\n${loginUrl}\nEmail : ${email}\nMot de passe : ${password}`;
+      $("credsDialog").showModal();
+      initLucide();
+    }
+    $("credsCopyBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText($("credsBox").dataset.copy || "");
+        toast("Identifiants copiés.");
+      } catch {
+        toast("Copie impossible : sélectionnez le texte manuellement.", true);
+      }
+    });
+    $("credsCloseBtn").addEventListener("click", () => $("credsDialog").close());
+
+    // ---------- Mot de passe d'un membre ----------
+    $("pwdGenerateBtn").addEventListener("click", () => { $("pwdValue").value = generatePassword(); });
+    $("pwdCancelBtn").addEventListener("click", () => $("pwdDialog").close());
+    $("pwdForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const password = $("pwdValue").value;
+      if (password.length < 8) return showError("pwdError", "Le mot de passe doit contenir au moins 8 caractères.");
+      await busy($("pwdSubmitBtn"), async () => {
+        try {
+          await resetTeamPassword(pwdTarget.user_id, password);
+          $("pwdDialog").close();
+          showCredentials("Mot de passe modifié", pwdTarget.email, password);
+        } catch (err) {
+          showError("pwdError", err.message);
+        }
+      });
+    });
+
+    // ---------- Mon mot de passe ----------
+    $("myPasswordForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("myPasswordError", "");
+      const password = $("myPassword").value;
+      if (password.length < 8) return showError("myPasswordError", "Le mot de passe doit contenir au moins 8 caractères.");
+      await busy($("myPasswordBtn"), async () => {
+        try {
+          await changeMyPassword(password);
+          $("myPassword").value = "";
+          toast("Votre mot de passe a été changé.");
+        } catch (err) {
+          showError("myPasswordError", /different|same/i.test(err.message || "")
+            ? "Choisissez un mot de passe différent de l'actuel."
+            : err.message);
+        }
+      });
+    });
+
+    // ---------- Démarrage ----------
+    const membership = await requireCabinetSession().catch((err) => {
+      $("teamNote").hidden = false;
+      $("teamNote").textContent = err.message;
+      return null;
+    });
+    if (membership) {
+      $("sidebarMount").innerHTML = sidebarHtml({ cabinetName: membership.cabinet.name, active: "team" });
+      bindSidebarMobile();
+      document.getElementById("signOutBtn")?.addEventListener("click", async () => {
+        await signOut();
+        window.location.href = "login.html";
+      });
+      initLucide();
+      await refresh();
+    }
+  </script>
+</body>
+</html>
