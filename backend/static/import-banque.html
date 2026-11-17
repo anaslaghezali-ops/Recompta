@@ -6,12 +6,13 @@
   <title>Recompta — Import banque</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=import1" />
   <link rel="stylesheet" href="styles.css?v=bankmatch1" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
-<body>
+<body class="rc-app">
   <div class="dash-app">
     <div class="dash-main" style="grid-column: 1 / -1;">
       <header class="dash-topbar">
@@ -20,17 +21,18 @@
             <nav class="dash-breadcrumb">
               <a href="dossiers.html">Portefeuille</a>
               <span>›</span>
-              <a href="#" id="backLink">Workspace</a>
+              <a href="#" id="backLink">Dossier client</a>
               <span>›</span>
               <span>Import banque</span>
             </nav>
-            <h1>Import du relevé bancaire</h1>
-            <p style="margin:0.2rem 0 0;font-size:0.85rem;color:var(--dash-muted);">CSV, Excel ou PDF — rapprochement automatique des paiements</p>
+            <h1>Importer le relevé bancaire</h1>
+            <p class="rc-page-sub">CSV, Excel ou PDF. Les paiements seront rapprochés des factures pour dater chaque règlement.</p>
+            <span class="imp-step-tag">Étape 1 sur 5 : relevé bancaire</span>
           </div>
         </div>
         <div class="dash-topbar-actions">
           <span class="imp-save-status" id="saveStatus"></span>
-          <a href="#" id="backBtn" class="dash-btn"><i data-lucide="arrow-left"></i> Workspace</a>
+          <a href="#" id="backBtn" class="dash-btn"><i data-lucide="arrow-left"></i> Retour au dossier</a>
         </div>
       </header>
 

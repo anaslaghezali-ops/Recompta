@@ -69,7 +69,8 @@ export function buildPipelineSteps({
 
   const bankDone = hasBankDocument;
   const purchasesDone = hasInvoiceWork;
-  const analysisDone = postAnalysis && (hasLines || hasBank || !hasBankDocument);
+  // Terminée seulement si l'extraction a produit quelque chose (lignes ou mouvements).
+  const analysisDone = postAnalysis && (hasLines || hasBank);
   const reviewDone = hasLines && anomalyCount === 0;
 
   const bankCurrent = !hasBankDocument && !isExported;

@@ -587,7 +587,7 @@ async function runExtract() {
     extracting = false;
     setImportPhase("done", {
       title: `${newLines} ligne(s) extraite(s) et enregistrée(s)`,
-      detail: "Vous pouvez retourner au workspace pour la revue.",
+      detail: "Vous pouvez revenir au dossier pour la revue.",
       percent: 100,
       progressText: `${newLines} ligne(s) extraite(s) et enregistrée(s).`,
     });

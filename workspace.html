@@ -6,65 +6,94 @@
   <title>Recompta — Workspace client</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=modal-font1" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
-<body>
+<body class="rc-app">
   <div class="dash-app" id="dashApp">
     <div id="sidebarMount"></div>
     <div class="dash-main">
-      <header class="dash-topbar">
+      <header class="dash-topbar rc-topbar">
         <div class="dash-topbar-left">
           <button type="button" class="dash-mobile-toggle dash-btn dash-btn-ghost" id="mobileNavToggle" aria-label="Menu">
             <i data-lucide="menu"></i>
           </button>
-          <div>
-            <nav class="dash-breadcrumb" aria-label="Fil d'Ariane">
-              <a href="dossiers.html"><i data-lucide="arrow-left" style="width:14px;height:14px;"></i> Portefeuille</a>
+          <div class="rc-client-head">
+            <nav class="dash-breadcrumb rc-breadcrumb" aria-label="Fil d'Ariane">
+              <a href="dossiers.html">Portefeuille</a>
+              <span aria-hidden="true">/</span>
+              <span>Client</span>
             </nav>
             <h1 id="clientTitle">—</h1>
-            <p class="dash-client-ice" id="clientIceLine">ICE —</p>
+            <div class="rc-client-sub">
+              <span class="dash-client-ice" id="clientIceLine">ICE —</span>
+              <div class="ws-client-meta" id="clientMeta"></div>
+            </div>
           </div>
         </div>
         <div class="dash-topbar-actions">
-          <span class="dash-credits-pill" id="topbarCredits" hidden title="Crédits scans IA ce mois (PDF natifs gratuits)">
+          <span class="dash-credits-pill" id="topbarCredits" hidden title="Scans IA restants ce mois. Les PDF natifs et les relevés CSV ne consomment pas de scans.">
             <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
             <span id="topbarCreditsText">—</span>
           </span>
           <button type="button" class="dash-btn" id="newPeriodBtn">
             <i data-lucide="calendar-plus"></i> Nouvelle période
           </button>
+          <!-- Conservé pour la logique existante ; la prochaine action est dans l'en-tête de période -->
           <button type="button" class="dash-btn dash-btn-primary" id="openProductionBtn" hidden>
             <i data-lucide="play"></i> Continuer
           </button>
         </div>
       </header>
 
-      <main class="dash-content ws-cockpit">
-        <div class="ws-client-meta" id="clientMeta"></div>
+      <main class="dash-content ws-cockpit rc-content">
 
-        <div class="ws-period-bar" id="periodBar" hidden>
-          <div class="ws-period-bar-main">
+        <!-- En-tête de période : visible sur tous les onglets -->
+        <section class="rc-period" id="heroCard" hidden aria-label="Période TVA">
+          <div class="rc-period-main">
+            <div class="rc-period-title">
+              <h2 id="heroPeriod">—</h2>
+              <div class="rc-period-badges" id="heroBadges"></div>
+            </div>
+            <p class="rc-period-deadline ws-hero-deadline" id="heroDeadline">—</p>
+            <div class="rc-period-progress" id="progressRing" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avancement de la période">
+              <div class="rc-period-progress-track"><div class="rc-period-progress-fill" id="progressFill"></div></div>
+              <span class="rc-period-progress-value" id="progressValue">0%</span>
+            </div>
+          </div>
+          <div class="rc-period-actions">
+            <a class="dash-btn dash-btn-primary rc-next-action" id="primaryCta" href="#">
+              <span id="primaryCtaLabel">—</span>
+              <i data-lucide="arrow-right"></i>
+            </a>
+            <button type="button" class="dash-btn rc-declare-btn" id="heroDeclareBtn" hidden>
+              <i data-lucide="badge-check"></i> Valider la déclaration
+            </button>
+          </div>
+
+          <div class="rc-period-switch ws-period-bar" id="periodBar" hidden>
             <label for="periodSelect" id="periodBarLabel">Période active</label>
             <select id="periodSelect" class="ws-period-select" aria-label="Choisir la période en cours"></select>
             <span id="periodViewingLabel" class="ws-period-viewing" hidden></span>
             <select id="periodOpenSelect" class="ws-period-select ws-period-open-select" hidden aria-label="Passer à une période en cours"></select>
+            <span class="rc-period-switch-links">
+              <button type="button" class="rc-link ws-period-nav-link ws-period-nav-link--reopen" id="periodReopenBtn" hidden>Rouvrir cette période</button>
+              <button type="button" class="rc-link ws-period-nav-link ws-period-nav-link--back" id="periodBackToOpenBtn" hidden>Retour aux périodes en cours</button>
+              <button type="button" class="rc-link ws-period-nav-link" id="periodHistoryLink" hidden>Voir les périodes clôturées</button>
+            </span>
           </div>
-          <div class="ws-period-bar-actions">
-            <button type="button" class="ws-period-nav-link ws-period-nav-link--reopen" id="periodReopenBtn" hidden>
-              Rouvrir cette période
-            </button>
-            <button type="button" class="ws-period-nav-link ws-period-nav-link--back" id="periodBackToOpenBtn" hidden>
-              ← Retour aux périodes en cours
-            </button>
-            <button type="button" class="ws-period-nav-link" id="periodHistoryLink" hidden>
-              Voir les périodes clôturées →
-            </button>
-          </div>
-        </div>
 
-        <div class="ws-import-banner" id="importBanner" hidden>
+          <div id="heroConsultBanner" class="rc-period-locked" hidden>
+            <i data-lucide="lock"></i>
+            <span>Période déclarée. Elle est en lecture seule.</span>
+            <button type="button" class="dash-btn dash-btn-sm" id="heroReopenBtn">Rouvrir pour modifier</button>
+            <button type="button" class="rc-link" id="heroBackToOpenBtn">Retour aux périodes en cours</button>
+          </div>
+        </section>
+
+        <div class="ws-import-banner rc-banner" id="importBanner" hidden>
           <i data-lucide="loader-circle"></i>
           <div class="ws-import-banner-text">
             <strong id="importBannerTitle">Import en cours</strong>
@@ -79,248 +108,213 @@
           <button type="button" id="importBannerBtn" class="dash-btn dash-btn-sm">Détails</button>
         </div>
 
-        <div class="dash-segmented ws-tabs" id="viewTabs" role="tablist">
-          <button type="button" class="active" data-tab="cockpit" role="tab">Période active</button>
+        <nav class="rc-tabs ws-tabs" id="viewTabs" role="tablist" aria-label="Sections du dossier">
+          <button type="button" class="active" data-tab="cockpit" role="tab">Production</button>
           <button type="button" data-tab="documents" role="tab">Documents</button>
-          <button type="button" data-tab="review" role="tab">Revue & export</button>
-          <button type="button" data-tab="suppliers" role="tab">Carnet fournisseurs</button>
-          <button type="button" data-tab="history" role="tab">Historique des périodes</button>
-        </div>
+          <button type="button" data-tab="review" role="tab">Revue &amp; export</button>
+          <button type="button" data-tab="suppliers" role="tab">Fournisseurs</button>
+          <button type="button" data-tab="history" role="tab">Périodes</button>
+        </nav>
 
         <div id="cockpitView">
-          <div id="emptyPeriodState" class="ws-empty" hidden>
-            <i data-lucide="calendar" style="width:36px;height:36px;color:#94a3b8;"></i>
-            <h3>Aucune période TVA</h3>
-            <p>Créez la première période pour démarrer la production comptable de ce client.</p>
-            <button type="button" class="dash-btn dash-btn-primary" id="emptyNewPeriodBtn" style="margin-top:1rem;">
+          <div id="emptyPeriodState" class="ws-empty rc-empty" hidden>
+            <i data-lucide="calendar-plus"></i>
+            <h3>Aucune période TVA pour ce client</h3>
+            <p>Créez la période du mois à déclarer. Vous pourrez ensuite importer le relevé bancaire et les factures d'achat.</p>
+            <button type="button" class="dash-btn dash-btn-primary" id="emptyNewPeriodBtn">
               <i data-lucide="calendar-plus"></i> Créer une période TVA
             </button>
           </div>
 
           <div id="activeCockpit" hidden>
-            <section class="ws-hero" id="heroCard">
-              <div class="ws-hero-main">
-                <span class="ws-hero-period" id="heroPeriod">—</span>
-                <div class="ws-hero-badges" id="heroBadges"></div>
-                <p class="ws-hero-deadline" id="heroDeadline">—</p>
-                <p id="heroConsultBanner" class="ws-hero-consult" hidden>
-                  <i data-lucide="archive"></i>
-                  <span>Consultation seule — période déclarée.</span>
-                  <button type="button" class="ws-hero-consult-btn ws-hero-consult-btn--primary" id="heroReopenBtn">Rouvrir pour modification</button>
-                  <button type="button" class="ws-hero-consult-btn" id="heroBackToOpenBtn">Retour aux périodes en cours</button>
-                </p>
-                <button type="button" class="dash-btn dash-btn-primary ws-hero-declare-btn" id="heroDeclareBtn" hidden>
-                  <i data-lucide="badge-check"></i> Valider la déclaration TVA
-                </button>
+            <section class="rc-steps-wrap" aria-labelledby="stepsTitle">
+              <h2 class="rc-section-title" id="stepsTitle">Étapes de la période</h2>
+              <ol class="rc-steps ws-pipeline-steps" id="pipelineSteps"></ol>
+            </section>
+
+            <div class="rc-cockpit-grid">
+              <div class="rc-cockpit-main">
+                <section class="ws-production-card rc-work" id="productionCard" hidden>
+                  <article class="rc-work-card ws-production-step" id="extractionStep">
+                    <header class="rc-work-head">
+                      <span class="rc-work-icon"><i data-lucide="file-text"></i></span>
+                      <div>
+                        <h3>Factures d'achat</h3>
+                        <p id="extractionHint">Importez vos factures puis lancez l'extraction pour générer les lignes TVA.</p>
+                      </div>
+                    </header>
+                    <p class="rc-work-meta ws-production-meta" id="extractionMeta"></p>
+                    <div class="rc-work-actions ws-production-actions">
+                      <button type="button" class="dash-btn dash-btn-primary" id="launchExtractionBtn">
+                        <i data-lucide="sparkles"></i> Lancer l'extraction
+                      </button>
+                      <button type="button" class="dash-btn" id="addInvoicesBtn">
+                        <i data-lucide="upload"></i> Importer des factures
+                      </button>
+                      <button type="button" class="dash-btn" id="openReviewBtn" hidden>
+                        <i data-lucide="table-2"></i> Voir la revue
+                      </button>
+                    </div>
+                  </article>
+
+                  <article class="rc-work-card ws-production-step" id="bankMatchStep">
+                    <header class="rc-work-head">
+                      <span class="rc-work-icon"><i data-lucide="landmark"></i></span>
+                      <div>
+                        <h3>Relevé bancaire</h3>
+                        <p id="bankMatchHint">Renseigne les dates de paiement et ajoute les frais bancaires à partir du relevé.</p>
+                      </div>
+                    </header>
+                    <p class="rc-work-meta ws-production-meta" id="bankMatchMeta"></p>
+                    <div class="rc-work-actions ws-production-actions">
+                      <button type="button" class="dash-btn dash-btn-primary" id="launchBankMatchBtn">
+                        <i data-lucide="git-compare"></i> Lancer le rapprochement
+                      </button>
+                      <button type="button" class="dash-btn" id="extractBankBtn" hidden>
+                        <i data-lucide="scan-text"></i> Extraire le relevé
+                      </button>
+                      <a class="dash-btn" id="importBankLink" href="#">
+                        <i data-lucide="upload"></i> Importer un relevé
+                      </a>
+                    </div>
+                  </article>
+
+                  <div class="ws-analysis-status rc-analysis" id="analysisStatus" hidden>
+                    <div class="ws-analysis-status-head">
+                      <span class="ws-analysis-status-badge" id="analysisStatusBadge">—</span>
+                      <span class="ws-analysis-status-percent" id="analysisStatusPercent">0%</span>
+                    </div>
+                    <div class="ws-analysis-progress-track" aria-hidden="true">
+                      <div class="ws-analysis-progress-fill" id="analysisProgressFill"></div>
+                    </div>
+                    <p class="ws-analysis-status-detail" id="analysisStatusDetail">—</p>
+                    <ol class="ws-analysis-steps" id="analysisSteps" aria-label="Étapes de l'extraction">
+                      <li data-step="launch">Lancement</li>
+                      <li data-step="queue">File d'attente</li>
+                      <li data-step="process">Extraction IA</li>
+                      <li data-step="review">Revue</li>
+                    </ol>
+                  </div>
+                </section>
               </div>
-            <div class="ws-hero-progress">
-              <div class="ws-progress-ring" id="progressRing">
-                <span class="ws-progress-value" id="progressValue">0%</span>
-              </div>
+
+              <aside class="rc-cockpit-aside">
+                <section class="rc-facts" id="cockpitKpis" aria-labelledby="factsTitle">
+                  <h2 class="rc-section-title" id="factsTitle">Chiffres de la période</h2>
+                  <dl>
+                    <div><dt>Lignes de factures</dt><dd id="kpiLines">—</dd></div>
+                    <div id="kpiAnomaliesWrap" class="rc-fact-anomalies"><dt>Anomalies à corriger</dt><dd id="kpiAnomalies">—</dd></div>
+                    <div><dt>Mouvements bancaires</dt><dd id="kpiBank">—</dd></div>
+                    <div><dt>Opérations au total</dt><dd><span id="kpiOps">—</span><small id="kpiOpsHint" hidden>Relevé + factures</small></dd></div>
+                    <div id="kpiDeadlineWrap"><dt>Échéance</dt><dd><span id="kpiDeadlineDays">—</span> <small id="kpiDeadlineHint">20 du mois suivant</small></dd></div>
+                  </dl>
+                </section>
+
+                <section class="rc-activity" aria-labelledby="activityTitle">
+                  <h2 class="rc-section-title" id="activityTitle">Activité récente</h2>
+                  <p class="rc-muted" id="lastActivityLine">—</p>
+                  <ul class="dash-timeline" id="activityTimeline"></ul>
+                </section>
+
+                <details class="ws-analysis-server rc-server" id="analysisServerConfig">
+                  <summary>Serveur d'extraction</summary>
+                  <p class="rc-muted">Adresse du serveur d'analyse (port 8000), utile en développement.</p>
+                  <label class="ws-analysis-server-field">
+                    <input id="analysisApiUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" autocomplete="off" />
+                    <span id="analysisServerStatus" class="ws-analysis-server-status"></span>
+                  </label>
+                </details>
+              </aside>
             </div>
-            </section>
-
-            <div class="dash-portfolio-kpis ws-kpis" id="cockpitKpis">
-              <div class="dash-kpi">
-                <div class="dash-kpi-label">Opérations</div>
-                <div class="dash-kpi-value" id="kpiOps">—</div>
-                <div class="dash-kpi-hint" id="kpiOpsHint">Relevé + factures</div>
-              </div>
-              <div class="dash-kpi" id="kpiAnomaliesWrap">
-                <div class="dash-kpi-label">Anomalies IA</div>
-                <div class="dash-kpi-value" id="kpiAnomalies">—</div>
-                <div class="dash-kpi-hint">À corriger</div>
-              </div>
-              <div class="dash-kpi">
-                <div class="dash-kpi-label">Factures</div>
-                <div class="dash-kpi-value" id="kpiLines">—</div>
-                <div class="dash-kpi-hint">Lignes achats</div>
-              </div>
-              <div class="dash-kpi">
-                <div class="dash-kpi-label">Relevé</div>
-                <div class="dash-kpi-value" id="kpiBank">—</div>
-                <div class="dash-kpi-hint">Opérations bancaires</div>
-              </div>
-              <div class="dash-kpi" id="kpiDeadlineWrap">
-                <div class="dash-kpi-label">Échéance TVA</div>
-                <div class="dash-kpi-value" id="kpiDeadlineDays">—</div>
-                <div class="dash-kpi-hint" id="kpiDeadlineHint">20 du mois suivant</div>
-              </div>
-            </div>
-
-            <section class="ws-section ws-production-card" id="productionCard" hidden>
-              <div class="ws-production-grid">
-                <article class="ws-production-step" id="extractionStep">
-                  <div class="ws-production-step-head">
-                    <span class="ws-production-step-num">1</span>
-                    <h2><i data-lucide="file-input"></i> Extraction factures</h2>
-                  </div>
-                  <p id="extractionHint">Importez vos factures puis lancez l'extraction pour générer les lignes TVA.</p>
-                  <p class="ws-production-meta" id="extractionMeta"></p>
-                  <div class="ws-production-actions">
-                    <button type="button" class="dash-btn dash-btn-primary" id="launchExtractionBtn">
-                      <i data-lucide="play"></i> Lancer l'extraction
-                    </button>
-                    <button type="button" class="dash-btn" id="addInvoicesBtn">
-                      <i data-lucide="plus"></i> Ajouter des factures
-                    </button>
-                    <button type="button" class="dash-btn" id="openReviewBtn" hidden>
-                      <i data-lucide="table-2"></i> Voir la revue
-                    </button>
-                  </div>
-                </article>
-
-                <article class="ws-production-step" id="bankMatchStep">
-                  <div class="ws-production-step-head">
-                    <span class="ws-production-step-num">2</span>
-                    <h2><i data-lucide="git-compare"></i> Rapprochement bancaire</h2>
-                  </div>
-                  <p id="bankMatchHint">Renseigne les dates de paiement et ajoute les frais bancaires à partir du relevé.</p>
-                  <p class="ws-production-meta" id="bankMatchMeta"></p>
-                  <div class="ws-production-actions">
-                    <button type="button" class="dash-btn" id="extractBankBtn" hidden>
-                      <i data-lucide="landmark"></i> Extraire le relevé
-                    </button>
-                    <button type="button" class="dash-btn dash-btn-primary" id="launchBankMatchBtn">
-                      <i data-lucide="git-compare"></i> Lancer le rapprochement
-                    </button>
-                  </div>
-                </article>
-              </div>
-
-              <details class="ws-analysis-server" id="analysisServerConfig">
-                <summary>URL serveur Codespace (port 8000)</summary>
-                <label class="ws-analysis-server-field">
-                  <input id="analysisApiUrl" type="url" placeholder="https://xxxx-8000.app.github.dev" autocomplete="off" />
-                  <span id="analysisServerStatus" class="ws-analysis-server-status"></span>
-                </label>
-              </details>
-
-              <div class="ws-analysis-status" id="analysisStatus" hidden>
-                <div class="ws-analysis-status-head">
-                  <span class="ws-analysis-status-badge" id="analysisStatusBadge">—</span>
-                  <span class="ws-analysis-status-percent" id="analysisStatusPercent">0%</span>
-                </div>
-                <div class="ws-analysis-progress-track" aria-hidden="true">
-                  <div class="ws-analysis-progress-fill" id="analysisProgressFill"></div>
-                </div>
-                <p class="ws-analysis-status-detail" id="analysisStatusDetail">—</p>
-                <ol class="ws-analysis-steps" id="analysisSteps" aria-label="Étapes de l'extraction">
-                  <li data-step="launch">Lancement</li>
-                  <li data-step="queue">File d'attente</li>
-                  <li data-step="process">Extraction IA</li>
-                  <li data-step="review">Revue</li>
-                </ol>
-              </div>
-            </section>
-
-            <section class="ws-section">
-              <h2>Pipeline de production</h2>
-              <div class="ws-pipeline-steps" id="pipelineSteps"></div>
-            </section>
-
-            <div class="ws-actions-row">
-              <div class="ws-cta-card">
-                <h3>Prochaine action</h3>
-                <a class="ws-cta-primary" id="primaryCta" href="#">
-                  <i data-lucide="arrow-right"></i>
-                  <span id="primaryCtaLabel">—</span>
-                </a>
-                <p style="margin:0;font-size:0.78rem;color:var(--dash-muted);" id="lastActivityLine">—</p>
-              </div>
-              <div class="ws-cta-card">
-                <h3>Accès rapide</h3>
-                <div class="ws-quick-grid" id="quickActions"></div>
-              </div>
-            </div>
-
-            <section class="ws-section">
-              <h2>Activité récente</h2>
-              <ul class="dash-timeline" id="activityTimeline"></ul>
-            </section>
           </div>
         </div>
 
-
         <div id="documentsView" hidden>
-          <section class="ws-section">
-            <div class="ws-docs-header">
+          <section class="rc-panel">
+            <header class="rc-panel-head ws-docs-header">
               <div>
-                <h2>Documents importés</h2>
+                <h2>Documents de la période</h2>
                 <p id="documentsPeriodHint">Factures et relevés stockés pour cette période TVA</p>
               </div>
-              <div class="ws-docs-filters" id="docFilters" role="tablist" aria-label="Filtrer les documents">
-                <a class="dash-btn dash-btn-sm" id="documentsImportLink" href="#">
+              <div class="rc-panel-tools">
+                <div class="rc-seg ws-docs-filters" id="docFilters" role="tablist" aria-label="Filtrer les documents">
+                  <button type="button" class="active" data-filter="all">Tous</button>
+                  <button type="button" data-filter="invoice">Factures</button>
+                  <button type="button" data-filter="bank">Relevés</button>
+                </div>
+                <a class="dash-btn dash-btn-primary dash-btn-sm" id="documentsImportLink" href="#">
                   <i data-lucide="upload"></i> Importer des factures
                 </a>
-                <button type="button" class="active" data-filter="all">Tous</button>
-                <button type="button" data-filter="invoice">Factures</button>
-                <button type="button" data-filter="bank">Relevés</button>
               </div>
-            </div>
+            </header>
             <div id="documentsList" class="ws-docs-list"></div>
             <section class="ws-doc-archives" id="documentArchivesSection" hidden>
               <button type="button" class="ws-doc-archives-toggle" id="documentArchivesToggle" aria-expanded="false">
                 <span class="ws-doc-archives-toggle-main">
                   <i data-lucide="archive"></i>
-                  <span>Archives sources</span>
+                  <span>Archives d'origine</span>
                   <span class="ws-doc-archives-count" id="documentArchivesCount">0</span>
                 </span>
                 <i data-lucide="chevron-down" class="ws-doc-archives-chevron"></i>
               </button>
-              <p class="ws-doc-archives-hint">ZIP d'origine conservés pour audit — les pièces extraites sont listées ci-dessus.</p>
+              <p class="ws-doc-archives-hint">Fichiers ZIP tels qu'importés, conservés pour l'audit. Leurs pièces sont listées ci-dessus.</p>
               <div id="documentArchivesList" class="ws-doc-archives-list" hidden></div>
             </section>
-            <p class="ws-docs-empty" id="documentsEmpty" hidden>Aucun document importé pour cette période.</p>
+            <div class="ws-docs-empty rc-empty" id="documentsEmpty" hidden>
+              <i data-lucide="folder-open"></i>
+              <h3>Aucun document pour cette période</h3>
+              <p>Importez le relevé bancaire et les factures d'achat du mois.</p>
+            </div>
           </section>
         </div>
 
         <div id="reviewView" hidden>
-          <section class="ws-section ws-review-panel" id="reviewPanel">
-            <div class="ws-review-header">
+          <section class="rc-panel ws-review-panel" id="reviewPanel">
+            <header class="rc-panel-head ws-review-header">
               <div>
-                <h2>Revue des lignes & export TVA</h2>
-                <p class="hint">Corrigez les anomalies puis exportez l'Excel DED TVA. La validation de déclaration se fait depuis l'onglet Période active.</p>
+                <h2>Revue des lignes</h2>
+                <p class="hint">Corrigez les champs signalés, validez les lignes, puis exportez le fichier DED TVA.</p>
               </div>
-              <div class="ws-review-badges">
+              <div class="ws-review-badges rc-review-badges">
                 <span id="reviewLineCount" class="ws-review-badge muted">0 ligne(s)</span>
                 <span id="reviewAnomalyBadge" class="ws-review-badge warn" hidden>0 à relire</span>
                 <span id="reviewDuplicateBadge" class="ws-review-badge danger" hidden>0 doublon(s)</span>
+                <span id="reviewDeclaredBadge" class="ws-review-badge success" hidden>Période déclarée</span>
               </div>
-            </div>
-            <div class="ws-review-toolbar">
-              <a class="dash-btn dash-btn-sm" id="reviewImportLink" href="#">
-                <i data-lucide="upload"></i> Importer des factures
-              </a>
-              <button type="button" class="dash-btn dash-btn-sm" id="reviewAnomaliesToggle">
+            </header>
+            <div class="ws-review-toolbar rc-toolbar">
+              <button type="button" class="dash-btn dash-btn-sm rc-toggle" id="reviewAnomaliesToggle">
                 <i data-lucide="filter"></i> Anomalies seulement
               </button>
               <button type="button" class="dash-btn dash-btn-sm danger" id="reviewRemoveDuplicatesBtn" hidden>
-                Supprimer les doublons
+                <i data-lucide="copy-x"></i> Supprimer les doublons
               </button>
+              <span class="rc-toolbar-spacer"></span>
+              <a class="dash-btn dash-btn-sm" id="reviewImportLink" href="#">
+                <i data-lucide="upload"></i> Importer des factures
+              </a>
               <button type="button" class="dash-btn dash-btn-primary" id="reviewExportBtn" disabled>
-                <i data-lucide="download"></i> Exporter Excel
+                <i data-lucide="download"></i> Exporter le DED TVA
               </button>
-              <span id="reviewDeclaredBadge" class="ws-review-badge success" hidden>Période déclarée</span>
             </div>
             <p id="reviewImportReadonly" class="ws-review-import-readonly hint" hidden>
-              Période déclarée — consultation seule. Rouvrez la période ou passez sur une période en cours pour importer.
+              Période déclarée, en lecture seule. Rouvrez-la pour importer ou modifier des lignes.
             </p>
             <p id="reviewStatus" class="ws-review-status" data-tone="muted"></p>
-            <p class="hint ws-review-preview-hint">Cliquez <strong>Ouvrir</strong> ou une ligne pour afficher la facture en grand avec tous les champs à vérifier.</p>
-            <div id="reviewEmptyState" class="ws-empty">
-              <i data-lucide="sparkles" style="width:36px;height:36px;color:#94a3b8;"></i>
+            <p class="hint ws-review-preview-hint rc-muted">Cliquez sur une ligne pour voir la facture à côté des champs à vérifier.</p>
+            <div id="reviewEmptyState" class="ws-empty rc-empty">
+              <i data-lucide="sparkles"></i>
               <h3>Aucune ligne extraite</h3>
-              <p>Importez des factures depuis la page d'import achats, puis lancez l'extraction depuis l'onglet Période active.</p>
+              <p>Importez les factures d'achat, puis lancez l'extraction depuis l'onglet Production.</p>
             </div>
             <div id="reviewLayout" class="review-layout" hidden>
               <div id="reviewTableWrap" class="ws-review-table-wrap" hidden>
                 <table class="ws-review-table">
                   <thead>
                     <tr>
-                      <th>À vérifier</th><th>Source</th><th>Facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
-                      <th>HT</th><th>TVA</th><th>TTC</th><th>Taux</th>
-                      <th>Date fact.</th><th>Date paie</th>
+                      <th>À vérifier</th><th>Source</th><th>N° facture</th><th>Fournisseur</th><th>ICE</th><th>IF</th>
+                      <th class="num">HT</th><th class="num">TVA</th><th class="num">TTC</th><th>Taux</th>
+                      <th>Date facture</th><th>Date paiement</th>
                       <th class="ws-review-actions-head">
                         <button type="button" id="reviewValidateAllBtn" class="dash-btn dash-btn-sm ws-review-validate-all" title="Valider toutes les lignes en une fois">
                           Tout valider
@@ -338,7 +332,7 @@
         <div id="reviewDetailOverlay" class="ws-review-detail" hidden>
           <header class="ws-review-detail-header">
             <button type="button" class="dash-btn" id="reviewDetailBack">
-              <i data-lucide="arrow-left"></i> Retour au tableau
+              <i data-lucide="arrow-left"></i> Retour aux lignes
             </button>
             <div class="ws-review-detail-title">
               <h2 id="reviewDetailHeading">Facture</h2>
@@ -383,20 +377,20 @@
         </div>
 
         <div id="suppliersView" hidden>
-          <section class="ws-section ws-suppliers" id="suppliersPanel">
-            <div class="ws-suppliers-header">
+          <section class="rc-panel ws-suppliers" id="suppliersPanel">
+            <header class="rc-panel-head ws-suppliers-header">
               <div>
-                <h2>Carnet fournisseurs</h2>
-                <p>Toutes les factures du client, regroupées par fournisseur, année et mois.</p>
+                <h2>Fournisseurs</h2>
+                <p>Toutes les factures du client, toutes périodes confondues, regroupées par fournisseur.</p>
               </div>
-              <input type="search" id="suppliersSearch" class="ws-suppliers-search"
-                placeholder="Rechercher un fournisseur, ICE, IF…" />
-            </div>
+              <input type="search" id="suppliersSearch" class="ws-suppliers-search rc-search"
+                placeholder="Rechercher par nom, ICE ou IF" aria-label="Rechercher un fournisseur" />
+            </header>
             <p id="suppliersStatus" class="ws-suppliers-status" data-tone="muted"></p>
-            <div id="suppliersEmpty" class="ws-empty" hidden>
-              <i data-lucide="book-open" style="width:36px;height:36px;color:#94a3b8;"></i>
-              <h3>Aucune facture</h3>
-              <p>Les factures extraites apparaîtront ici, regroupées par fournisseur.</p>
+            <div id="suppliersEmpty" class="ws-empty rc-empty" hidden>
+              <i data-lucide="book-open"></i>
+              <h3>Aucune facture extraite</h3>
+              <p>Les fournisseurs apparaissent ici dès que des factures ont été extraites.</p>
             </div>
             <div id="suppliersLayout" class="ws-suppliers-layout" hidden>
               <aside class="ws-suppliers-list-pane">
@@ -404,7 +398,7 @@
               </aside>
               <div class="ws-suppliers-detail-pane">
                 <div id="suppliersDetailEmpty" class="ws-empty ws-suppliers-detail-empty">
-                  <p>Sélectionnez un fournisseur pour afficher ses factures par période.</p>
+                  <p>Choisissez un fournisseur dans la liste pour voir ses factures mois par mois.</p>
                 </div>
                 <div id="suppliersDetail" hidden>
                   <header class="ws-suppliers-detail-header">
@@ -427,23 +421,23 @@
         </div>
 
         <div id="historyView" hidden>
-          <section class="ws-section">
-            <div class="ws-history-header">
+          <section class="rc-panel">
+            <header class="rc-panel-head ws-history-header">
               <div>
-                <h2>Historique des périodes</h2>
-                <p>Calendrier TVA — déclarations mensuelles par exercice</p>
+                <h2>Périodes TVA</h2>
+                <p>Une période par mois déclaré. Cliquez sur un mois pour l'ouvrir ou le créer.</p>
               </div>
               <button type="button" class="dash-btn dash-btn-sm" id="historyNewPeriodBtn">
                 <i data-lucide="plus"></i> Nouvelle période
               </button>
-            </div>
+            </header>
             <div class="dash-year-tabs" id="yearTabs"></div>
             <div class="dash-month-grid" id="monthGrid"></div>
-            <div class="dash-legend">
-              <span><i class="dash-dot" style="background:#94a3b8;"></i> Brouillon</span>
-              <span><i class="dash-dot" style="background:#f59e0b;"></i> En revue</span>
-              <span><i class="dash-dot" style="background:#10b981;"></i> Déclaré</span>
-              <span><i class="dash-dot" style="background:#cbd5e1;border:1px dashed #94a3b8;"></i> À créer</span>
+            <div class="dash-legend rc-legend">
+              <span><i class="dash-dot rc-dot-draft"></i> Brouillon</span>
+              <span><i class="dash-dot rc-dot-review"></i> En revue</span>
+              <span><i class="dash-dot rc-dot-done"></i> Déclarée</span>
+              <span><i class="dash-dot rc-dot-empty"></i> À créer</span>
             </div>
           </section>
         </div>
@@ -610,7 +604,7 @@
       importJobPageUrl,
     } from "./import-jobs-client.js?v=jobs29";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=api7";
-    import { loadWorkspaceCockpit } from "./workspace-client.js?v=workspace15";
+    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=workspace16";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -979,7 +973,7 @@
       const cockpitTab = document.querySelector('#viewTabs [data-tab="cockpit"]');
       if (!cockpitTab) return;
       const isConsulting = cockpit?.statusKey === "exported";
-      cockpitTab.textContent = isConsulting ? "Consultation" : "Période active";
+      cockpitTab.textContent = isConsulting ? "Consultation" : "Production";
       cockpitTab.setAttribute("aria-label", isConsulting
         ? "Consultation d'une période clôturée"
         : "Période active en cours de production");
@@ -2157,21 +2151,12 @@
     }
 
     function renderProgressRing(progress) {
-      const radius = 30;
-      const circumference = 2 * Math.PI * radius;
-      const offset = circumference - (progress / 100) * circumference;
-      const ring = document.getElementById("progressRing");
-      const valueEl = document.getElementById("progressValue");
-      ring.querySelector("svg")?.remove();
-      ring.insertAdjacentHTML("afterbegin", `
-        <svg viewBox="0 0 72 72" aria-hidden="true">
-          <circle class="track" cx="36" cy="36" r="${radius}"></circle>
-          <circle class="fill" cx="36" cy="36" r="${radius}"
-            stroke-dasharray="${circumference}"
-            stroke-dashoffset="${offset}"></circle>
-        </svg>
-      `);
-      valueEl.textContent = `${progress}%`;
+      const value = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+      const bar = document.getElementById("progressRing");
+      const fill = document.getElementById("progressFill");
+      document.getElementById("progressValue").textContent = `${value}%`;
+      if (fill) fill.style.width = `${value}%`;
+      bar?.setAttribute("aria-valuenow", String(value));
     }
 
     function renderPeriodSelector() {
@@ -2289,6 +2274,7 @@
       if (!cockpit?.hasPeriod) {
         emptyState.hidden = false;
         activePanel.hidden = true;
+        document.getElementById("heroCard").hidden = true;
         openProductionBtn.hidden = true;
         periodBar.hidden = true;
         initLucide();
@@ -2297,7 +2283,14 @@
 
       emptyState.hidden = true;
       activePanel.hidden = false;
-      openProductionBtn.hidden = false;
+      document.getElementById("heroCard").hidden = false;
+      // La prochaine action est portée par l'en-tête de période (#primaryCta).
+      openProductionBtn.hidden = true;
+      const importBankLink = document.getElementById("importBankLink");
+      if (importBankLink) {
+        importBankLink.href = `import-banque.html?dossier=${cockpit.dossier.id}`;
+        importBankLink.hidden = cockpit.statusKey === "exported";
+      }
       selectedDossierId = cockpit.dossier.id;
 
       const hero = document.getElementById("heroCard");
@@ -2372,17 +2365,23 @@
         heroBackToOpenBtn.onclick = () => goToOpenPeriod();
       }
 
-      document.getElementById("pipelineSteps").innerHTML = cockpit.pipeline.map((step) => `
-        <button type="button" class="ws-pipeline-step ${step.status}"
-          data-href="${step.href || ""}"
-          data-tab="${step.tab || ""}"
-          data-view="${step.view || ""}"
-          data-action="${step.action || ""}"
-          ${step.href || step.tab || step.action ? "" : "disabled"}>
-          <span class="ws-pipeline-icon"><i data-lucide="${step.icon}"></i></span>
-          <span class="ws-pipeline-label">${escapeHtml(step.label)}</span>
-          <span class="ws-pipeline-desc">${escapeHtml(step.desc)}</span>
-        </button>
+      const stepStateLabel = { done: "Terminé", current: "À faire maintenant", pending: "À venir" };
+      document.getElementById("pipelineSteps").innerHTML = cockpit.pipeline.map((step, index) => `
+        <li class="rc-step is-${step.status}" ${step.status === "current" ? 'aria-current="step"' : ""}>
+          <button type="button" class="ws-pipeline-step ${step.status}"
+            data-href="${step.href || ""}"
+            data-tab="${step.tab || ""}"
+            data-view="${step.view || ""}"
+            data-action="${step.action || ""}"
+            ${step.href || step.tab || step.action ? "" : "disabled"}>
+            <span class="rc-step-marker" aria-hidden="true">${step.status === "done" ? '<i data-lucide="check"></i>' : index + 1}</span>
+            <span class="rc-step-text">
+              <span class="ws-pipeline-label">${escapeHtml(step.label)}</span>
+              <span class="ws-pipeline-desc">${escapeHtml(step.desc)}</span>
+              <span class="rc-step-state">${stepStateLabel[step.status] || ""}</span>
+            </span>
+          </button>
+        </li>
       `).join("");
 
       document.getElementById("pipelineSteps").querySelectorAll(".ws-pipeline-step").forEach((btn) => {
@@ -2483,39 +2482,6 @@
           openDossierTool(selectedDossierId);
         }
       };
-
-      const quickActions = [
-        { icon: "landmark", label: "Banque", href: cockpit.dossier ? `import-banque.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "file-input", label: "Factures", href: cockpit.dossier ? `import-achats.html?dossier=${cockpit.dossier.id}` : null },
-        { icon: "sparkles", label: "Extraction", action: "analysis" },
-        { icon: "git-compare", label: "Rapprochement", action: "bank_match" },
-        { icon: "table-2", label: "Revue", action: "review" },
-        { icon: "file-spreadsheet", label: "Export", action: "review" },
-        { icon: "folder-open", label: "Documents", action: "documents" },
-      ];
-
-      document.getElementById("quickActions").innerHTML = quickActions.map((item) => `
-        <button type="button" class="ws-quick-btn" data-href="${item.href || ""}" data-action="${item.action || ""}" ${item.href || item.action ? "" : "disabled"}>
-          <i data-lucide="${item.icon}"></i>
-          ${escapeHtml(item.label)}
-        </button>
-      `).join("");
-
-      document.getElementById("quickActions").querySelectorAll(".ws-quick-btn").forEach((btn) => {
-        const href = btn.dataset.href;
-        const action = btn.dataset.action;
-        if (href) {
-          btn.addEventListener("click", () => { window.location.href = href; });
-        } else if (action === "documents") {
-          btn.addEventListener("click", () => setTab("documents"));
-        } else if (action === "review") {
-          btn.addEventListener("click", () => setTab("review"));
-        } else if (action === "analysis") {
-          btn.addEventListener("click", () => runCockpitAction("analysis"));
-        } else if (action === "bank_match") {
-          btn.addEventListener("click", () => runCockpitAction("bank_match"));
-        }
-      });
 
       updateImportLinks();
       renderPeriodSelector();
@@ -2655,7 +2621,8 @@
         }
       }
 
-      const dossierId = preferredDossierId || selectedDossierId || dossierParam;
+      const dossierId = preferredDossierId || selectedDossierId || dossierParam
+        || pickActiveDossier(client?.dossiers || [])?.id || null;
       if (dossierId) {
         try {
           const [docs, workspace] = await Promise.all([

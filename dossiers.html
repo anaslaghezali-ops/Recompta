@@ -6,11 +6,12 @@
   <title>Recompta — Portefeuille clients</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=jobs6" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
-<body>
+<body class="rc-app">
   <div class="dash-app" id="dashApp">
     <div id="sidebarMount"></div>
     <div class="dash-main">
@@ -25,14 +26,10 @@
           </div>
         </div>
         <div class="dash-topbar-actions">
-          <span class="dash-credits-pill" id="topbarCredits" hidden title="Crédits scans IA ce mois (PDF natifs gratuits)">
+          <span class="dash-credits-pill" id="topbarCredits" hidden title="Scans IA restants ce mois. Les PDF natifs et les relevés CSV ne consomment pas de scans.">
             <i data-lucide="sparkles" style="width:14px;height:14px;"></i>
             <span id="topbarCreditsText">—</span>
           </span>
-          <label class="dash-search">
-            <i data-lucide="search"></i>
-            <input id="searchInput" type="search" placeholder="Rechercher un client ou ICE…" />
-          </label>
           <button type="button" class="dash-btn" id="refreshBtn">
             <i data-lucide="refresh-cw"></i> Actualiser
           </button>
@@ -42,7 +39,7 @@
         </div>
       </header>
 
-      <main class="dash-content dash-portfolio">
+      <main class="dash-content dash-portfolio rc-content">
         <div class="dash-portfolio-kpis" id="kpiRow">
           <div class="dash-kpi" id="kpiActiveWrap">
             <div class="dash-kpi-label">Clients actifs</div>
@@ -79,7 +76,7 @@
           </div>
         </div>
 
-        <div class="dash-portfolio-banner" id="creditsBanner" hidden style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;">
+        <div class="dash-portfolio-banner rc-credits-line" id="creditsBanner" hidden>
           <i data-lucide="sparkles"></i>
           <div>
             <strong id="creditsBannerTitle">Crédits vision IA</strong>
@@ -87,6 +84,11 @@
           </div>
         </div>
 
+        <div class="rc-portfolio-toolbar">
+        <label class="dash-search rc-portfolio-search">
+          <i data-lucide="search"></i>
+          <input id="searchInput" type="search" placeholder="Rechercher un client ou un ICE" aria-label="Rechercher un client" />
+        </label>
         <div class="dash-segmented" id="statusFilters" role="tablist" aria-label="Filtrer le portefeuille">
           <button type="button" class="active" data-filter="all" role="tab">Tous <span class="dash-segmented-count" data-count="all">0</span></button>
           <button type="button" data-filter="priority" role="tab">Prioritaires <span class="dash-segmented-count" data-count="priority">0</span></button>
@@ -95,11 +97,12 @@
           <button type="button" data-filter="done" role="tab">Terminés <span class="dash-segmented-count" data-count="done">0</span></button>
           <button type="button" data-filter="mine" role="tab">Mes clients <span class="dash-segmented-count" data-count="mine">0</span></button>
         </div>
+        </div>
 
-        <div id="listHint" class="dash-empty" hidden>
-          <i data-lucide="users" style="width:32px;height:32px;color:#94a3b8;"></i>
-          <h3>Aucun client</h3>
-          <p>Ajoutez votre premier client pour commencer le suivi TVA.</p>
+        <div id="listHint" class="dash-empty rc-empty" hidden>
+          <i data-lucide="users"></i>
+          <h3>Aucun client pour l'instant</h3>
+          <p>Ajoutez votre premier client avec sa raison sociale et son ICE pour démarrer le suivi TVA.</p>
           <button type="button" class="dash-btn dash-btn-primary" id="emptyNewClientBtn" style="margin-top:1rem;">
             <i data-lucide="plus"></i> Nouveau client
           </button>
@@ -111,8 +114,8 @@
             <span>Client</span>
             <span>Période</span>
             <span>Progression</span>
-            <span>Ops</span>
-            <span>Anom.</span>
+            <span>Opérations</span>
+            <span>Anomalies</span>
             <span>Activité</span>
             <span>Prochaine action</span>
             <span>Priorité</span>
@@ -217,22 +220,11 @@
         return;
       }
       banner.hidden = false;
-      document.getElementById("creditsBannerTitle").textContent = "Crédits vision IA (scans)";
-      document.getElementById("creditsBannerText").textContent = formatCreditsLabel(credits)
-        + " · PDF natifs et CSV banque = gratuits";
-      if (creditsDepleted(credits)) {
-        banner.style.background = "#fef2f2";
-        banner.style.borderColor = "#fecaca";
-        banner.style.color = "#991b1b";
-        document.getElementById("creditsBannerText").textContent =
-          "Quota épuisé ce mois — les scans IA sont bloqués jusqu'au prochain mois (ou contactez l'administrateur).";
-      } else {
-        banner.style.background = "#eff6ff";
-        banner.style.borderColor = "#bfdbfe";
-        banner.style.color = "#1e3a8a";
-        document.getElementById("creditsBannerText").textContent = formatCreditsLabel(credits)
-          + " · PDF natifs et CSV banque = gratuits";
-      }
+      banner.classList.toggle("is-depleted", depleted);
+      document.getElementById("creditsBannerTitle").textContent = "Scans IA";
+      document.getElementById("creditsBannerText").textContent = depleted
+        ? "Quota du mois épuisé. Les scans IA reprendront le mois prochain, ou contactez l'administrateur pour l'augmenter."
+        : `${credits.remaining} restants sur ${credits.quota} ce mois (${credits.used} utilisés). Les PDF natifs et les relevés CSV sont gratuits.`;
       initLucide();
     }
 
