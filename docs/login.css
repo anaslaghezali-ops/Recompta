@@ -1,0 +1,213 @@
+/* Recompta — connexion, inscription, mot de passe oublié */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+
+:root {
+  --paper: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #16233a;
+  --ink-soft: #2c3d57;
+  --muted: #5d6c80;
+  --line: #dde3eb;
+  --line-strong: #c6d0dc;
+  --brand: #0b6bcb;
+  --brand-ink: #084f96;
+  --brand-wash: #e8f1fb;
+  --ok: #0e7a4f;
+  --ok-wash: #e4f4ec;
+  --stop: #b4231a;
+  --stop-wash: #fbe9e7;
+  --radius-s: 6px;
+  --radius-m: 12px;
+  --focus: 0 0 0 3px rgba(11, 107, 203, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+body.auth {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.auth button, .auth input { font: inherit; }
+.auth input { color: inherit; }
+.auth :focus-visible { outline: none; box-shadow: var(--focus); }
+
+/* ---------- Deux colonnes : accroche + formulaire ---------- */
+.auth-layout {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+}
+
+.auth-aside {
+  background: var(--ink);
+  color: #fff;
+  padding: 2.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 3rem;
+}
+.auth-brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+.auth-brand span { color: #a9b6c9; font-weight: 400; font-size: 0.95rem; }
+.auth-pitch h2 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  max-width: 20ch;
+}
+.auth-pitch ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+  color: #d6dfeb;
+  max-width: 42ch;
+}
+.auth-pitch li { display: flex; gap: 0.6rem; align-items: flex-start; }
+.auth-pitch li::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.55rem;
+  border-radius: 50%;
+  background: #6fb1f0;
+}
+.auth-foot { color: #8f9db2; font-size: 0.85rem; }
+
+.auth-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+}
+.auth-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.auth-lead { margin: 0 0 1.75rem; color: var(--muted); }
+.auth-lead a, .auth-switch a, .btn-link { color: var(--brand); font-weight: 600; text-decoration: none; }
+.auth-lead a:hover, .auth-switch a:hover, .btn-link:hover { text-decoration: underline; }
+.btn-link { background: none; border: 0; padding: 0; cursor: pointer; font-size: 0.9rem; }
+
+/* ---------- Formulaires ---------- */
+.form { display: grid; gap: 1.1rem; }
+.field { display: grid; gap: 0.35rem; }
+.field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.field > span, .field-head > span { font-size: 0.9rem; font-weight: 600; color: var(--ink-soft); }
+.field small { color: var(--muted); font-size: 0.82rem; }
+.field input {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  font-size: 1rem;
+}
+.field input:focus-visible { border-color: var(--brand); }
+.field input[aria-invalid="true"] { border-color: var(--stop); }
+.field-error { color: var(--stop); font-size: 0.84rem; font-weight: 500; }
+
+.pwd-wrap { position: relative; }
+.pwd-wrap input { padding-right: 5.4rem; }
+.pwd-toggle {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: none;
+  color: var(--brand);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.pwd-toggle:hover { background: var(--brand-wash); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-s);
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.btn:disabled { opacity: 0.6; cursor: wait; }
+.btn-primary { background: var(--brand); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--brand-ink); }
+.btn-ghost { background: var(--surface); border-color: var(--line-strong); color: var(--ink); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--ink-soft); }
+
+/* Message global du formulaire (erreur ou succès) */
+.form-alert {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-s);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.form-alert.is-error { background: var(--stop-wash); color: #7d1810; border: 1px solid #ecc3be; }
+.form-alert.is-ok { background: var(--ok-wash); color: #0a5a3a; border: 1px solid #a8d5bf; }
+
+.auth-switch { margin: 1.5rem 0 0; color: var(--muted); font-size: 0.92rem; }
+
+/* Confirmation (mail envoyé) */
+.auth-done { text-align: left; }
+.auth-done .mark {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--ok-wash);
+  color: var(--ok);
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+.auth-done p { color: var(--ink-soft); margin: 0 0 1.25rem; }
+.auth-done b { color: var(--ink); }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 900px) {
+  .auth-layout { grid-template-columns: 1fr; }
+  .auth-aside { padding: 1.25rem 1.5rem; gap: 1rem; }
+  .auth-pitch, .auth-foot { display: none; }
+  .auth-main { align-items: flex-start; padding: 2rem 1.25rem 3rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

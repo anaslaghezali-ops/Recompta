@@ -3,254 +3,359 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recompta — Connexion cabinet</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="landing.css?v=1" />
-  <link rel="stylesheet" href="styles.css?v=auth4" />
-  <style>
-    .auth-tabs {
-      display: flex;
-      gap: 0.25rem;
-      margin-bottom: 1.25rem;
-      padding: 0.25rem;
-      background: var(--surface-2, #f1f5f9);
-      border-radius: 0.5rem;
-    }
-    .auth-tabs button {
-      flex: 1;
-      border: none;
-      background: transparent;
-      padding: 0.5rem 0.75rem;
-      border-radius: 0.375rem;
-      font: inherit;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--muted, #64748b);
-    }
-    .auth-tabs button[aria-selected="true"] {
-      background: #fff;
-      color: var(--text, #0f172a);
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-    }
-    .auth-panel[hidden] { display: none !important; }
-    .auth-freemium-note {
-      margin-top: 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
-      background: #eff6ff;
-      color: #1e40af;
-      font-size: 0.875rem;
-      line-height: 1.45;
-    }
-  </style>
+  <title>Connexion — Recompta</title>
+  <meta name="robots" content="noindex" />
+  <link rel="stylesheet" href="login.css?v=login1" />
 </head>
-<body>
-  <nav class="lp-nav" aria-label="Navigation">
-    <div class="lp-nav-inner">
-      <a href="index.html" class="lp-brand"><span class="lp-brand-mark">R</span> Recompta</a>
-      <div class="lp-nav-actions">
-        <a href="index.html" class="lp-btn lp-btn-ghost">Accueil</a>
+<body class="auth">
+  <div class="auth-layout">
+    <aside class="auth-aside">
+      <a class="auth-brand" href="index.html">Recompta <span>Production TVA pour cabinets</span></a>
+      <div class="auth-pitch">
+        <h2>Vos déclarations de TVA, préparées à partir des factures et des relevés de vos clients.</h2>
+        <ul>
+          <li>Lecture automatique des factures d'achat, PDF ou scannées</li>
+          <li>Rapprochement avec les relevés bancaires</li>
+          <li>Export DED TVA prêt à déposer</li>
+        </ul>
       </div>
-    </div>
-  </nav>
+      <p class="auth-foot">Un espace par cabinet, un accès par collaborateur.</p>
+    </aside>
 
-  <header class="hero" style="padding-top:2rem;">
-    <div class="hero-content">
-      <p class="eyebrow">Recompta</p>
-      <h1 id="pageTitle">Connexion cabinet</h1>
-      <p class="subtitle" id="pageSubtitle">Connectez-vous ou créez votre espace cabinet gratuitement.</p>
-    </div>
-  </header>
+    <main class="auth-main">
+      <div class="auth-card">
 
-  <main class="container login-wrap">
-    <section class="card login-card">
-      <div class="auth-tabs" role="tablist" aria-label="Connexion ou inscription">
-        <button type="button" role="tab" id="tabSignIn" aria-selected="true" aria-controls="panelSignIn">Connexion</button>
-        <button type="button" role="tab" id="tabSignUp" aria-selected="false" aria-controls="panelSignUp">Créer un cabinet</button>
+        <!-- Connexion -->
+        <section id="viewSignIn" data-view>
+          <h1>Connexion</h1>
+          <p class="auth-lead">Accédez aux dossiers de votre cabinet.</p>
+          <form class="form" id="signInForm" novalidate>
+            <label class="field">
+              <span>Email</span>
+              <input id="signInEmail" type="email" autocomplete="username" inputmode="email" spellcheck="false" required />
+            </label>
+            <div class="field">
+              <div class="field-head">
+                <label for="signInPassword">Mot de passe</label>
+                <button type="button" class="btn-link" data-go="reset">Mot de passe oublié ?</button>
+              </div>
+              <div class="pwd-wrap">
+                <input id="signInPassword" type="password" autocomplete="current-password" required />
+                <button type="button" class="pwd-toggle" data-toggle="signInPassword" aria-pressed="false">Afficher</button>
+              </div>
+            </div>
+            <p class="form-alert" id="signInAlert" role="alert" hidden></p>
+            <button id="signInBtn" class="btn btn-primary" type="submit">Se connecter</button>
+          </form>
+          <p class="auth-switch">Pas encore de compte ? <a href="login.html?mode=signup" data-go="signup">Créer l'espace de votre cabinet</a></p>
+        </section>
+
+        <!-- Inscription -->
+        <section id="viewSignUp" data-view hidden>
+          <h1>Créer l'espace de votre cabinet</h1>
+          <p class="auth-lead">Gratuit. Vous êtes le responsable du cabinet et pourrez ajouter vos collaborateurs ensuite.</p>
+          <form class="form" id="signUpForm" novalidate>
+            <label class="field">
+              <span>Nom du cabinet</span>
+              <input id="cabinetName" type="text" autocomplete="organization" maxlength="80" required placeholder="Cabinet Alami & Associés" />
+            </label>
+            <label class="field">
+              <span>Votre nom</span>
+              <input id="displayName" type="text" autocomplete="name" maxlength="80" placeholder="Facultatif" />
+            </label>
+            <label class="field">
+              <span>Email professionnel</span>
+              <input id="signUpEmail" type="email" autocomplete="email" inputmode="email" spellcheck="false" required />
+            </label>
+            <div class="field">
+              <label for="signUpPassword"><span>Mot de passe</span></label>
+              <div class="pwd-wrap">
+                <input id="signUpPassword" type="password" autocomplete="new-password" minlength="8" required />
+                <button type="button" class="pwd-toggle" data-toggle="signUpPassword" aria-pressed="false">Afficher</button>
+              </div>
+              <small>8 caractères minimum.</small>
+            </div>
+            <p class="form-alert" id="signUpAlert" role="alert" hidden></p>
+            <button id="signUpBtn" class="btn btn-primary" type="submit">Créer mon cabinet</button>
+          </form>
+          <p class="auth-switch">Déjà un compte ? <a href="login.html" data-go="signin">Se connecter</a></p>
+        </section>
+
+        <!-- Mot de passe oublié -->
+        <section id="viewReset" data-view hidden>
+          <h1>Mot de passe oublié</h1>
+          <p class="auth-lead">Indiquez votre email, vous recevrez un lien pour choisir un nouveau mot de passe.</p>
+          <form class="form" id="resetForm" novalidate>
+            <label class="field">
+              <span>Email</span>
+              <input id="resetEmail" type="email" autocomplete="username" inputmode="email" spellcheck="false" required />
+            </label>
+            <p class="form-alert" id="resetAlert" role="alert" hidden></p>
+            <button id="resetBtn" class="btn btn-primary" type="submit">Envoyer le lien</button>
+          </form>
+          <p class="auth-switch"><a href="login.html" data-go="signin">Retour à la connexion</a></p>
+        </section>
+
+        <!-- Mail envoyé -->
+        <section id="viewResetSent" data-view hidden class="auth-done">
+          <div class="mark" aria-hidden="true">✓</div>
+          <h1>Email envoyé</h1>
+          <p>Si un compte existe pour <b id="resetSentEmail"></b>, un lien de réinitialisation vient de lui être envoyé. Il reste valable une heure. Pensez à vérifier le dossier spam.</p>
+          <button type="button" class="btn btn-ghost" data-go="signin">Retour à la connexion</button>
+        </section>
+
+        <!-- Nouveau mot de passe (arrivée depuis le lien du mail) -->
+        <section id="viewNewPassword" data-view hidden>
+          <h1>Nouveau mot de passe</h1>
+          <p class="auth-lead">Choisissez un mot de passe pour <b id="newPasswordEmail"></b>.</p>
+          <form class="form" id="newPasswordForm" novalidate>
+            <div class="field">
+              <label for="newPassword"><span>Nouveau mot de passe</span></label>
+              <div class="pwd-wrap">
+                <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required />
+                <button type="button" class="pwd-toggle" data-toggle="newPassword" aria-pressed="false">Afficher</button>
+              </div>
+              <small>8 caractères minimum.</small>
+            </div>
+            <p class="form-alert" id="newPasswordAlert" role="alert" hidden></p>
+            <button id="newPasswordBtn" class="btn btn-primary" type="submit">Enregistrer et me connecter</button>
+          </form>
+        </section>
+
+        <!-- Lien expiré -->
+        <section id="viewLinkExpired" data-view hidden class="auth-done">
+          <h1>Lien expiré</h1>
+          <p>Ce lien de réinitialisation n'est plus valable. Demandez-en un nouveau.</p>
+          <button type="button" class="btn btn-primary" data-go="reset">Recevoir un nouveau lien</button>
+        </section>
+
       </div>
-
-      <p class="hint" id="configHint" hidden>
-        Configurez <code>auth-client.js</code> (clé anon du projet <code>pbyoxfxngfutoiqjirkx</code>).
-      </p>
-
-      <div id="panelSignIn" class="auth-panel" role="tabpanel" aria-labelledby="tabSignIn">
-        <h2>Se connecter</h2>
-        <form id="signInForm">
-          <label>Email
-            <input id="signInEmail" type="email" autocomplete="username" required />
-          </label>
-          <label>Mot de passe
-            <input id="signInPassword" type="password" autocomplete="current-password" minlength="6" required />
-          </label>
-          <p class="hint error" id="signInError" hidden></p>
-          <div class="actions">
-            <button id="signInBtn" class="primary" type="submit">Connexion</button>
-          </div>
-        </form>
-      </div>
-
-      <div id="panelSignUp" class="auth-panel" role="tabpanel" aria-labelledby="tabSignUp" hidden>
-        <h2>Créer votre cabinet</h2>
-        <p class="hint">Gratuit — PDF natifs et export DED TVA illimités. Les scans consommeront des crédits vision (bientôt).</p>
-        <form id="signUpForm">
-          <label>Nom du cabinet
-            <input id="cabinetName" type="text" autocomplete="organization" minlength="2" maxlength="80" required placeholder="Ex. Cabinet Alami &amp; Associés" />
-          </label>
-          <label>Votre nom <span class="hint">(optionnel)</span>
-            <input id="displayName" type="text" autocomplete="name" maxlength="80" placeholder="Ex. Karim Alami" />
-          </label>
-          <label>Email professionnel
-            <input id="signUpEmail" type="email" autocomplete="email" required />
-          </label>
-          <label>Mot de passe
-            <input id="signUpPassword" type="password" autocomplete="new-password" minlength="6" required />
-          </label>
-          <label>Confirmer le mot de passe
-            <input id="signUpPasswordConfirm" type="password" autocomplete="new-password" minlength="6" required />
-          </label>
-          <p class="hint error" id="signUpError" hidden></p>
-          <div class="actions">
-            <button id="signUpBtn" class="primary" type="submit">Créer mon cabinet</button>
-          </div>
-        </form>
-        <p class="auth-freemium-note">
-          En créant un compte, vous obtenez un espace cabinet sécurisé pour gérer vos dossiers clients TVA.
-        </p>
-      </div>
-
-      <p class="hint" style="margin-top:1rem;">
-        <a href="index.html">Retour à l'accueil</a>
-        <span id="adminLinkWrap" hidden>
-          · <a href="admin.html">Administration cabinets</a> (super-admin)
-        </span>
-      </p>
-    </section>
-  </main>
+    </main>
+  </div>
 
   <script type="module">
     import {
-      isSupabaseConfigured,
+      authErrorMessage,
       getSession,
-      isSuperAdmin,
+      isPasswordRecoveryUrl,
+      isSupabaseConfigured,
+      onAuthEvent,
+      redirectAfterLogin,
+      requestPasswordReset,
       signIn,
       signUpCabinet,
-      authErrorMessage,
-      redirectAfterLogin,
-    } from "./auth-client.js?v=auth8";
+      updatePassword,
+    } from "./auth-client.js?v=auth9";
 
-    const tabSignIn = document.getElementById("tabSignIn");
-    const tabSignUp = document.getElementById("tabSignUp");
-    const panelSignIn = document.getElementById("panelSignIn");
-    const panelSignUp = document.getElementById("panelSignUp");
-    const pageTitle = document.getElementById("pageTitle");
-    const pageSubtitle = document.getElementById("pageSubtitle");
-    const configHint = document.getElementById("configHint");
-    const adminLinkWrap = document.getElementById("adminLinkWrap");
+    const $ = (id) => document.getElementById(id);
+    const views = {
+      signin: $("viewSignIn"),
+      signup: $("viewSignUp"),
+      reset: $("viewReset"),
+      resetSent: $("viewResetSent"),
+      newPassword: $("viewNewPassword"),
+      linkExpired: $("viewLinkExpired"),
+    };
+    const titles = {
+      signin: "Connexion — Recompta",
+      signup: "Créer un cabinet — Recompta",
+      reset: "Mot de passe oublié — Recompta",
+      resetSent: "Email envoyé — Recompta",
+      newPassword: "Nouveau mot de passe — Recompta",
+      linkExpired: "Lien expiré — Recompta",
+    };
 
-    const signInForm = document.getElementById("signInForm");
-    const signInBtn = document.getElementById("signInBtn");
-    const signInError = document.getElementById("signInError");
-    const signInEmail = document.getElementById("signInEmail");
-    const signInPassword = document.getElementById("signInPassword");
+    function show(name, { focus = true } = {}) {
+      Object.entries(views).forEach(([key, el]) => { el.hidden = key !== name; });
+      document.title = titles[name];
+      if (name === "signin" || name === "signup") {
+        history.replaceState(null, "", name === "signup" ? "login.html?mode=signup" : "login.html");
+      }
+      if (focus) {
+        const first = views[name].querySelector("input:not([disabled]), button.btn");
+        first?.focus();
+      }
+    }
 
-    const signUpForm = document.getElementById("signUpForm");
-    const signUpBtn = document.getElementById("signUpBtn");
-    const signUpError = document.getElementById("signUpError");
-    const cabinetName = document.getElementById("cabinetName");
-    const displayName = document.getElementById("displayName");
-    const signUpEmail = document.getElementById("signUpEmail");
-    const signUpPassword = document.getElementById("signUpPassword");
-    const signUpPasswordConfirm = document.getElementById("signUpPasswordConfirm");
-
-    function showError(el, message) {
+    function alertIn(form, message, kind = "error") {
+      const el = form.querySelector(".form-alert");
       el.hidden = !message;
       el.textContent = message || "";
+      el.className = `form-alert ${kind === "ok" ? "is-ok" : "is-error"}`;
     }
 
-    function setAuthMode(mode) {
-      const signup = mode === "signup";
-      tabSignIn.setAttribute("aria-selected", signup ? "false" : "true");
-      tabSignUp.setAttribute("aria-selected", signup ? "true" : "false");
-      panelSignIn.hidden = signup;
-      panelSignUp.hidden = !signup;
-      pageTitle.textContent = signup ? "Créer un cabinet" : "Connexion cabinet";
-      pageSubtitle.textContent = signup
-        ? "Inscription gratuite — démarrez la production TVA de vos clients."
-        : "Connectez-vous à votre espace cabinet.";
-      history.replaceState(null, "", signup ? "login.html?mode=signup" : "login.html");
+    function markInvalid(input, invalid) {
+      input.setAttribute("aria-invalid", invalid ? "true" : "false");
     }
 
-    tabSignIn.addEventListener("click", () => setAuthMode("signin"));
-    tabSignUp.addEventListener("click", () => setAuthMode("signup"));
+    const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
-    if (new URLSearchParams(window.location.search).get("mode") === "signup") {
-      setAuthMode("signup");
+    async function busy(button, label, fn) {
+      const original = button.textContent;
+      button.disabled = true;
+      button.textContent = label;
+      try {
+        return await fn();
+      } finally {
+        button.disabled = false;
+        button.textContent = original;
+      }
     }
+
+    // Navigation entre les vues
+    document.addEventListener("click", (event) => {
+      const link = event.target.closest("[data-go]");
+      if (!link) return;
+      event.preventDefault();
+      show(link.dataset.go);
+    });
+
+    // Afficher / masquer les mots de passe
+    document.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-toggle]");
+      if (!btn) return;
+      const input = $(btn.dataset.toggle);
+      const reveal = input.type === "password";
+      input.type = reveal ? "text" : "password";
+      btn.textContent = reveal ? "Masquer" : "Afficher";
+      btn.setAttribute("aria-pressed", String(reveal));
+      input.focus();
+    });
+
+    // Efface l'état invalide dès que l'on retape
+    document.querySelectorAll("input").forEach((input) => {
+      input.addEventListener("input", () => markInvalid(input, false));
+    });
+
+    // ---------- Démarrage ----------
+    const wantsSignup = new URLSearchParams(window.location.search).get("mode") === "signup";
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
     if (!isSupabaseConfigured()) {
-      configHint.hidden = false;
-      signInForm.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
-      signUpForm.querySelectorAll("input, button").forEach((el) => { el.disabled = true; });
+      show("signin", { focus: false });
+      document.querySelectorAll("input, button.btn").forEach((el) => { el.disabled = true; });
+      alertIn($("signInForm"), "La connexion n'est pas configurée sur ce site. Contactez l'administrateur.");
+    } else if (hashParams.get("error_code") === "otp_expired" || /expired|invalid/i.test(hashParams.get("error_description") || "")) {
+      history.replaceState(null, "", "login.html");
+      show("linkExpired");
+    } else if (isPasswordRecoveryUrl()) {
+      // Supabase lit le token du lien et ouvre une session de récupération.
+      show("newPassword", { focus: false });
+      let shown = false;
+      const reveal = (session) => {
+        if (shown || !session?.user) return;
+        shown = true;
+        $("newPasswordEmail").textContent = session.user.email || "";
+        history.replaceState(null, "", "login.html");
+        $("newPassword").focus();
+      };
+      onAuthEvent((event, session) => { if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") reveal(session); });
+      const existing = await getSession();
+      if (existing?.user) reveal(existing);
+      setTimeout(async () => { if (!shown && !(await getSession())?.user) show("linkExpired"); }, 4000);
     } else {
       const session = await getSession();
       if (session?.user) {
-        window.location.href = await redirectAfterLogin(session.user.id);
+        window.location.replace(await redirectAfterLogin(session.user.id));
+      } else {
+        show(wantsSignup ? "signup" : "signin");
       }
     }
 
-    signInForm.addEventListener("submit", async (event) => {
+    // ---------- Connexion ----------
+    $("signInForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      showError(signInError, "");
-      signInBtn.disabled = true;
-      try {
-        const result = await signIn(signInEmail.value.trim(), signInPassword.value);
-        window.location.href = await redirectAfterLogin(result.user.id);
-      } catch (err) {
-        showError(signInError, authErrorMessage(err));
-      } finally {
-        signInBtn.disabled = false;
-      }
-    });
-
-    signUpForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      showError(signUpError, "");
-
-      if (signUpPassword.value !== signUpPasswordConfirm.value) {
-        showError(signUpError, "Les mots de passe ne correspondent pas.");
-        return;
-      }
-
-      signUpBtn.disabled = true;
-      try {
-        const result = await signUpCabinet({
-          email: signUpEmail.value.trim(),
-          password: signUpPassword.value,
-          cabinetName: cabinetName.value.trim(),
-          displayName: displayName.value.trim(),
-        });
-        window.location.href = await redirectAfterLogin(result.user.id);
-      } catch (err) {
-        const msg = authErrorMessage(err);
-        if (/SIGNUP_FUNCTION_UNAVAILABLE|failed to fetch|network/i.test(msg)) {
-          showError(
-            signUpError,
-            "Inscription pas encore activée côté serveur. Déployez l'Edge Function signup-cabinet sur Supabase (guide : docs/DEPLOY_SIGNUP.md).",
-          );
-        } else {
-          showError(signUpError, msg.replace(/^SIGNUP_FUNCTION_UNAVAILABLE:\s*/i, ""));
+      const form = event.currentTarget;
+      const email = $("signInEmail");
+      const password = $("signInPassword");
+      alertIn(form, "");
+      if (!emailOk(email.value)) { markInvalid(email, true); email.focus(); return alertIn(form, "Indiquez une adresse email valide."); }
+      if (!password.value) { markInvalid(password, true); password.focus(); return alertIn(form, "Indiquez votre mot de passe."); }
+      await busy($("signInBtn"), "Connexion…", async () => {
+        try {
+          const result = await signIn(email.value.trim(), password.value);
+          window.location.replace(await redirectAfterLogin(result.user.id));
+        } catch (err) {
+          alertIn(form, authErrorMessage(err));
+          password.focus();
+          password.select();
         }
-      } finally {
-        signUpBtn.disabled = false;
-      }
+      });
     });
 
-    getSession().then(async (session) => {
-      if (session?.user && await isSuperAdmin(session.user.id)) {
-        adminLinkWrap.hidden = false;
-      }
+    // ---------- Inscription ----------
+    $("signUpForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const cabinet = $("cabinetName"), email = $("signUpEmail"), password = $("signUpPassword");
+      alertIn(form, "");
+      if (cabinet.value.trim().length < 2) { markInvalid(cabinet, true); cabinet.focus(); return alertIn(form, "Indiquez le nom de votre cabinet."); }
+      if (!emailOk(email.value)) { markInvalid(email, true); email.focus(); return alertIn(form, "Indiquez une adresse email valide."); }
+      if (password.value.length < 8) { markInvalid(password, true); password.focus(); return alertIn(form, "Le mot de passe doit contenir au moins 8 caractères."); }
+      await busy($("signUpBtn"), "Création…", async () => {
+        try {
+          const result = await signUpCabinet({
+            email: email.value.trim(),
+            password: password.value,
+            cabinetName: cabinet.value.trim(),
+            displayName: $("displayName").value.trim(),
+          });
+          window.location.replace(await redirectAfterLogin(result.user.id));
+        } catch (err) {
+          const msg = authErrorMessage(err).replace(/^SIGNUP_FUNCTION_UNAVAILABLE:\s*/i, "");
+          alertIn(form, /SIGNUP_FUNCTION_UNAVAILABLE/i.test(err.message || "")
+            ? "L'inscription n'est pas disponible pour le moment. Réessayez plus tard ou contactez-nous."
+            : msg);
+        }
+      });
+    });
+
+    // ---------- Mot de passe oublié ----------
+    $("resetForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const email = $("resetEmail");
+      alertIn(form, "");
+      if (!emailOk(email.value)) { markInvalid(email, true); email.focus(); return alertIn(form, "Indiquez une adresse email valide."); }
+      await busy($("resetBtn"), "Envoi…", async () => {
+        try {
+          await requestPasswordReset(email.value);
+          $("resetSentEmail").textContent = email.value.trim().toLowerCase();
+          show("resetSent");
+        } catch (err) {
+          alertIn(form, authErrorMessage(err));
+        }
+      });
+    });
+
+    // Pré-remplit l'email du reset avec celui de la connexion
+    document.querySelector('[data-go="reset"]').addEventListener("click", () => {
+      if (!$("resetEmail").value) $("resetEmail").value = $("signInEmail").value;
+    });
+
+    // ---------- Nouveau mot de passe ----------
+    $("newPasswordForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const password = $("newPassword");
+      alertIn(form, "");
+      if (password.value.length < 8) { markInvalid(password, true); password.focus(); return alertIn(form, "Le mot de passe doit contenir au moins 8 caractères."); }
+      await busy($("newPasswordBtn"), "Enregistrement…", async () => {
+        try {
+          await updatePassword(password.value);
+          const session = await getSession();
+          window.location.replace(session?.user ? await redirectAfterLogin(session.user.id) : "login.html");
+        } catch (err) {
+          const msg = authErrorMessage(err);
+          if (/same password|different from the old/i.test(err.message || "")) {
+            alertIn(form, "Choisissez un mot de passe différent de l'ancien.");
+          } else if (/session|jwt|expired|not logged/i.test(err.message || "")) {
+            show("linkExpired");
+          } else {
+            alertIn(form, msg);
+          }
+        }
+      });
     });
   </script>
 </body>
