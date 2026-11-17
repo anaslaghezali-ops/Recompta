@@ -59,6 +59,11 @@
   --dash-font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
 }
 
+/* Échelle de l'application : 14 px de base (toutes les tailles en rem suivent). */
+html { font-size: 87.5%; }
+:root { --dash-sidebar: 220px; }
+body.rc-app { font-size: 1rem; }
+
 /* Un élément marqué hidden reste masqué, quel que soit son display. */
 [hidden] { display: none !important; }
 
@@ -835,15 +840,15 @@ body.rc-app,
 .dash-portfolio-row {
   grid-template-columns:
     3px
-    minmax(11rem, 1.6fr)
-    minmax(6.5rem, 0.8fr)
-    minmax(7rem, 0.9fr)
+    minmax(10rem, 1.6fr)
+    minmax(6rem, 0.8fr)
+    minmax(6rem, 0.9fr)
     5.75rem
     5.25rem
-    minmax(5rem, 0.65fr)
-    minmax(9rem, 1.2fr)
-    minmax(5rem, 0.6fr)
-    4.75rem;
+    minmax(4.5rem, 0.6fr)
+    minmax(8rem, 1.2fr)
+    minmax(5.5rem, 0.6fr)
+    7rem;
 }
 .dash-portfolio-head span:nth-child(5),
 .dash-portfolio-head span:nth-child(6) { text-align: center; }
@@ -1317,3 +1322,4 @@ td.row-actions .view-btn { min-height: 1.9rem; padding: 0 0.6rem; font-size: 0.8
 .rc-client-billing-title { margin: 0; font-size: 0.92rem; font-weight: 600; color: var(--rc-ink); }
 .rc-client-billing .rc-field-row > .rc-field { flex: 1; min-width: 0; }
 .rc-client-sub #clientBillingLink { font-size: 0.86rem; }
+.rc-topbar .dash-topbar-actions { flex-wrap: nowrap; flex-shrink: 0; }
