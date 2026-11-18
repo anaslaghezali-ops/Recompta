@@ -82,7 +82,7 @@ contenant tous les fichiers dépasserait les délais du navigateur et du proxy.
 | Niveau | Mécanisme |
 |--------|-----------|
 | Navigateur | ZIP développés localement, envoi par lots de 4 fichiers |
-| Serveur | 4 extractions simultanées par lot (`EXTRACTION_CONCURRENCY`) |
+| Serveur | N factures lues en même temps sur tout le serveur, tous imports confondus (`EXTRACTION_CONCURRENCY`, défaut 2) ; mémoire visible dans `/api/health` |
 | Résilience | Une facture illisible n'interrompt ni son lot ni les suivants |
 | Progression | Compteur `X/Y fichier(s)` mis à jour après chaque lot |
 

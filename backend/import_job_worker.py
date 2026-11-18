@@ -264,11 +264,85 @@ def extraction_marks(
 
 
 def extraction_concurrency() -> int:
+    """Nombre maximal de lectures de factures en même temps, sur tout le serveur.
+
+    Réglage EXTRACTION_CONCURRENCY dans backend/.env. Défaut prudent : 2
+    (Codespace). Sur un serveur avec plus de mémoire : 4 ou plus.
+    """
     try:
-        value = int(os.getenv("EXTRACTION_CONCURRENCY", "4"))
+        value = int(os.getenv("EXTRACTION_CONCURRENCY", "2"))
     except ValueError:
-        return 4
+        return 2
     return max(1, min(value, 12))
+
+
+# ── Lectures en parallèle, avec un plafond strict ──────────────────────────
+# Une seule réserve de « créneaux » pour tout le serveur : quel que soit le
+# nombre d'imports en cours ou de relances par le navigateur, jamais plus de
+# EXTRACTION_CONCURRENCY factures lues en même temps (c'est ce qui borne la
+# mémoire ; les pages sont déjà plafonnées à 12 Mpx).
+_extraction_slots: asyncio.Semaphore | None = None
+_extractions_running = 0
+_logger = logging.getLogger("recompta.import")
+
+
+def extraction_slots() -> asyncio.Semaphore:
+    global _extraction_slots
+    if _extraction_slots is None:
+        _extraction_slots = asyncio.Semaphore(extraction_concurrency())
+    return _extraction_slots
+
+
+def memory_usage_mb() -> tuple[int, int]:
+    """Mémoire du serveur (actuelle, pic depuis le démarrage), en Mo. Linux."""
+    current = peak = 0
+    try:
+        with open("/proc/self/status", encoding="ascii") as handle:
+            for row in handle:
+                if row.startswith("VmRSS:"):
+                    current = int(row.split()[1]) // 1024
+                elif row.startswith("VmHWM:"):
+                    peak = int(row.split()[1]) // 1024
+    except OSError:
+        pass
+    return current, peak
+
+
+class extraction_slot:
+    """Réserve un créneau de lecture, et journalise durée et mémoire."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self.started = 0.0
+
+    async def __aenter__(self) -> "extraction_slot":
+        global _extractions_running
+        await extraction_slots().acquire()
+        _extractions_running += 1
+        self.started = asyncio.get_running_loop().time()
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        global _extractions_running
+        _extractions_running -= 1
+        extraction_slots().release()
+        elapsed = asyncio.get_running_loop().time() - self.started
+        current, peak = memory_usage_mb()
+        _logger.info(
+            "lecture %s : %.1f s — mémoire %d Mo (pic %d Mo) — lectures en cours %d/%d",
+            self.label, elapsed, current, peak, _extractions_running, extraction_concurrency(),
+        )
+
+
+def import_runtime_status() -> dict[str, Any]:
+    current, peak = memory_usage_mb()
+    return {
+        "extraction_concurrency": extraction_concurrency(),
+        "extractions_running": _extractions_running,
+        "import_jobs_running": len(_active_jobs),
+        "memory_mb": current,
+        "memory_peak_mb": peak,
+    }
 
 
 def persist_source_document(job: dict[str, Any]) -> bool:
@@ -587,7 +661,6 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     failed = 0
     extraction_results: list[ExtractionResult] = []
     extraction_errors: dict[str, BaseException] = {}
-    semaphore = asyncio.Semaphore(extraction_concurrency())
     cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
     if cabinet_id is None:
         import logging
@@ -603,31 +676,32 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         filename = item["filename"]
         source_id = item["source_id"]
         item_token = set_active_cabinet_id(cabinet_id)
-        async with semaphore:
-            try:
+        try:
+            # Seule la lecture occupe un créneau ; les écritures en base non.
+            async with extraction_slot(filename):
                 result = await extract_invoice(filename, item["content"], item["mime_type"])
-                result.filename = filename
-                result.source_id = source_id
-                if result.lines:
-                    processed += 1
-                else:
-                    failed += 1
-                    if not result.warnings:
-                        result.warnings = ["Aucune ligne extraite — vérifiez le scan ou relancez l'extraction."]
-                await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
-                return result
-            except Exception as exc:  # noqa: BLE001
+            result.filename = filename
+            result.source_id = source_id
+            if result.lines:
+                processed += 1
+            else:
                 failed += 1
-                extraction_errors[source_id] = exc
-                await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
-                return ExtractionResult(
-                    filename=filename,
-                    source_id=source_id,
-                    lines=[],
-                    warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
-                )
-            finally:
-                reset_active_cabinet_id(item_token)
+                if not result.warnings:
+                    result.warnings = ["Aucune ligne extraite — vérifiez le scan ou relancez l'extraction."]
+            await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
+            return result
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            extraction_errors[source_id] = exc
+            await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
+            return ExtractionResult(
+                filename=filename,
+                source_id=source_id,
+                lines=[],
+                warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
+            )
+        finally:
+            reset_active_cabinet_id(item_token)
 
     token = activate_client_ice_exclusions(client_ice)
     new_lines: list[dict[str, Any]] = []
@@ -836,45 +910,100 @@ async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[s
     return result
 
 
-# Un seul traitement à la fois par serveur. Le navigateur relance /process toutes
-# les 2-3 s pendant une extraction : sans ce verrou, chaque appel démarrait un
-# traitement parallèle, saturait la mémoire et faisait tomber le serveur.
-_processing_lock = asyncio.Lock()
+# Répartiteur d'imports.
+# Avant : un verrou global traitait UN import à la fois pour tout le serveur, et
+# chaque facture analysée est un import séparé → une seule facture lue à la
+# fois (54 s médiane, 550 factures = 3 h). Le verrou avait été ajouté parce que
+# le navigateur relance /process toutes les 2-3 s et que chaque appel démarrait
+# un traitement de plus, jusqu'à saturer la mémoire.
+# Maintenant : un appel à la fois répartit le travail (_dispatch_lock), au plus
+# EXTRACTION_CONCURRENCY imports tournent, et toutes leurs lectures partagent les
+# mêmes créneaux. Les relances du navigateur ne démarrent jamais rien de plus.
+_dispatch_lock = asyncio.Lock()
+_active_jobs: dict[int, asyncio.Task] = {}
+
+
+_job_finished: asyncio.Event | None = None
 
 
 def import_processing_busy() -> bool:
-    return _processing_lock.locked()
+    return bool(_active_jobs)
+
+
+async def wait_for_job_finished(timeout: float) -> None:
+    """Attend la fin d'un import (une place se libère) ou le délai."""
+    global _job_finished
+    if _job_finished is None:
+        _job_finished = asyncio.Event()
+    _job_finished.clear()
+    try:
+        await asyncio.wait_for(_job_finished.wait(), timeout)
+    except asyncio.TimeoutError:
+        pass
+
+
+def _on_job_done(job_id: int) -> None:
+    _active_jobs.pop(job_id, None)
+    if _job_finished is not None:
+        _job_finished.set()
+
+
+async def wait_for_active_jobs() -> None:
+    """Attend la fin des imports en cours (tests, arrêt propre)."""
+    while _active_jobs:
+        await asyncio.gather(*list(_active_jobs.values()), return_exceptions=True)
 
 
 async def process_pending_import_jobs(*, max_jobs: int = 1) -> list[dict[str, Any]]:
-    if _processing_lock.locked():
+    """Démarre des imports en attente, dans la limite des places libres.
+
+    Retourne les imports démarrés (sans attendre leur fin).
+    """
+    if _dispatch_lock.locked():
         return []
-    async with _processing_lock:
-        return await _process_pending_import_jobs(max_jobs=max_jobs)
+    async with _dispatch_lock:
+        free = extraction_concurrency() - len(_active_jobs)
+        if free <= 0:
+            return []
+        return await _process_pending_import_jobs(max_jobs=min(free, max(1, int(max_jobs))))
 
 
 async def _process_pending_import_jobs(*, max_jobs: int = 1) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
+    started: list[dict[str, Any]] = []
     async with SupabaseService() as db:
         await db.fail_stale_empty_uploading_jobs()
         await db.promote_stale_uploading_jobs()
-        await db.requeue_stale_processing_jobs()
+        # Jamais remettre en file un import qui tourne ici même.
+        await db.requeue_stale_processing_jobs(exclude_ids=list(_active_jobs))
         queued = await db.fetch_queued_jobs(limit=max_jobs)
         for job in queued:
             claimed = await db.claim_job(int(job["id"]))
             if not claimed:
                 continue
+            job_id = int(claimed["id"])
+            task = asyncio.create_task(_run_claimed_job(claimed))
+            _active_jobs[job_id] = task
+            task.add_done_callback(lambda _t, jid=job_id: _on_job_done(jid))
+            started.append({"job_id": job_id, "status": "started"})
+    return started
+
+
+async def _run_claimed_job(job: dict[str, Any]) -> dict[str, Any]:
+    job_id = int(job["id"])
+    async with SupabaseService() as db:
+        try:
+            return await process_import_job(job, db)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
             try:
-                results.append(await process_import_job(claimed, db))
-            except Exception:  # noqa: BLE001
-                traceback.print_exc()
                 await db.update_job(
-                    int(job["id"]),
+                    job_id,
                     {
                         "status": "failed",
                         "error_summary": "Erreur interne du worker.",
                         "finished_at": _iso_now(),
                     },
                 )
-                results.append({"job_id": job["id"], "status": "failed", "error": "worker_exception"})
-    return results
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+            return {"job_id": job_id, "status": "failed", "error": "worker_exception"}

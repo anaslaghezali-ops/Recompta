@@ -164,16 +164,26 @@ class SupabaseService:
         response.raise_for_status()
         return len(response.json())
 
-    async def requeue_stale_processing_jobs(self, max_age_seconds: int = 600) -> int:
+    async def requeue_stale_processing_jobs(
+        self, max_age_seconds: int = 600, exclude_ids: list[int] | None = None
+    ) -> int:
+        """Remet en file les imports « processing » sans nouvelles depuis 10 min.
+
+        exclude_ids : imports en cours dans ce serveur (encore vivants, même si
+        ils attendent un créneau de lecture) — à ne pas relancer en double.
+        """
         from datetime import timedelta
 
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
+        params = {
+            "status": "eq.processing",
+            "updated_at": f"lt.{cutoff}",
+        }
+        if exclude_ids:
+            params["id"] = "not.in.(" + ",".join(str(int(i)) for i in exclude_ids) + ")"
         response = await self.client.patch(
             f"{self.base}/rest/v1/import_jobs",
-            params={
-                "status": "eq.processing",
-                "updated_at": f"lt.{cutoff}",
-            },
+            params=params,
             headers={**service_headers(), "Prefer": "return=representation"},
             json={
                 "status": "queued",

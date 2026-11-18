@@ -22,7 +22,12 @@ from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
 from dossier_analysis import queue_dossier_analysis
 from import_job_queue import complete_job_upload
-from import_job_worker import process_pending_import_jobs
+from import_job_worker import (
+    extraction_slot,
+    import_runtime_status,
+    process_pending_import_jobs,
+    wait_for_job_finished,
+)
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
 from normalize_results import (
@@ -89,8 +94,13 @@ async def _import_worker_loop() -> None:
             import traceback
 
             traceback.print_exc()
-        # File non vide : on enchaîne sans attendre ; sinon on patiente.
-        await asyncio.sleep(0.5 if handled else poll_seconds)
+        if handled:
+            # Des imports viennent de démarrer : on regarde vite s'il reste de la place.
+            await asyncio.sleep(0.5)
+        else:
+            # Rien à démarrer (file vide ou toutes les places prises) : on attend
+            # qu'un import se termine, ou le délai normal.
+            await wait_for_job_finished(poll_seconds)
 
 
 @app.on_event("startup")
@@ -143,6 +153,8 @@ async def health(refresh: bool = False) -> dict:
         "tesseract_available": tesseract_available(),
         "import_worker_enabled": import_worker_enabled(),
         "import_worker_poll_seconds": float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8")),
+        # Lectures en parallèle et mémoire, pour régler EXTRACTION_CONCURRENCY.
+        **import_runtime_status(),
         # Le frontend Freemium refuse l'extraction IA si ce flag est absent (backend trop ancien).
         "vision_credits_enforced": True,
         "vision_credits_version": 2,
@@ -187,14 +199,6 @@ async def reference() -> dict:
     }
 
 
-def extraction_concurrency() -> int:
-    """Extractions simultanées par requête (chaque appel IA dure plusieurs secondes)."""
-    try:
-        value = int(os.getenv("EXTRACTION_CONCURRENCY", "4"))
-    except ValueError:
-        return 4
-    return max(1, min(value, 12))
-
 
 @app.post("/api/extract", response_model=list[ExtractionResult])
 async def extract_files(
@@ -232,13 +236,12 @@ async def extract_files(
                 display_name = relative_name if relative_name != original_name else original_name
                 pending.append((display_name, file_content, file_mime, source_id))
 
-        semaphore = asyncio.Semaphore(extraction_concurrency())
-
         async def extract_one(
             name: str, data: bytes, mime: str, source_id: str
         ) -> ExtractionResult:
             # Une facture illisible ne doit jamais faire échouer tout le lot.
-            async with semaphore:
+            # Mêmes créneaux que la file d'import : plafond commun au serveur.
+            async with extraction_slot(name):
                 try:
                     result = await extract_invoice(name, data, mime)
                     result.filename = name
