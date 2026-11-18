@@ -28,6 +28,7 @@ from import_job_worker import (
     process_pending_import_jobs,
     wait_for_job_finished,
 )
+from request_auth import authenticate_request, require_dossier_access, require_import_job_access
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
 from normalize_results import (
@@ -36,7 +37,12 @@ from normalize_results import (
     normalize_extraction_results,
 )
 from source_id import split_source_tag
-from zip_utils import iter_invoice_files
+from zip_utils import (
+    MAX_SINGLE_FILE_BYTES,
+    MAX_ZIP_ARCHIVE_BYTES,
+    is_zip_file,
+    iter_invoice_files,
+)
 
 app = FastAPI(title="Recompta API", version="0.2.0")
 app.include_router(admin_router)
@@ -75,6 +81,28 @@ app.add_middleware(
 _KEY_CHECK_TTL = 60.0
 _key_check_cache: dict[str, float | bool | str] = {"at": 0.0, "verified": False, "message": ""}
 _worker_task: asyncio.Task | None = None
+
+
+async def read_upload_limited(upload: UploadFile, *, max_bytes: int) -> bytes:
+    """Lit un upload par blocs et refuse le dépassement avant de charger tout le fichier."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(min(1024 * 1024, max_bytes - total + 1))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Fichier trop volumineux (maximum {max_bytes // (1024 * 1024)} Mio).",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def upload_limit(filename: str, mime_type: str) -> int:
+    return MAX_ZIP_ARCHIVE_BYTES if is_zip_file(filename, mime_type) else MAX_SINGLE_FILE_BYTES
 
 
 def import_worker_enabled() -> bool:
@@ -213,11 +241,14 @@ async def extract_files(
     token = activate_client_ice_exclusions(client_ice)
     try:
         for upload in files:
-            content = await upload.read()
             upload_name = upload.filename or "inconnu"
-            original_name, source_id = split_source_tag(upload_name)
             mime_type = upload.content_type or "application/octet-stream"
-            invoice_files = iter_invoice_files(original_name, content, mime_type)
+            content = await read_upload_limited(upload, max_bytes=upload_limit(upload_name, mime_type))
+            original_name, source_id = split_source_tag(upload_name)
+            try:
+                invoice_files = iter_invoice_files(original_name, content, mime_type)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
             if not invoice_files:
                 results.append(
@@ -267,14 +298,15 @@ async def extract_files(
 async def import_bank_statement(
     file: Annotated[UploadFile, File(...)],
 ) -> BankStatementResult:
-    content = await file.read()
     upload_name = file.filename or "releve_bancaire"
     mime_type = file.content_type or "application/octet-stream"
+    content = await read_upload_limited(file, max_bytes=MAX_SINGLE_FILE_BYTES)
     return await extract_bank_statement(upload_name, content, mime_type)
 
 
 @app.post("/api/import-jobs/{job_id}/upload")
 async def upload_import_job_file(
+    request: Request,
     job_id: int,
     file: Annotated[UploadFile, File(...)],
 ) -> dict:
@@ -285,18 +317,21 @@ async def upload_import_job_file(
             detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
         )
 
-    content = await file.read()
+    user = await authenticate_request(request)
+    visible_job = await require_import_job_access(job_id, user["access_token"])
+    filename = file.filename or "document"
+    mime_type = file.content_type or "application/octet-stream"
+    content = await read_upload_limited(file, max_bytes=upload_limit(filename, mime_type))
     if not content:
         raise HTTPException(status_code=400, detail="Fichier vide.")
 
-    filename = file.filename or "document"
-    mime_type = file.content_type or "application/octet-stream"
     try:
         job = await complete_job_upload(
             job_id,
             filename=filename,
             content=content,
             mime_type=mime_type,
+            expected_dossier_id=int(visible_job["dossier_id"]),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -317,6 +352,7 @@ async def upload_import_job_file(
 
 @app.post("/api/dossiers/{dossier_id}/analyze")
 async def analyze_dossier_documents(
+    request: Request,
     dossier_id: int,
     doc_type: str = "invoice",
     client_ice: str = "",
@@ -328,6 +364,8 @@ async def analyze_dossier_documents(
             status_code=503,
             detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
         )
+    user = await authenticate_request(request)
+    await require_dossier_access(dossier_id, user["access_token"])
     if doc_type not in {"invoice", "bank"}:
         raise HTTPException(status_code=400, detail="doc_type doit être invoice ou bank.")
 
@@ -369,8 +407,9 @@ async def analyze_dossier_documents(
 
 
 @app.post("/api/import-jobs/process")
-async def process_import_jobs(limit: int = 1) -> dict:
+async def process_import_jobs(request: Request, limit: int = 1) -> dict:
     """Déclenche le traitement des jobs en file d'attente (réponse immédiate, travail en arrière-plan)."""
+    await authenticate_request(request)
     if not import_worker_enabled():
         raise HTTPException(
             status_code=503,
