@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Document de vente</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="billing.css?v=bill2" />
+  <style>
+    .rc-sheet-logo { max-width: 46mm; max-height: 22mm; object-fit: contain; margin-bottom: 3mm; }
+  </style>
+</head>
+<body class="rc-print-body">
+  <div class="rc-print-bar" id="printBar">
+    <a href="portail.html#ventes" class="rc-print-back" id="backLink">Retour à mes ventes</a>
+    <span id="printHint"></span>
+    <button type="button" id="printBtn" disabled>Imprimer ou enregistrer en PDF</button>
+  </div>
+  <main class="rc-sheet" id="sheet">
+    <p class="rc-sheet-loading">Chargement du document…</p>
+  </main>
+
+  <script type="module">
+    import { getSupabase } from "./auth-client.js?v=auth10";
+    import { PAYMENT_METHODS, amountInWords, computeTotals, formatDate, formatMAD } from "./billing-client.js?v=bill2";
+    import { DOC_TITLES, loadDocument, loadSettings, publicDocument } from "./sales-client.js?v=sales3";
+
+    const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const sheet = document.getElementById("sheet");
+    const line = (label, value) => (value ? `<span>${label ? `${label} ` : ""}${esc(value)}</span>` : "");
+    const METHODS = { ...PAYMENT_METHODS, prelevement: "Prélèvement", compensation: "Compensation", autre: "Autre" };
+    const fail = (message) => { sheet.innerHTML = `<p class="rc-sheet-loading">${esc(message)}</p>`; };
+
+    async function loadFromId(id) {
+      const { data } = await getSupabase().auth.getSession();
+      if (!data?.session) {
+        window.location.href = "login.html";
+        return null;
+      }
+      const doc = await loadDocument(id);
+      const db = getSupabase();
+      let seller = doc.seller_snapshot;
+      let client = doc.client_snapshot;
+      const settings = await loadSettings(doc.issuer_client_id).catch(() => ({}));
+      if (doc.status === "draft" || !seller || !client) {
+        const [{ data: issuer }, { data: cust }] = await Promise.all([
+          db.from("cabinet_clients").select("name, ice").eq("id", doc.issuer_client_id).maybeSingle(),
+          db.from("client_customers").select("*").eq("id", doc.customer_id).maybeSingle(),
+        ]);
+        seller = { ...settings, legal_name: issuer?.name, ice: issuer?.ice };
+        client = { name: cust?.name, ice: cust?.ice, if: cust?.if_number, address: cust?.address, city: cust?.city };
+      }
+      let original = null;
+      if (doc.credits_invoice_id) {
+        const { data: o } = await db.from("invoices").select("number, issue_date").eq("id", doc.credits_invoice_id).maybeSingle();
+        original = o;
+      }
+      return { ...doc, seller, client, logo: settings.logo_data, original };
+    }
+
+    async function loadFromToken(token) {
+      document.getElementById("backLink").hidden = true;
+      const pub = await publicDocument(token);
+      if (!pub) return null;
+      return {
+        ...pub,
+        seller: pub.seller || {},
+        client: pub.client || {},
+        logo: pub.logo_data,
+        original: pub.original_number ? { number: pub.original_number, issue_date: pub.original_date } : null,
+      };
+    }
+
+    function render(doc) {
+      const kind = doc.kind || "invoice";
+      const isDraft = doc.status === "draft";
+      const isCredit = kind === "credit_note";
+      const isQuote = kind === "quote";
+      const title = DOC_TITLES[kind] || "Facture";
+      const number = doc.number || "Brouillon";
+      const seller = doc.seller;
+      const client = doc.client;
+      document.title = `${title} ${number} — ${seller.legal_name || ""}`;
+
+      const t = computeTotals(doc.lines);
+      const ht = isDraft ? t.ht : Number(doc.total_ht);
+      const vat = isDraft ? t.vat : Number(doc.total_vat);
+      const ttc = isDraft ? t.ttc : Number(doc.total_ttc);
+      const rates = Object.entries(t.byRate).filter(([, v]) => v.ht !== 0).sort((a, b) => Number(b[0]) - Number(a[0]));
+      const rc = seller.rc_number ? `${seller.rc_number}${seller.rc_city ? ` (${seller.rc_city})` : ""}` : "";
+      const legalLine = [
+        seller.legal_name,
+        seller.legal_form && seller.capital ? `${seller.legal_form} au capital de ${seller.capital}` : seller.legal_form,
+        seller.ice && `ICE ${seller.ice}`,
+        seller.if_number && `IF ${seller.if_number}`,
+        seller.tp_number && `TP ${seller.tp_number}`,
+        rc && `RC ${rc}`,
+      ].filter(Boolean).join(" · ");
+      const watermark = isDraft ? "Brouillon"
+        : doc.status === "cancelled" ? (isQuote ? "Refusé" : "Annulée")
+        : doc.status === "voided" ? "Annulée" : "";
+
+      sheet.innerHTML = `
+        ${watermark ? `<div class="rc-sheet-watermark" aria-hidden="true">${watermark}</div>` : ""}
+        <header class="rc-sheet-head">
+          <div class="rc-sheet-seller">
+            ${doc.logo ? `<img class="rc-sheet-logo" src="${esc(doc.logo)}" alt="" />` : ""}
+            <strong>${esc(seller.legal_name || "")}</strong>
+            ${seller.legal_form ? `<span>${esc(seller.legal_form)}${seller.capital ? ` au capital de ${esc(seller.capital)}` : ""}</span>` : ""}
+            ${line("", seller.address)}
+            ${line("", seller.city)}
+            ${line("ICE", seller.ice)}
+            ${line("Tél.", seller.phone)}
+            ${line("", seller.email)}
+          </div>
+          <div class="rc-sheet-title">
+            <h1>${title}</h1>
+            <p class="rc-sheet-number">N° ${esc(number)}</p>
+            <dl>
+              <div><dt>Date</dt><dd>${formatDate(doc.issue_date)}</dd></div>
+              ${!isCredit && doc.due_date ? `<div><dt>${isQuote ? "Valable jusqu'au" : "Échéance"}</dt><dd>${formatDate(doc.due_date)}</dd></div>` : ""}
+              ${doc.original ? `<div><dt>Facture annulée</dt><dd>${esc(doc.original.number)} du ${formatDate(doc.original.issue_date)}</dd></div>` : ""}
+            </dl>
+          </div>
+        </header>
+
+        <section class="rc-sheet-client">
+          <span class="rc-sheet-label">${isQuote ? "Destinataire" : "Facturé à"}</span>
+          <strong>${esc(client.name || "")}</strong>
+          ${line("", client.address)}
+          ${line("", client.city)}
+          ${line("ICE", client.ice)}
+          ${line("IF", client.if)}
+        </section>
+
+        ${isCredit && doc.reason ? `<p class="rc-sheet-reason">Motif : ${esc(doc.reason)}</p>` : ""}
+
+        <table class="rc-sheet-lines">
+          <thead>
+            <tr><th>Désignation</th><th class="num">Qté</th><th class="num">Prix unitaire HT</th><th class="num">TVA</th><th class="num">Total HT</th></tr>
+          </thead>
+          <tbody>
+            ${(doc.lines || []).map((l) => `
+              <tr>
+                <td>${esc(l.label)}</td>
+                <td class="num">${Number(l.quantity).toLocaleString("fr-FR")}</td>
+                <td class="num">${formatMAD(l.unit_price_ht)}</td>
+                <td class="num">${Number(l.vat_rate)} %</td>
+                <td class="num">${formatMAD(l.total_ht ?? Number(l.quantity) * Number(l.unit_price_ht))}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+
+        <div class="rc-sheet-bottom">
+          <div class="rc-sheet-words">
+            <p>${isQuote ? "Arrêté le présent devis" : isCredit ? "Arrêté le présent avoir" : "Arrêtée la présente facture"} à la somme de :</p>
+            <strong>${esc(amountInWords(ttc))} TTC${ttc < 0 ? " (en faveur du client)" : ""}</strong>
+            ${!isCredit ? `
+              <dl class="rc-sheet-pay">
+                ${doc.payment_method ? `<div><dt>Mode de règlement</dt><dd>${esc(METHODS[doc.payment_method] || doc.payment_method)}</dd></div>` : ""}
+                ${seller.bank_name ? `<div><dt>Banque</dt><dd>${esc(seller.bank_name)}</dd></div>` : ""}
+                ${seller.rib ? `<div><dt>RIB</dt><dd>${esc(String(seller.rib).replace(/(\d{3})(\d{3})(\d{16})(\d{2})/, "$1 $2 $3 $4"))}</dd></div>` : ""}
+              </dl>` : ""}
+          </div>
+          <dl class="rc-sheet-totals">
+            <div><dt>Total HT</dt><dd>${formatMAD(ht)}</dd></div>
+            ${rates.map(([r, v]) => `<div><dt>TVA ${r} %</dt><dd>${formatMAD(v.vat)}</dd></div>`).join("") || `<div><dt>TVA</dt><dd>${formatMAD(vat)}</dd></div>`}
+            <div class="is-total"><dt>Total TTC</dt><dd>${formatMAD(ttc)}</dd></div>
+          </dl>
+        </div>
+
+        ${doc.notes ? `<p class="rc-sheet-notes">${esc(doc.notes)}</p>` : ""}
+
+        <footer class="rc-sheet-foot">
+          ${seller.footer_note ? `<p>${esc(seller.footer_note)}</p>` : ""}
+          <p>${esc(legalLine)}</p>
+        </footer>`;
+
+      const btn = document.getElementById("printBtn");
+      btn.disabled = false;
+      btn.addEventListener("click", () => window.print());
+      document.getElementById("printHint").textContent = isDraft
+        ? "Aperçu d'un brouillon : le numéro sera attribué à l'émission."
+        : "Dans la fenêtre d'impression, choisissez « Enregistrer au format PDF ».";
+    }
+
+    async function main() {
+      const token = (window.location.hash.match(/t=([a-f0-9]{40,})/) || [])[1];
+      const id = Number(new URLSearchParams(window.location.search).get("id"));
+      let doc = null;
+      if (token) doc = await loadFromToken(token);
+      else if (id) doc = await loadFromId(id);
+      else return fail("Aucun document indiqué.");
+      if (!doc) return fail(token ? "Ce lien n'est plus valide. Demandez un nouveau lien à l'émetteur du document." : "Document introuvable.");
+      render(doc);
+    }
+
+    main().catch((err) => fail(err.message || "Impossible d'afficher le document."));
+  </script>
+</body>
+</html>

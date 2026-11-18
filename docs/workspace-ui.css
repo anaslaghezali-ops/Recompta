@@ -1390,3 +1390,25 @@ td.row-actions .view-btn { min-height: 1.9rem; padding: 0 0.6rem; font-size: 0.8
 .rc-portal-creds dd { margin: 0; overflow-wrap: anywhere; }
 .rc-portal-creds code { font-size: 0.95rem; font-weight: 600; background: #fff; padding: 0.05rem 0.35rem; border-radius: 4px; }
 .rc-portal-link-url { font-size: 0.8rem; color: var(--rc-muted); }
+
+/* ---------- Onglet Ventes (TVA collectée, encaissements du relevé) ---------- */
+.rc-sales { display: grid; gap: 1rem; }
+.rc-sales-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rc-sales-table tr.rc-sales-total td { font-weight: 600; background: #f7f9fb; }
+.rc-sales-actions { display: flex; justify-content: flex-end; margin-top: 0.8rem; }
+.rc-sales-actions .dash-btn, .rc-panel-tools .dash-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.rc-sales-sub { margin: 1.1rem 0 0.5rem; font-size: 0.95rem; font-weight: 600; color: var(--rc-ink-2); }
+.rc-sales-note { margin: -0.2rem 0 0.5rem; font-size: 0.86rem; color: var(--rc-muted); }
+.rc-sales-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.rc-sales-list li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem;
+  padding: 0.65rem 0.85rem; border: 1px solid var(--rc-line); border-radius: var(--rc-radius-m); background: var(--rc-surface, #fff);
+}
+.rc-sales-list li > div:first-child { display: grid; gap: 0.1rem; min-width: 0; }
+.rc-sales-list li span { font-size: 0.86rem; color: var(--rc-muted); overflow-wrap: anywhere; }
+.rc-sales-list li strong { font-variant-numeric: tabular-nums; }
+.rc-sales-list li.is-suggest { border-color: var(--rc-warn); background: var(--rc-warn-wash); }
+.rc-sales-list li.is-muted { background: #fbfbfc; }
+.rc-sales-arrow { font-weight: 600; color: var(--rc-ok) !important; }
+.rc-sales-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.rc-sales-chip { padding: 0.15rem 0.55rem; border-radius: 999px; background: #eef1f5; font-size: 0.8rem !important; font-weight: 600; color: var(--rc-ink-2) !important; }

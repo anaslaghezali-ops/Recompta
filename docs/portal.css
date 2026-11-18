@@ -275,3 +275,42 @@ button { font: inherit; }
 }
 .pt-detail { display: grid; gap: 0.75rem; justify-items: stretch; }
 .pt-detail > .pt-badge { justify-self: start; }
+
+/* ---------- Ventes phase 2 : éditeur, réglages ---------- */
+.pt-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pt-actions .pt-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.pt-dialog.is-wide { width: min(820px, calc(100vw - 1.5rem)); }
+.pt-dialog footer .pt-btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+.pt-lines { display: grid; gap: 0.5rem; }
+.pt-line {
+  display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 0.8fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  gap: 0.45rem; align-items: end; padding: 0.55rem 0.6rem; border: 1px solid var(--pt-line); border-radius: 10px;
+}
+.pt-line .pt-field input, .pt-line .pt-field select { min-height: 2.5rem; padding: 0.45rem 0.6rem; font-size: 0.95rem; width: 100%; min-width: 0; }
+.pt-line-total { align-self: center; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 1.1rem; }
+.pt-line .pt-link { align-self: center; padding-top: 1.1rem; }
+.pt-add-line { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; }
+.pt-doc-totals { margin: 0; display: grid; gap: 0.25rem; justify-self: end; min-width: 15rem; }
+.pt-doc-totals div { display: flex; justify-content: space-between; gap: 1.5rem; font-variant-numeric: tabular-nums; }
+.pt-doc-totals dt { color: var(--pt-muted); }
+.pt-doc-totals dd { margin: 0; }
+.pt-doc-totals .is-total { border-top: 1px solid var(--pt-line); padding-top: 0.3rem; font-weight: 600; }
+.pt-doc-totals .is-total dt { color: var(--pt-ink); }
+.pt-settings, .pt-series { display: grid; gap: 0.7rem; margin-top: 0.8rem; }
+.pt-settings > .pt-btn, .pt-series > .pt-btn { justify-self: start; }
+.pt-series { padding-top: 0.8rem; border-top: 1px solid var(--pt-line); }
+.pt-logo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; }
+.pt-logo img { max-height: 3.5rem; max-width: 10rem; object-fit: contain; border: 1px solid var(--pt-line); border-radius: 8px; padding: 0.3rem; background: #fff; }
+.pt-logo label.pt-btn { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.pt-account summary > span { display: inline-flex; gap: 0.3rem; }
+@media (max-width: 640px) {
+  .pt-line { grid-template-columns: 1fr 1fr; }
+  .pt-line-label { grid-column: 1 / -1; }
+  .pt-line-total, .pt-line .pt-link { padding-top: 0; }
+}
+
+/* ---------- Ventes phase 3 : relances ---------- */
+.pt-remind { border-left: 4px solid var(--pt-stop); }
+.pt-remind .pt-requests li { border-color: #efc2bd; background: #fff7f6; }
+.pt-remind .pt-requests li > svg { color: var(--pt-stop); }
+.pt-field textarea { font: inherit; font-size: 0.95rem; color: var(--pt-ink); padding: 0.6rem 0.75rem; border: 1px solid #c6d0dc; border-radius: 8px; resize: vertical; }
