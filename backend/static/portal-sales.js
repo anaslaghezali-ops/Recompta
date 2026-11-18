@@ -5,7 +5,15 @@
 import {
   DOC_TITLES,
   PAYMENT_METHODS,
+  REMINDER_CHANNELS,
+  REMINDER_LEVELS,
   SALES_FILTERS,
+  addReminder,
+  listReminders,
+  nextReminderLevel,
+  reminderMailto,
+  reminderMessage,
+  toRemind,
   VAT_RATES,
   addPayment,
   archiveItem,
@@ -45,7 +53,7 @@ import {
   uploadSaleDocument,
   validateSale,
   voidSale,
-} from "./sales-client.js?v=sales2";
+} from "./sales-client.js?v=sales3";
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -122,7 +130,23 @@ function renderCustomers() {
     </li>`).join("") : '<li class="pt-empty">Aucun client pour l\'instant.</li>';
 }
 
+function renderRemind() {
+  const list = toRemind(state.sales);
+  $("slRemindBox").hidden = !list.length;
+  $("slRemindTitle").textContent = `À relancer (${list.length})`;
+  $("slRemindList").innerHTML = list.slice(0, 8).map((s) => `
+    <li>
+      <i data-lucide="bell-ring"></i>
+      <div>
+        <strong>${esc(s.customer_name)} · ${formatMad(s.balance)} MAD</strong>
+        <span>N° ${esc(s.number || s.external_number || "")} · en retard de ${Number(s.days_overdue) || 0} j${s.last_reminder_at ? ` · dernière relance le ${fmtDay(String(s.last_reminder_at).slice(0, 10))}` : " · jamais relancée"}</span>
+      </div>
+      <button type="button" class="pt-btn" data-remind="${s.id}">Relancer</button>
+    </li>`).join("");
+}
+
 function render() {
+  renderRemind();
   renderSummary();
   renderFilters();
   renderList();
@@ -310,6 +334,18 @@ function openDetail(id) {
   $("slMailBtn").hidden = !created;
   $("slCreditBtn").hidden = !(created && kind === "invoice" && sale.status === "issued");
   $("slConvertBtn").hidden = !(kind === "quote" && sale.status === "issued" && !sale.converted_invoice_id);
+  $("slRemindBtn").hidden = !(kind === "invoice" && sale.status === "issued" && Number(sale.balance) > 0.005);
+  $("slReminderHistory").innerHTML = "";
+  if (kind === "invoice" && sale.status === "issued") {
+    listReminders(sale.id).then((rows) => {
+      if (state.current?.id !== sale.id) return;
+      $("slReminderHistory").innerHTML = rows.length ? `
+        <h3 class="pt-subhead">Relances</h3>
+        <ul class="pt-payments">${rows.map((r) => `
+          <li><div><strong>${esc(REMINDER_LEVELS[r.level] || "Relance")}</strong>
+          <span>${new Date(r.sent_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })} · ${esc(REMINDER_CHANNELS[r.channel] || r.channel)}</span></div></li>`).join("")}</ul>` : "";
+    }).catch(() => {});
+  }
   $("slRefuseBtn").hidden = !(kind === "quote" && sale.status === "issued" && !sale.converted_invoice_id);
   setMsg("slPayMsg", "");
   if (!$("slDetailDialog").open) $("slDetailDialog").showModal();
@@ -372,6 +408,53 @@ async function refuseCurrent() {
     openDetail(state.current.id);
   } catch (err) {
     setMsg("slPayMsg", err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Relances
+// ---------------------------------------------------------------------------
+async function openReminder(id) {
+  const sale = state.sales.find((s) => s.id === id);
+  if (!sale) return;
+  state.reminding = { sale, url: "" };
+  if (sale.origin === "created") state.reminding.url = await shareLink(sale.id).catch(() => "");
+  const f = $("slRemindForm");
+  f.reset();
+  f.elements.level.value = String(nextReminderLevel(sale));
+  $("slRemindFor").textContent = `${sale.customer_name} · facture ${sale.number || sale.external_number} · reste ${formatMad(sale.balance)} MAD${sale.reminder_count ? ` · déjà relancée ${sale.reminder_count} fois` : ""}`;
+  fillReminder();
+  setMsg("slRemindMsg", "");
+  if ($("slDetailDialog").open) $("slDetailDialog").close();
+  $("slRemindDialog").showModal();
+}
+
+function fillReminder() {
+  const { sale, url } = state.reminding;
+  const level = Number($("slRemindForm").elements.level.value);
+  $("slRemindForm").elements.message.value = reminderMessage({
+    level, sellerName: state.client?.name || "", customerName: sale.customer_name, number: sale.number || sale.external_number,
+    issueDate: sale.issue_date, total: sale.total_ttc, balance: sale.balance, dueDate: sale.due_date,
+    daysOverdue: Number(sale.days_overdue) || 0, url,
+  });
+}
+
+async function recordReminder(channel) {
+  const f = $("slRemindForm");
+  const { sale } = state.reminding;
+  const level = Number(f.elements.level.value);
+  const message = f.elements.message.value;
+  try {
+    if (channel === "copie") await navigator.clipboard?.writeText(message).catch(() => {});
+    if (channel === "email") {
+      window.location.href = reminderMailto({ to: sale.customer_email || "", level, number: sale.number || sale.external_number, sellerName: state.client?.name || "", message });
+    }
+    await addReminder({ invoiceId: sale.id, level, channel, message });
+    setMsg("slRemindMsg", channel === "copie" ? "Message copié et relance enregistrée." : "Relance enregistrée.", true);
+    await refreshSales();
+    setTimeout(() => { if ($("slRemindDialog").open) $("slRemindDialog").close(); }, 900);
+  } catch (err) {
+    setMsg("slRemindMsg", err.message);
   }
 }
 
@@ -672,6 +755,15 @@ export function initSalesView(ctx) {
     return openEditor("quote");
   });
   $("slDocForm").addEventListener("submit", submitDoc);
+  $("slRemindList").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-remind]");
+    if (b) openReminder(Number(b.dataset.remind));
+  });
+  $("slRemindBtn").addEventListener("click", () => openReminder(state.current.id));
+  $("slRemindForm").elements.level.addEventListener("change", fillReminder);
+  $("slRemindCopy").addEventListener("click", () => recordReminder("copie"));
+  $("slRemindMail").addEventListener("click", () => recordReminder("email"));
+  $("slRemindCall").addEventListener("click", () => recordReminder("telephone"));
   $("slDocForm").addEventListener("input", (e) => {
     if (e.target.name === "label") applyCatalogue(e.target);
     updateTotals();

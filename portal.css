@@ -308,3 +308,9 @@ button { font: inherit; }
   .pt-line-label { grid-column: 1 / -1; }
   .pt-line-total, .pt-line .pt-link { padding-top: 0; }
 }
+
+/* ---------- Ventes phase 3 : relances ---------- */
+.pt-remind { border-left: 4px solid var(--pt-stop); }
+.pt-remind .pt-requests li { border-color: #efc2bd; background: #fff7f6; }
+.pt-remind .pt-requests li > svg { color: var(--pt-stop); }
+.pt-field textarea { font: inherit; font-size: 0.95rem; color: var(--pt-ink); padding: 0.6rem 0.75rem; border: 1px solid #c6d0dc; border-radius: 8px; resize: vertical; }

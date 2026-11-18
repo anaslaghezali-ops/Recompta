@@ -26,7 +26,7 @@
   <script type="module">
     import { getSupabase } from "./auth-client.js?v=auth10";
     import { PAYMENT_METHODS, amountInWords, computeTotals, formatDate, formatMAD } from "./billing-client.js?v=bill2";
-    import { DOC_TITLES, loadDocument, loadSettings, publicDocument } from "./sales-client.js?v=sales2";
+    import { DOC_TITLES, loadDocument, loadSettings, publicDocument } from "./sales-client.js?v=sales3";
 
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const sheet = document.getElementById("sheet");

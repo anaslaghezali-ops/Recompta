@@ -498,3 +498,74 @@ export function readLogo(file, maxWidth = 400) {
     img.src = url;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3 : relances
+// ---------------------------------------------------------------------------
+
+export const REMINDER_LEVELS = {
+  1: "Rappel courtois",
+  2: "Relance",
+  3: "Dernière relance avant recouvrement",
+};
+export const REMINDER_CHANNELS = { email: "Email", copie: "Message copié", telephone: "Téléphone", courrier: "Courrier" };
+
+const frDate = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).toLocaleDateString("fr-FR") : "");
+
+/** Message de relance prérempli, ton courtois qui se raffermit avec le niveau. */
+export function reminderMessage({ level = 1, sellerName = "", customerName = "", number = "", issueDate = null, total = 0, balance = 0, dueDate = null, daysOverdue = 0, url = "" }) {
+  const amount = `${formatMad(balance)} MAD`;
+  const ref = `notre facture n° ${number}${issueDate ? ` du ${frDate(issueDate)}` : ""} (${formatMad(total)} MAD TTC)`;
+  const late = daysOverdue > 0 ? `, échue depuis le ${frDate(dueDate)} (${daysOverdue} jour${daysOverdue > 1 ? "s" : ""})` : dueDate ? `, à échéance du ${frDate(dueDate)}` : "";
+  const body = {
+    1: [
+      `Sauf erreur de notre part, ${ref} reste à régler${late}. Le montant restant dû est de ${amount}.`,
+      "Il s'agit peut-être d'un simple oubli : pourriez-vous nous indiquer la date de règlement prévue ?",
+      "Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.",
+    ],
+    2: [
+      `Malgré notre précédent rappel, ${ref} reste impayée${late}. Le montant restant dû est de ${amount}.`,
+      "Nous vous remercions de procéder au règlement dans les meilleurs délais, ou de nous contacter si un point bloque le paiement.",
+    ],
+    3: [
+      `Nos précédentes relances concernant ${ref} sont restées sans effet${late}. Le montant restant dû est de ${amount}.`,
+      "Sans règlement sous 8 jours, nous serons contraints d'engager une procédure de recouvrement.",
+      "Nous restons à votre disposition pour trouver une solution amiable d'ici là.",
+    ],
+  }[level] || [];
+  return [
+    `Bonjour${customerName ? ` ${customerName}` : ""},`,
+    "",
+    ...body,
+    ...(url ? ["", `Facture consultable ici : ${url}`] : []),
+    "",
+    "Cordialement,",
+    sellerName,
+  ].join("\n");
+}
+
+export function reminderMailto({ to = "", level = 1, number = "", sellerName = "", message = "" }) {
+  const subject = `${REMINDER_LEVELS[level] || "Relance"} — facture ${number} — ${sellerName}`;
+  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+}
+
+export async function listReminders(invoiceId) {
+  const { data, error } = await db().from("sales_reminders").select("*").eq("invoice_id", invoiceId).order("sent_at", { ascending: false });
+  fail(error);
+  return data || [];
+}
+
+export async function addReminder({ invoiceId, level, channel, message, note = null }) {
+  const { error } = await db().from("sales_reminders").insert({ invoice_id: invoiceId, level: Number(level), channel, message, note });
+  fail(error);
+}
+
+/** Factures à relancer : en retard, triées par ancienneté du retard. */
+export function toRemind(sales) {
+  return sales
+    .filter((s) => (s.kind || "invoice") === "invoice" && s.is_overdue)
+    .sort((a, b) => (Number(b.days_overdue) || 0) - (Number(a.days_overdue) || 0));
+}
+
+/** Niveau conseillé : 1 au premier rappel, puis +1 (au plus 3). */
+export const nextReminderLevel = (sale) => Math.min(3, (Number(sale.reminder_count) || 0) + 1);

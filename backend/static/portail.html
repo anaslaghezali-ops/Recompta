@@ -8,7 +8,7 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=portal4" />
+  <link rel="stylesheet" href="portal.css?v=portal5" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="pt">
@@ -85,6 +85,11 @@
             <div class="pt-stat" id="slOverdueStat"><span>En retard</span><strong id="slOverdue">—</strong><small id="slOverdueNote"></small></div>
             <div class="pt-stat"><span>Reste à encaisser</span><strong id="slOpen">—</strong><small id="slOpenNote"></small></div>
           </div>
+        </section>
+
+        <section class="pt-section pt-remind" id="slRemindBox" hidden>
+          <h2 id="slRemindTitle">À relancer</h2>
+          <ul class="pt-requests" id="slRemindList"></ul>
         </section>
 
         <section class="pt-section">
@@ -213,6 +218,7 @@
     <div>
       <header><h2 id="slDetailTitle">Facture</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
       <div id="slDetailBody" class="pt-detail"></div>
+      <div id="slReminderHistory" class="pt-detail"></div>
       <form id="slPayForm" class="pt-pay-form" novalidate>
         <h3 class="pt-subhead">Enregistrer un paiement</h3>
         <div class="pt-form-grid">
@@ -235,6 +241,7 @@
         <button type="button" class="pt-btn is-ghost" id="slViewBtn" hidden><i data-lucide="printer"></i> Voir / PDF</button>
         <button type="button" class="pt-btn is-ghost" id="slShareBtn" hidden><i data-lucide="link"></i> Copier le lien</button>
         <button type="button" class="pt-btn is-ghost" id="slMailBtn" hidden><i data-lucide="mail"></i> Envoyer par email</button>
+        <button type="button" class="pt-btn is-ghost" id="slRemindBtn" hidden><i data-lucide="bell-ring"></i> Relancer</button>
         <button type="button" class="pt-btn" id="slConvertBtn" hidden><i data-lucide="file-check-2"></i> Transformer en facture</button>
       </footer>
     </div>
@@ -268,6 +275,24 @@
         <button type="submit" class="pt-btn" value="issue" id="slDocIssue">Émettre la facture</button>
       </footer>
       <p class="pt-hint">Une fois émise, une facture reçoit son numéro définitif et ne se modifie plus : on la corrige par un avoir.</p>
+    </form>
+  </dialog>
+
+  <!-- Ventes : relance -->
+  <dialog class="pt-dialog" id="slRemindDialog" aria-labelledby="slRemindTitle2">
+    <form id="slRemindForm" novalidate>
+      <header><h2 id="slRemindTitle2">Relancer le client</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <p class="pt-hint" id="slRemindFor"></p>
+      <label class="pt-field"><span>Type de relance</span><select name="level">
+        <option value="1">Rappel courtois</option><option value="2">Relance</option><option value="3">Dernière relance avant recouvrement</option></select></label>
+      <label class="pt-field"><span>Message (modifiable)</span><textarea name="message" rows="12"></textarea></label>
+      <p class="pt-form-msg" id="slRemindMsg" role="status" hidden></p>
+      <footer>
+        <button type="button" class="pt-link" id="slRemindCall">J'ai appelé le client</button>
+        <button type="button" class="pt-btn is-ghost" id="slRemindCopy"><i data-lucide="copy"></i> Copier le message</button>
+        <button type="button" class="pt-btn" id="slRemindMail"><i data-lucide="mail"></i> Envoyer par email</button>
+      </footer>
+      <p class="pt-hint">Chaque relance est enregistrée dans l'historique de la facture.</p>
     </form>
   </dialog>
 
@@ -324,7 +349,7 @@
       periodLabelCap,
       uploadPortalFile,
     } from "./portal-client.js?v=portal3";
-    import { initSalesView, refreshSales, salesLoaded } from "./portal-sales.js?v=sales2";
+    import { initSalesView, refreshSales, salesLoaded } from "./portal-sales.js?v=sales3";
 
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

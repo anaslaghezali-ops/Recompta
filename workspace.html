@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=unread2" />
-  <link rel="stylesheet" href="workspace-ui.css?v=rc7" />
+  <link rel="stylesheet" href="workspace-ui.css?v=rc8" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -114,6 +114,7 @@
           <button type="button" class="active" data-tab="cockpit" role="tab">Production</button>
           <button type="button" data-tab="documents" role="tab">Documents</button>
           <button type="button" data-tab="portal" role="tab" id="portalTabBtn">Portail client</button>
+          <button type="button" data-tab="sales" role="tab" id="salesTabBtn">Ventes</button>
           <button type="button" data-tab="review" role="tab">Revue &amp; export</button>
           <button type="button" data-tab="suppliers" role="tab">Fournisseurs</button>
           <button type="button" data-tab="history" role="tab">Périodes</button>
@@ -426,6 +427,10 @@
 
         <div id="portalView" hidden>
           <div class="rc-portal" id="portalPanel"></div>
+        </div>
+
+        <div id="salesView" hidden>
+          <div class="rc-portal rc-sales" id="salesPanel"></div>
         </div>
 
         <div id="historyView" hidden>
@@ -1157,6 +1162,23 @@
         toast: showWorkspaceToast,
       });
       return portalController;
+    }
+
+    let salesController = null;
+    async function ensureSalesController() {
+      if (salesController) return salesController;
+      const { createWorkspaceSales } = await import("./workspace-sales.js?v=wsales1");
+      salesController = createWorkspaceSales({
+        mountEl: document.getElementById("salesPanel"),
+        getContext: () => ({
+          clientId: client?.id,
+          clientName: client?.name || "",
+          dossiers: client?.dossiers || [],
+          selectedDossierId,
+        }),
+        toast: showWorkspaceToast,
+      });
+      return salesController;
     }
 
     async function ensureSuppliersController() {
@@ -2264,6 +2286,11 @@
       document.getElementById("suppliersView").hidden = tab !== "suppliers";
       document.getElementById("historyView").hidden = tab !== "history";
       document.getElementById("portalView").hidden = tab !== "portal";
+      document.getElementById("salesView").hidden = tab !== "sales";
+      if (tab === "sales") {
+        const sales = await ensureSalesController();
+        await sales.load();
+      }
       if (tab === "portal") {
         const portal = await ensurePortalController();
         await portal.load();

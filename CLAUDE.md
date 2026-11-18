@@ -48,11 +48,19 @@ sans affirmation non vérifiée. Expliquer en langage simple ce qu'il doit faire
   `document_requests`, `portal_uploads` (portail). Helpers RLS dans le schéma `private`.
   Edge Functions : `client-portal`, `cabinet-team`, `admin-manage-accounts`, `admin-create-cabinet`,
   `signup-cabinet`. Plan gratuit : 50 Mo par fichier, 1 Go de stockage.
-- **Ventes des clients** (portail, onglet « Mes ventes ») : `invoices.issuer_client_id` vide = honoraires du
-  cabinet, rempli = vente d'un client. `client_customers`, `client_billing_settings` (sans nom ni ICE : source
-  `cabinet_clients`), vue `sales_invoices` (état de paiement calculé), RPC `sales_validate_invoice`,
-  `sales_void_invoice`, `sales_set_last_number`. Pièces dans le bucket `sales-documents`, jamais dans
-  `dossier_documents`. Front : `sales-client.js`, `portal-sales.js`.
+- **Ventes des clients** (portail, onglet « Mes ventes » ; cabinet, onglet « Ventes » de l'espace client) :
+  `invoices.issuer_client_id` vide = honoraires du cabinet, rempli = vente d'un client.
+  - Phase 1 : `client_customers`, factures faites ailleurs (`origin = 'uploaded'`, brouillon → `sales_validate_invoice`
+    → `sales_void_invoice`), paiements, vue `sales_invoices` (état calculé), bucket `sales-documents`.
+  - Phase 2 : factures et devis créés (`origin = 'created'`, `kind` invoice/quote/credit_note), `sales_issue_invoice`,
+    `sales_credit_invoice`, `sales_convert_quote`, `sales_refuse_quote`, lien public `sales_share_token` /
+    `sales_public_document` (page `vente.html`), `client_billing_settings` (sans nom ni ICE), `client_items`.
+    Série unique factures + avoirs par société et par année ; devis à part (DEV).
+  - Phase 3 : `sales_reminders` (historique non modifiable), messages dans `sales-client.js`.
+  - Phase 4 : `sales_collected_detail(client, année, mois)` : TVA collectée selon `cabinet_clients.vat_regime`.
+  - Phase 5 : encaissements depuis le relevé (`bank-sales-match.js`, `workspace-sales.js`) ; paiements
+    `source = 'bank'` avec `bank_ref` stable, unique par facture.
+  Front : `sales-client.js`, `portal-sales.js`, `vente.html`, `workspace-sales.js`, `bank-sales-match.js`.
 - **Rapprochement bancaire** (`bank-statement-client.js`, `workspace-bank-match.js`) : automatique si montant
   exact (une facture ou une combinaison d'un même fournisseur) ; sinon propositions à valider : paiement
   partiel (facture scindée au prorata, TVA comprise), ou virement couvrant des factures + reste non justifié.
@@ -69,7 +77,7 @@ sans affirmation non vérifiée. Expliquer en langage simple ce qu'il doit faire
 
 - Serveur : `cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000`
   (sans `--reload` pendant les extractions). Il tourne aujourd'hui dans le Codespace d'Anas.
-- Tests front : `node test-bank-reconcile.mjs`, `node test-bulk-field-update.mjs`, `node test-concurrent-lines.mjs`.
+- Tests front : `for t in test-*.mjs; do node $t; done` (dont `test-sales-register.mjs`, `test-bank-sales.mjs`).
 - Tests back : `cd backend && python scripts/test_*.py` (chaque script est autonome).
 - Tests SQL (toutes les migrations rejouées sur un Postgres vierge + RLS, numérotation concurrente) :
   `PGURL=postgresql://… supabase/tests/run.sh` (job `sql` de la CI).
