@@ -318,7 +318,7 @@ async def upload_import_job_file(
         )
 
     user = await authenticate_request(request)
-    visible_job = await require_import_job_access(job_id, user["access_token"])
+    visible_job = await require_import_job_access(job_id, user["access_token"], request.headers.get("apikey", ""))
     filename = file.filename or "document"
     mime_type = file.content_type or "application/octet-stream"
     content = await read_upload_limited(file, max_bytes=upload_limit(filename, mime_type))
@@ -365,7 +365,7 @@ async def analyze_dossier_documents(
             detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
         )
     user = await authenticate_request(request)
-    await require_dossier_access(dossier_id, user["access_token"])
+    await require_dossier_access(dossier_id, user["access_token"], request.headers.get("apikey", ""))
     if doc_type not in {"invoice", "bank"}:
         raise HTTPException(status_code=400, detail="doc_type doit être invoice ou bank.")
 
