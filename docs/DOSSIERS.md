@@ -27,6 +27,9 @@ https://supabase.com/dashboard/project/pbyoxfxngfutoiqjirkx/sql/new
 8. Limite upload ZIP 200 Mo : `supabase/migrations/20260817250000_raise_storage_file_limit.sql` → **Run**  
    Puis Dashboard → Storage → Settings → **Global file size limit** ≥ 200 Mo (plan Pro ; Free reste bloqué à 50 Mo).
 
+9. Statut de lecture des factures (factures non lues visibles, déclaration bloquée) : `supabase/migrations/20261103040000_document_extraction_status.sql` → **Run**  
+   Sans elle, l'app fonctionne comme avant (pas de raison d'échec, pas de bouton « Pas une facture »).
+
 Pour tester le chargement du portefeuille **sans tokens IA** : `scripts/seed-fake-workspace.sql` (400 lignes fictives, dossier existant le plus récent — pas un id inventé).
 
 ## Flux cabinet

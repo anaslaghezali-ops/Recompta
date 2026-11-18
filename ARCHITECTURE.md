@@ -173,6 +173,24 @@ Suite logique, non urgente : une ligne par facture en base au lieu d'un
 tableau JSON, pour que deux personnes puissent modifier des lignes
 différentes en même temps sans fusion.
 
+### Factures non lues
+
+Une facture dont aucune ligne n'est extraite ne doit jamais passer inaperçue.
+
+- Le worker enregistre un statut par document (`dossier_documents.extraction_status` :
+  `done` / `failed` + raison lisible + nombre de tentatives). Un fichier dont
+  rien n'a été lu est `failed` dans le job, plus « terminé ».
+- Le cockpit liste les factures non lues (jamais lues + échecs) avec leur
+  raison. Actions : relancer la lecture, ou « Pas une facture » (`ignored`,
+  réversible).
+- **La déclaration est bloquée** tant qu'il en reste ; l'export Excel reste
+  possible mais avertit.
+- Un document lu dont les lignes ont été supprimées volontairement (`done`
+  sans ligne) n'est plus relu automatiquement.
+
+Migration requise : `20261103040000_document_extraction_status.sql`. Sans
+elle, comportement d'origine (pas de statut, pas de raison).
+
 ### TTC lu comme HT ou facture multi-taux ?
 
 « 1 800 HT / 300 TVA » peut être une facture 10 % + 20 % (600 + 1 200 HT) ou
