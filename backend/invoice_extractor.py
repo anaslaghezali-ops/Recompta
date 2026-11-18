@@ -427,10 +427,26 @@ def _resolve_supplier_from_ice(text: str, supplier: str, ice: str) -> tuple[str,
     return supplier, _extract_supplier_if(text)
 
 
+def _line_is_incoherent(line) -> bool:
+    """Lecture texte douteuse : montants incohérents ou fournisseur non identifié."""
+    ht, tva, ttc = abs(line.m_ht or 0), abs(line.tva or 0), abs(line.m_ttc or 0)
+    if ht < 1e-9 and ttc < 1e-9:
+        return True
+    if tva > 0.01 and ht < 1e-9:  # TVA sans base HT
+        return True
+    if tva > 0.01 and abs(ttc - tva) <= 0.01:  # TTC lu à la place de la TVA
+        return True
+    if ht > 0 and ttc > 0 and abs(ht + tva - ttc) > max(1.0, 0.01 * ttc):  # HT + TVA ≠ TTC
+        return True
+    if not (line.ice_frs or "").strip():  # fournisseur non identifié
+        return True
+    return False
+
+
 def _needs_ai_upgrade(result: ExtractionResult) -> bool:
     if not result.lines:
         return True
-    return all(abs(line.m_ht) < 1e-9 and abs(line.m_ttc) < 1e-9 for line in result.lines)
+    return any(_line_is_incoherent(line) for line in result.lines)
 
 
 def _guess_taux(ht: float | None, tva: float | None) -> float:
