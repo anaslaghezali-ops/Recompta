@@ -48,6 +48,11 @@ sans affirmation non vérifiée. Expliquer en langage simple ce qu'il doit faire
   `document_requests`, `portal_uploads` (portail). Helpers RLS dans le schéma `private`.
   Edge Functions : `client-portal`, `cabinet-team`, `admin-manage-accounts`, `admin-create-cabinet`,
   `signup-cabinet`. Plan gratuit : 50 Mo par fichier, 1 Go de stockage.
+- **Ventes des clients** (portail, onglet « Mes ventes ») : `invoices.issuer_client_id` vide = honoraires du
+  cabinet, rempli = vente d'un client. `client_customers`, `client_billing_settings` (sans nom ni ICE : source
+  `cabinet_clients`), vue `sales_invoices` (état de paiement calculé), RPC `sales_validate_invoice`,
+  `sales_void_invoice`, `sales_set_last_number`. Pièces dans le bucket `sales-documents`, jamais dans
+  `dossier_documents`. Front : `sales-client.js`, `portal-sales.js`.
 - **Rapprochement bancaire** (`bank-statement-client.js`, `workspace-bank-match.js`) : automatique si montant
   exact (une facture ou une combinaison d'un même fournisseur) ; sinon propositions à valider : paiement
   partiel (facture scindée au prorata, TVA comprise), ou virement couvrant des factures + reste non justifié.
@@ -66,6 +71,8 @@ sans affirmation non vérifiée. Expliquer en langage simple ce qu'il doit faire
   (sans `--reload` pendant les extractions). Il tourne aujourd'hui dans le Codespace d'Anas.
 - Tests front : `node test-bank-reconcile.mjs`, `node test-bulk-field-update.mjs`, `node test-concurrent-lines.mjs`.
 - Tests back : `cd backend && python scripts/test_*.py` (chaque script est autonome).
+- Tests SQL (toutes les migrations rejouées sur un Postgres vierge + RLS, numérotation concurrente) :
+  `PGURL=postgresql://… supabase/tests/run.sh` (job `sql` de la CI).
 - Purge de la file d'import : `python backend/scripts/purge_import_queue.py` (liste) puis `--supprimer`.
 
 ## Mesure de précision

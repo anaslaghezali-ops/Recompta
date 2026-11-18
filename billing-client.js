@@ -200,9 +200,18 @@ export async function saveClientBillingInfo(clientId, info) {
 
 /** Factures (+ lignes et paiements) du cabinet, éventuellement d'un client. */
 export async function listInvoices(cabinetId, { clientId = null } = {}) {
-  let query = db().from("invoices").select("*").eq("cabinet_id", cabinetId).order("created_at", { ascending: false });
-  if (clientId) query = query.eq("client_id", clientId);
-  const { data: invoices, error } = await query;
+  // Honoraires uniquement : les ventes des clients (issuer_client_id rempli) ne sont pas des factures du cabinet.
+  const build = (onlyFees) => {
+    let query = db().from("invoices").select("*").eq("cabinet_id", cabinetId).order("created_at", { ascending: false });
+    if (onlyFees) query = query.is("issuer_client_id", null);
+    if (clientId) query = query.eq("client_id", clientId);
+    return query;
+  };
+  let { data: invoices, error } = await build(true);
+  if (error && /issuer_client_id/.test(error.message || "")) {
+    // Base sans le registre des ventes : comportement d'origine.
+    ({ data: invoices, error } = await build(false));
+  }
   fail(error);
   const ids = (invoices || []).map((i) => i.id);
   let payments = [];
