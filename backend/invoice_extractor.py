@@ -170,14 +170,38 @@ SCAN_REQUIRES_AI_WARNING = (
 KNOWN_ICE_SUPPLIERS: dict[str, tuple[str, str]] = {}
 
 
+# Plafond de pixels par page rendue. Certains scans déclarent un format de page
+# géant : à 200 dpi, une page atteignait 91 millions de pixels (≈ 270 Mo en mémoire)
+# et plusieurs rendus simultanés faisaient tomber le serveur. 12 Mpx ≈ A4 à 340 dpi :
+# largement suffisant pour l'OCR et l'IA.
+MAX_RENDER_PIXELS = int(os.getenv("MAX_RENDER_PIXELS", str(12_000_000)))
+
+
+def safe_render_dpi(width_pt: float, height_pt: float, dpi: int, max_pixels: int = MAX_RENDER_PIXELS) -> int:
+    """Réduit la résolution pour qu'une page ne dépasse pas max_pixels."""
+    if width_pt <= 0 or height_pt <= 0:
+        return dpi
+    pixels = (width_pt * dpi / 72.0) * (height_pt * dpi / 72.0)
+    if pixels <= max_pixels:
+        return dpi
+    scale = (max_pixels / pixels) ** 0.5
+    return max(36, int(dpi * scale))
+
+
 def pdf_to_png_pages(content: bytes, max_pages: int = 3, dpi: int = 200) -> list[bytes]:
     import pymupdf
 
     doc = pymupdf.open(stream=content, filetype="pdf")
     pages: list[bytes] = []
-    for index in range(min(doc.page_count, max_pages)):
-        pix = doc[index].get_pixmap(dpi=dpi)
-        pages.append(pix.tobytes("png"))
+    try:
+        for index in range(min(doc.page_count, max_pages)):
+            page = doc[index]
+            page_dpi = safe_render_dpi(page.rect.width, page.rect.height, dpi)
+            pix = page.get_pixmap(dpi=page_dpi)
+            pages.append(pix.tobytes("png"))
+            del pix
+    finally:
+        doc.close()
     return pages
 
 
@@ -217,6 +241,10 @@ def ocr_image_bytes(content: bytes, lang: str = "fra+eng") -> str:
     from PIL import Image
 
     image = Image.open(BytesIO(content))
+    # Photo très haute définition : on la réduit avant l'OCR (même plafond que les PDF).
+    if image.width * image.height > MAX_RENDER_PIXELS:
+        scale = (MAX_RENDER_PIXELS / (image.width * image.height)) ** 0.5
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))))
     return pytesseract.image_to_string(image, lang=lang)
 
 

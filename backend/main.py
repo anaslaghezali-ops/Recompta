@@ -81,14 +81,16 @@ def import_worker_enabled() -> bool:
 async def _import_worker_loop() -> None:
     poll_seconds = float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8"))
     while True:
+        handled = 0
         try:
             if import_worker_enabled():
-                await process_pending_import_jobs(max_jobs=3)
+                handled = len(await process_pending_import_jobs(max_jobs=3))
         except Exception:  # noqa: BLE001
             import traceback
 
             traceback.print_exc()
-        await asyncio.sleep(poll_seconds)
+        # File non vide : on enchaîne sans attendre ; sinon on patiente.
+        await asyncio.sleep(0.5 if handled else poll_seconds)
 
 
 @app.on_event("startup")

@@ -731,7 +731,24 @@ async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[s
     return await process_invoice_import_job(job, db)
 
 
+# Un seul traitement à la fois par serveur. Le navigateur relance /process toutes
+# les 2-3 s pendant une extraction : sans ce verrou, chaque appel démarrait un
+# traitement parallèle, saturait la mémoire et faisait tomber le serveur.
+_processing_lock = asyncio.Lock()
+
+
+def import_processing_busy() -> bool:
+    return _processing_lock.locked()
+
+
 async def process_pending_import_jobs(*, max_jobs: int = 1) -> list[dict[str, Any]]:
+    if _processing_lock.locked():
+        return []
+    async with _processing_lock:
+        return await _process_pending_import_jobs(max_jobs=max_jobs)
+
+
+async def _process_pending_import_jobs(*, max_jobs: int = 1) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     async with SupabaseService() as db:
         await db.fail_stale_empty_uploading_jobs()
