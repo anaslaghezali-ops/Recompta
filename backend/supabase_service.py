@@ -77,7 +77,7 @@ class SupabaseService:
 
     async def __aenter__(self) -> SupabaseService:
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=120.0)
+            self._client = httpx.AsyncClient(timeout=120.0, transport=httpx.AsyncHTTPTransport(retries=3))
         return self
 
     async def __aexit__(self, *args: object) -> None:
@@ -88,7 +88,7 @@ class SupabaseService:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=120.0)
+            self._client = httpx.AsyncClient(timeout=120.0, transport=httpx.AsyncHTTPTransport(retries=3))
         return self._client
 
     async def promote_stale_uploading_jobs(self, max_age_seconds: int = 90) -> int:
@@ -150,7 +150,7 @@ class SupabaseService:
         response.raise_for_status()
         return len(response.json())
 
-    async def requeue_stale_processing_jobs(self, max_age_seconds: int = 1800) -> int:
+    async def requeue_stale_processing_jobs(self, max_age_seconds: int = 600) -> int:
         from datetime import timedelta
 
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat()
