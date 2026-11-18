@@ -4,6 +4,9 @@
  * (le portail ne voit que les ventes de SA société).
  */
 import { getSupabase } from "./auth-client.js?v=auth10";
+import { amountInWords, computeTotals } from "./billing-client.js?v=bill2";
+
+export { amountInWords, computeTotals };
 
 export const SALES_BUCKET = "sales-documents";
 export const SALES_MAX_BYTES = 50 * 1024 * 1024;
@@ -20,12 +23,16 @@ export const PAYMENT_METHODS = {
 };
 
 export const SALES_FILTERS = [
-  { key: "all", label: "Toutes" },
+  { key: "all", label: "Factures" },
   { key: "unpaid", label: "À encaisser" },
   { key: "overdue", label: "En retard" },
   { key: "paid", label: "Payées" },
-  { key: "draft", label: "À valider" },
+  { key: "draft", label: "Brouillons" },
+  { key: "quotes", label: "Devis" },
 ];
+
+export const VAT_RATES = [20, 14, 10, 7, 0];
+const kindOf = (s) => s.kind || "invoice";
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -57,8 +64,22 @@ export function completeAmounts({ ht, vat, ttc }, defaultRate = 20) {
 
 /** État affiché d'une vente (ligne de la vue sales_invoices). */
 export function saleState(sale) {
-  if (sale.status === "draft") return { key: "draft", label: "À valider", tone: "warn" };
+  const kind = kindOf(sale);
+  if (kind === "quote") {
+    if (sale.status === "draft") return { key: "draft", label: "Devis en brouillon", tone: "muted" };
+    if (sale.status === "cancelled") return { key: "refused", label: "Devis refusé", tone: "muted" };
+    if (sale.converted_invoice_id) return { key: "converted", label: "Devis accepté", tone: "ok" };
+    if (sale.due_date && sale.due_date < new Date().toISOString().slice(0, 10)) return { key: "expired", label: "Devis expiré", tone: "warn" };
+    return { key: "quote", label: "Devis envoyé", tone: "brand" };
+  }
+  if (kind === "credit_note") return { key: "credit", label: "Avoir", tone: "muted" };
+  if (sale.status === "draft") {
+    return sale.origin === "uploaded"
+      ? { key: "draft", label: "À valider", tone: "warn" }
+      : { key: "draft", label: "Brouillon", tone: "warn" };
+  }
   if (sale.status === "voided") return { key: "voided", label: "Annulée", tone: "muted" };
+  if (sale.status === "cancelled") return { key: "cancelled", label: "Annulée par avoir", tone: "muted" };
   if (sale.payment_status === "paid") return { key: "paid", label: "Payée", tone: "ok" };
   if (sale.is_overdue) {
     const d = Number(sale.days_overdue) || 0;
@@ -70,6 +91,9 @@ export function saleState(sale) {
 
 export function filterSales(sales, filter) {
   return sales.filter((s) => {
+    const kind = kindOf(s);
+    if (filter === "quotes") return kind === "quote";
+    if (kind === "quote") return false;
     const k = saleState(s).key;
     switch (filter) {
       case "unpaid": return k === "unpaid" || k === "partial" || k === "overdue";
@@ -84,11 +108,12 @@ export function filterSales(sales, filter) {
 /** Encaissé sur le mois (paiements datés du mois), reste en retard, reste à encaisser. */
 export function salesSummary(sales, payments, today = new Date()) {
   const ym = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-  const live = new Set(sales.filter((s) => s.status === "issued").map((s) => s.id));
+  const invoices = sales.filter((s) => kindOf(s) === "invoice");
+  const live = new Set(invoices.filter((s) => s.status === "issued").map((s) => s.id));
   const collectedMonth = payments
     .filter((p) => live.has(p.invoice_id) && String(p.paid_on).slice(0, 7) === ym)
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-  const open = sales.filter((s) => s.status === "issued" && Number(s.balance) > 0.005);
+  const open = invoices.filter((s) => s.status === "issued" && Number(s.balance) > 0.005);
   const overdue = open.filter((s) => s.is_overdue);
   return {
     collectedMonth: round2(collectedMonth),
@@ -96,7 +121,7 @@ export function salesSummary(sales, payments, today = new Date()) {
     overdueCount: overdue.length,
     openAmount: round2(open.reduce((sum, s) => sum + Number(s.balance), 0)),
     openCount: open.length,
-    draftCount: sales.filter((s) => s.status === "draft").length,
+    draftCount: invoices.filter((s) => s.status === "draft").length,
   };
 }
 
@@ -254,4 +279,222 @@ export async function saleDocumentUrl(path) {
   const { data, error } = await db().storage.from(SALES_BUCKET).createSignedUrl(path, 600);
   fail(error);
   return data?.signedUrl;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 : factures et devis créés dans Recompta, avoirs, réglages, catalogue
+// ---------------------------------------------------------------------------
+
+export async function loadSettings(clientId) {
+  const { data, error } = await db().from("client_billing_settings").select("*").eq("client_id", clientId).maybeSingle();
+  fail(error);
+  return data || { client_id: clientId, invoice_prefix: "FAC", credit_prefix: "AV", quote_prefix: "DEV", default_payment_days: 30, default_vat_rate: 20, quote_validity_days: 30 };
+}
+
+const SETTINGS_FIELDS = ["legal_form", "capital", "address", "city", "if_number", "tp_number", "rc_number", "rc_city", "phone", "email",
+  "bank_name", "rib", "invoice_prefix", "credit_prefix", "quote_prefix", "default_payment_days", "default_vat_rate", "quote_validity_days",
+  "footer_note", "logo_data"];
+
+export async function saveSettings(clientId, values) {
+  const payload = { client_id: clientId, updated_at: new Date().toISOString() };
+  for (const k of SETTINGS_FIELDS) {
+    if (!(k in values)) continue;
+    let v = values[k];
+    if (typeof v === "string") v = v.trim();
+    if (["default_payment_days", "quote_validity_days", "default_vat_rate"].includes(k)) v = v === "" || v == null ? undefined : Number(v);
+    if (k === "rib" && v) v = String(v).replace(/\s/g, "");
+    if (["invoice_prefix", "credit_prefix", "quote_prefix"].includes(k)) v = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "") || undefined;
+    if (v === undefined) continue;
+    payload[k] = v === "" ? null : v;
+  }
+  if (payload.rib && !/^\d{24}$/.test(payload.rib)) throw new Error("Le RIB doit contenir 24 chiffres.");
+  const { data, error } = await db().from("client_billing_settings").upsert(payload, { onConflict: "client_id" }).select().single();
+  fail(error);
+  return data;
+}
+
+/** Mentions manquantes pour émettre une facture (même règle que la base). */
+export function missingIssuerFields(client, settings) {
+  const out = [];
+  if (!/^\d{15}$/.test(String(client?.ice || ""))) out.push("ICE (fiche tenue par votre cabinet)");
+  if (!String(settings?.address || "").trim()) out.push("adresse");
+  if (!String(settings?.if_number || "").trim()) out.push("IF");
+  if (!String(settings?.rc_number || "").trim()) out.push("RC");
+  if (!String(settings?.tp_number || "").trim()) out.push("patente (TP)");
+  return out;
+}
+
+export async function listCounters() {
+  const { data, error } = await db().from("billing_counters").select("kind, year, last_seq").not("issuer_client_id", "is", null);
+  fail(error);
+  return data || [];
+}
+
+export async function setLastNumber(year, lastSeq) {
+  const { error } = await db().rpc("sales_set_last_number", { p_year: Number(year), p_last_seq: Number(lastSeq) });
+  fail(error);
+}
+
+export async function listItems() {
+  const { data, error } = await db().from("client_items").select("*").eq("is_active", true).order("label");
+  fail(error);
+  return data || [];
+}
+
+export async function saveItem(clientId, item) {
+  const payload = {
+    label: String(item.label || "").trim(),
+    unit: String(item.unit || "").trim() || null,
+    unit_price_ht: round2(parseAmount(item.unit_price_ht) || 0),
+    vat_rate: Number(item.vat_rate ?? 20),
+  };
+  if (!payload.label) throw new Error("Indiquez la désignation.");
+  const query = item.id
+    ? db().from("client_items").update(payload).eq("id", item.id)
+    : db().from("client_items").insert({ ...payload, issuer_client_id: clientId });
+  const { error } = await query;
+  fail(error);
+}
+
+export async function archiveItem(id) {
+  const { error } = await db().from("client_items").update({ is_active: false }).eq("id", id);
+  fail(error);
+}
+
+export async function loadDocument(id) {
+  const [inv, lines] = await Promise.all([
+    db().from("invoices").select("*").eq("id", id).maybeSingle(),
+    db().from("invoice_lines").select("*").eq("invoice_id", id).order("position").order("id"),
+  ]);
+  fail(inv.error);
+  fail(lines.error);
+  if (!inv.data) throw new Error("Document introuvable");
+  return { ...inv.data, lines: lines.data || [] };
+}
+
+/** Enregistre un brouillon de facture ou de devis (lignes remplacées). */
+export async function saveCreatedDraft(clientId, doc) {
+  const lines = (doc.lines || [])
+    .map((l, i) => ({
+      position: i + 1,
+      label: String(l.label || "").trim(),
+      quantity: Number(parseAmount(l.quantity)) || 0,
+      unit_price_ht: round2(parseAmount(l.unit_price_ht) || 0),
+      vat_rate: Number(l.vat_rate ?? 20),
+    }))
+    .filter((l) => l.label || l.unit_price_ht);
+  if (!Number(doc.customer_id)) throw new Error("Choisissez le client.");
+  if (lines.some((l) => !l.label)) throw new Error("Chaque ligne doit avoir une désignation.");
+  const header = {
+    customer_id: Number(doc.customer_id),
+    issue_date: doc.issue_date || null,
+    due_date: doc.due_date || null,
+    payment_method: doc.payment_method || null,
+    notes: String(doc.notes || "").trim() || null,
+  };
+  let id = doc.id;
+  if (id) {
+    const { error } = await db().from("invoices").update(header).eq("id", id);
+    fail(error);
+    const del = await db().from("invoice_lines").delete().eq("invoice_id", id);
+    fail(del.error);
+  } else {
+    const { data, error } = await db().from("invoices")
+      .insert({ ...header, issuer_client_id: clientId, origin: "created", kind: doc.kind === "quote" ? "quote" : "invoice" })
+      .select("id").single();
+    fail(error);
+    id = data.id;
+  }
+  if (lines.length) {
+    const { error } = await db().from("invoice_lines").insert(lines.map((l) => ({ ...l, invoice_id: id })));
+    fail(error);
+  }
+  return id;
+}
+
+export async function deleteCreatedDraft(id) {
+  const { error } = await db().from("invoices").delete().eq("id", id);
+  fail(error);
+}
+
+export async function issueDocument(id) {
+  const { data, error } = await db().rpc("sales_issue_invoice", { p_invoice_id: id });
+  fail(error);
+  return data;
+}
+
+export async function creditInvoice(id, reason) {
+  const { data, error } = await db().rpc("sales_credit_invoice", { p_invoice_id: id, p_reason: reason });
+  fail(error);
+  return data;
+}
+
+export async function convertQuote(id) {
+  const { data, error } = await db().rpc("sales_convert_quote", { p_quote_id: id });
+  fail(error);
+  return data;
+}
+
+export async function refuseQuote(id) {
+  const { error } = await db().rpc("sales_refuse_quote", { p_quote_id: id });
+  fail(error);
+}
+
+export function documentUrl({ id = null, token = null } = {}) {
+  const base = new URL("vente.html", window.location.href).href.split("#")[0].split("?")[0];
+  return token ? `${base}#t=${token}` : `${base}?id=${id}`;
+}
+
+export async function shareLink(id) {
+  const { data, error } = await db().rpc("sales_share_token", { p_invoice_id: id });
+  fail(error);
+  return documentUrl({ token: data });
+}
+
+export async function publicDocument(token) {
+  const { data, error } = await db().rpc("sales_public_document", { p_token: token });
+  fail(error);
+  return data;
+}
+
+export const DOC_TITLES = { invoice: "Facture", credit_note: "Avoir", quote: "Devis" };
+
+/** Message prêt à envoyer (email) avec le lien du document. */
+export function mailtoLink({ to = "", kind = "invoice", number = "", total = 0, dueDate = null, sellerName = "", url = "" }) {
+  const title = DOC_TITLES[kind] || "Facture";
+  const subject = `${title} ${number} — ${sellerName}`.trim();
+  const lines = [
+    "Bonjour,",
+    "",
+    `Veuillez trouver ${kind === "quote" ? "notre devis" : kind === "credit_note" ? "notre avoir" : "notre facture"} n° ${number} d'un montant de ${formatMad(Math.abs(total))} MAD TTC${dueDate && kind === "invoice" ? `, à régler avant le ${new Date(`${dueDate}T12:00:00`).toLocaleDateString("fr-FR")}` : ""}.`,
+    "",
+    `Consulter et imprimer le document : ${url}`,
+    "",
+    "Cordialement,",
+    sellerName,
+  ];
+  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+}
+
+/** Réduit un logo (fichier image) en data URL de 400 px de large au plus. */
+export function readLogo(file, maxWidth = 400) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpe?g|webp)$/i.test(file.type || "")) return reject(new Error("Logo : PNG, JPEG ou WebP."));
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      let data = canvas.toDataURL("image/png");
+      if (data.length > 380000) data = canvas.toDataURL("image/jpeg", 0.85);
+      if (data.length > 380000) return reject(new Error("Logo trop lourd, choisissez une image plus simple."));
+      resolve(data);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image illisible.")); };
+    img.src = url;
+  });
 }

@@ -8,7 +8,7 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=portal3" />
+  <link rel="stylesheet" href="portal.css?v=portal4" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="pt">
@@ -90,11 +90,68 @@
         <section class="pt-section">
           <div class="pt-section-head">
             <h2>Mes factures de vente</h2>
-            <button type="button" class="pt-btn" id="slAddSale"><i data-lucide="plus"></i> Ajouter une facture</button>
+            <div class="pt-actions">
+              <button type="button" class="pt-btn" id="slNewInvoice"><i data-lucide="file-plus-2"></i> Nouvelle facture</button>
+              <button type="button" class="pt-btn is-ghost" id="slNewQuote"><i data-lucide="file-pen-line"></i> Nouveau devis</button>
+              <button type="button" class="pt-btn is-ghost" id="slAddSale"><i data-lucide="upload"></i> Facture faite ailleurs</button>
+            </div>
           </div>
           <div class="pt-chips" id="slFilters" role="group" aria-label="Filtrer les factures"></div>
           <ul class="pt-sales" id="slList" aria-live="polite"><li class="pt-empty">Chargement…</li></ul>
         </section>
+
+        <details class="pt-section pt-account" id="slSettingsBox">
+          <summary><span>Réglages de facturation</span></summary>
+          <p class="pt-hint">Ces mentions figurent sur vos factures. Nom et ICE : <strong id="slIdentity"></strong> (modifiables par votre cabinet).</p>
+          <p class="pt-closed-note" id="slSettingsMissing" hidden></p>
+          <form id="slSettingsForm" class="pt-settings" novalidate>
+            <div class="pt-form-grid">
+              <label class="pt-field"><span>Forme juridique</span><input name="legal_form" placeholder="SARL, SA, SARL AU…" /></label>
+              <label class="pt-field"><span>Capital</span><input name="capital" placeholder="100 000 DH" /></label>
+              <label class="pt-field is-wide"><span>Adresse</span><input name="address" /></label>
+              <label class="pt-field"><span>Ville</span><input name="city" /></label>
+              <label class="pt-field"><span>IF</span><input name="if_number" /></label>
+              <label class="pt-field"><span>RC</span><input name="rc_number" /></label>
+              <label class="pt-field"><span>Ville du RC</span><input name="rc_city" /></label>
+              <label class="pt-field"><span>Patente (TP)</span><input name="tp_number" /></label>
+              <label class="pt-field"><span>Téléphone</span><input name="phone" type="tel" /></label>
+              <label class="pt-field"><span>Email</span><input name="email" type="email" /></label>
+              <label class="pt-field"><span>Banque</span><input name="bank_name" /></label>
+              <label class="pt-field is-wide"><span>RIB (24 chiffres)</span><input name="rib" inputmode="numeric" /></label>
+              <label class="pt-field"><span>Préfixe des factures</span><input name="invoice_prefix" maxlength="8" /></label>
+              <label class="pt-field"><span>Préfixe des avoirs</span><input name="credit_prefix" maxlength="8" /></label>
+              <label class="pt-field"><span>Préfixe des devis</span><input name="quote_prefix" maxlength="8" /></label>
+              <label class="pt-field"><span>TVA par défaut</span><select name="default_vat_rate">
+                <option value="20">20 %</option><option value="14">14 %</option><option value="10">10 %</option><option value="7">7 %</option><option value="0">0 %</option></select></label>
+              <label class="pt-field"><span>Délai de paiement (jours)</span><input name="default_payment_days" type="number" min="0" max="365" /></label>
+              <label class="pt-field"><span>Validité des devis (jours)</span><input name="quote_validity_days" type="number" min="1" max="365" /></label>
+              <label class="pt-field is-wide"><span>Pied de page <small>(facultatif)</small></span><input name="footer_note" placeholder="Pénalités de retard, conditions…" /></label>
+            </div>
+            <div class="pt-logo">
+              <img id="slLogoPreview" alt="Logo" hidden />
+              <label class="pt-btn is-ghost"><i data-lucide="image"></i> Choisir un logo<input type="file" id="slLogoInput" accept="image/png,image/jpeg,image/webp" hidden /></label>
+              <button type="button" class="pt-link pt-danger" id="slLogoRemove" hidden>Retirer le logo</button>
+            </div>
+            <p class="pt-form-msg" id="slSettingsMsg" role="status" hidden></p>
+            <button type="submit" class="pt-btn" id="slSettingsSave">Enregistrer les réglages</button>
+          </form>
+          <form id="slSeriesForm" class="pt-series" novalidate>
+            <h3 class="pt-subhead">Numérotation</h3>
+            <p class="pt-hint"><strong id="slNextNumber"></strong>. Si vous facturiez ailleurs avant Recompta, indiquez votre dernier numéro de l'année : la série continuera à la suite. Possible uniquement avant la première facture émise ici dans l'année.</p>
+            <div class="pt-form-grid">
+              <label class="pt-field"><span>Année</span><input name="year" type="number" min="2000" /></label>
+              <label class="pt-field"><span>Dernier numéro utilisé</span><input name="last_seq" type="number" min="0" required /></label>
+            </div>
+            <p class="pt-form-msg" id="slSeriesMsg" role="status" hidden></p>
+            <button type="submit" class="pt-btn is-ghost">Reprendre la série</button>
+          </form>
+        </details>
+
+        <details class="pt-section pt-account" id="slCatalogueBox">
+          <summary><span>Catalogue d'articles <span id="slItemCount"></span></span></summary>
+          <ul class="pt-sent pt-customers" id="slItems"></ul>
+          <button type="button" class="pt-btn is-ghost pt-customers-add" id="slAddItem"><i data-lucide="package-plus"></i> Ajouter un article</button>
+        </details>
 
         <details class="pt-section pt-account" id="slCustomersBox">
           <summary><span>Mes clients <span id="slCustomerCount"></span></span></summary>
@@ -125,7 +182,7 @@
   <!-- Ventes : saisie rapide d'une facture faite ailleurs -->
   <dialog class="pt-dialog" id="slSaleDialog" aria-labelledby="slSaleTitle">
     <form id="slSaleForm" novalidate>
-      <header><h2 id="slSaleTitle">Ajouter une facture de vente</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <header><h2 id="slSaleTitle">Facture faite ailleurs</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
       <div class="pt-form-grid">
         <label class="pt-field is-wide"><span>Client</span>
           <select name="customer_id" required></select></label>
@@ -171,10 +228,66 @@
       </form>
       <p class="pt-form-msg" id="slPayMsg" role="status" hidden></p>
       <footer>
-        <button type="button" class="pt-btn is-ghost" id="slDocBtn" hidden><i data-lucide="file-text"></i> Voir la pièce</button>
         <button type="button" class="pt-link pt-danger" id="slVoidBtn" hidden>Annuler l'enregistrement</button>
+        <button type="button" class="pt-link pt-danger" id="slCreditBtn" hidden>Faire un avoir</button>
+        <button type="button" class="pt-link pt-danger" id="slRefuseBtn" hidden>Devis refusé</button>
+        <button type="button" class="pt-btn is-ghost" id="slDocBtn" hidden><i data-lucide="file-text"></i> Voir la pièce</button>
+        <button type="button" class="pt-btn is-ghost" id="slViewBtn" hidden><i data-lucide="printer"></i> Voir / PDF</button>
+        <button type="button" class="pt-btn is-ghost" id="slShareBtn" hidden><i data-lucide="link"></i> Copier le lien</button>
+        <button type="button" class="pt-btn is-ghost" id="slMailBtn" hidden><i data-lucide="mail"></i> Envoyer par email</button>
+        <button type="button" class="pt-btn" id="slConvertBtn" hidden><i data-lucide="file-check-2"></i> Transformer en facture</button>
       </footer>
     </div>
+  </dialog>
+
+  <!-- Ventes : facture ou devis créé dans Recompta -->
+  <dialog class="pt-dialog is-wide" id="slDocDialog" aria-labelledby="slDocTitle">
+    <form id="slDocForm" novalidate>
+      <header><h2 id="slDocTitle">Nouvelle facture</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <p class="pt-closed-note" id="slDocMissing" hidden></p>
+      <div class="pt-form-grid">
+        <label class="pt-field is-wide"><span>Client</span><select name="customer_id" required></select></label>
+        <button type="button" class="pt-link pt-inline-link" id="slDocNewCustomer">+ Nouveau client</button>
+        <label class="pt-field"><span>Date</span><input type="date" name="issue_date" required /></label>
+        <label class="pt-field"><span id="slDocDueLabel">Échéance (facultatif)</span><input type="date" name="due_date" /></label>
+        <label class="pt-field"><span>Mode de règlement</span><select name="payment_method">
+          <option value="virement">Virement</option><option value="cheque">Chèque</option><option value="especes">Espèces</option>
+          <option value="carte">Carte</option><option value="effet">Effet / traite</option><option value="prelevement">Prélèvement</option></select></label>
+      </div>
+      <h3 class="pt-subhead">Lignes</h3>
+      <div class="pt-lines" id="slDocLines"></div>
+      <datalist id="slItemList"></datalist>
+      <button type="button" class="pt-btn is-ghost pt-add-line" id="slAddLine"><i data-lucide="plus"></i> Ajouter une ligne</button>
+      <dl class="pt-doc-totals" id="slDocTotals"></dl>
+      <label class="pt-field"><span>Note sur le document <small>(facultatif)</small></span><input name="notes" /></label>
+      <p class="pt-form-msg" id="slDocMsg" role="status" hidden></p>
+      <footer>
+        <button type="button" class="pt-link pt-danger" id="slDocDelete" hidden>Supprimer le brouillon</button>
+        <button type="submit" class="pt-btn is-ghost" value="preview">Aperçu</button>
+        <button type="submit" class="pt-btn is-ghost" value="draft">Enregistrer le brouillon</button>
+        <button type="submit" class="pt-btn" value="issue" id="slDocIssue">Émettre la facture</button>
+      </footer>
+      <p class="pt-hint">Une fois émise, une facture reçoit son numéro définitif et ne se modifie plus : on la corrige par un avoir.</p>
+    </form>
+  </dialog>
+
+  <!-- Ventes : article du catalogue -->
+  <dialog class="pt-dialog" id="slItemDialog" aria-labelledby="slItemTitle">
+    <form id="slItemForm" novalidate>
+      <header><h2 id="slItemTitle">Nouvel article</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <div class="pt-form-grid">
+        <label class="pt-field is-wide"><span>Désignation</span><input name="label" required /></label>
+        <label class="pt-field"><span>Prix unitaire HT</span><input name="unit_price_ht" inputmode="decimal" /></label>
+        <label class="pt-field"><span>TVA</span><select name="vat_rate">
+          <option value="20">20 %</option><option value="14">14 %</option><option value="10">10 %</option><option value="7">7 %</option><option value="0">0 %</option></select></label>
+        <label class="pt-field"><span>Unité <small>(facultatif)</small></span><input name="unit" placeholder="heure, kg, pièce…" /></label>
+      </div>
+      <p class="pt-form-msg" id="slItemMsg" role="status" hidden></p>
+      <footer>
+        <button type="button" class="pt-link pt-danger" id="slItemArchive" hidden>Retirer du catalogue</button>
+        <button type="submit" class="pt-btn">Enregistrer</button>
+      </footer>
+    </form>
   </dialog>
 
   <!-- Ventes : fiche client -->
@@ -211,7 +324,7 @@
       periodLabelCap,
       uploadPortalFile,
     } from "./portal-client.js?v=portal3";
-    import { initSalesView, refreshSales, salesLoaded } from "./portal-sales.js?v=sales1";
+    import { initSalesView, refreshSales, salesLoaded } from "./portal-sales.js?v=sales2";
 
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
