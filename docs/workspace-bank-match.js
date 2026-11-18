@@ -3,7 +3,7 @@ import {
   applyPartialPaymentToLineIndices,
   applyPaymentToLineIndices,
   normalizeBankTransactions,
-} from "./bank-statement-client.js?v=bank4";
+} from "./bank-statement-client.js?v=bank5";
 import {
   bankAliasLookup,
   normalizeBankAliasToken,

@@ -224,4 +224,12 @@ assert(
   assert(Math.abs(s.unexplained - 2460) < 0.01, "2460 unexplained");
 }
 
+// --- Libellé avec tirets (« ACHI-BEST-FOOD ») ---
+{
+  const lines = [{ fact_num: "FV26-039149", lib_frss: "Achibest", m_ht: 44003.73, tva: 8800.75, m_ttc: 52804.48, taux: 0.2, date_fac: "2026-09-03", source_file: "a.pdf" }];
+  const t = { id: "c", date: "2026-09-28", label: "PAIEMENT D'UN CHEQUE N° 5595268 EN FAVEUR DE ACHI-BEST-FOOD", amount: -20000, absAmount: 20000, type: "payment" };
+  const r = applyBankStatement([t], lines);
+  assert(r.pendingMatches[0]?.proposals.some((p) => p.kind === "partial"), "dashed label recognised");
+}
+
 console.log("bank-reconcile tests ok");

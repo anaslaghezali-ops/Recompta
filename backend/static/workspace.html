@@ -753,7 +753,7 @@
     async function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
       if (!bankMatchModulePromise) {
-        bankMatchModulePromise = import("./workspace-bank-match.js?v=bankws4");
+        bankMatchModulePromise = import("./workspace-bank-match.js?v=bankws5");
       }
       const { createWorkspaceBankMatch } = await bankMatchModulePromise;
       bankMatchController = createWorkspaceBankMatch({
