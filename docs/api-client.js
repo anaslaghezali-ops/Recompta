@@ -1,11 +1,14 @@
-import { getSession } from "./auth-client.js?v=auth10";
+import { getSession, SUPABASE_ANON_KEY } from "./auth-client.js?v=auth10";
 
 async function requireApiAuthorization() {
   const session = await getSession();
   if (!session?.access_token) {
     throw new Error("Votre session a expiré. Reconnectez-vous puis réessayez.");
   }
-  return { Authorization: `Bearer ${session.access_token}` };
+  return {
+    Authorization: `Bearer ${session.access_token}`,
+    apikey: SUPABASE_ANON_KEY,
+  };
 }
 
 const STORAGE_KEY = "recompta_api_url";
