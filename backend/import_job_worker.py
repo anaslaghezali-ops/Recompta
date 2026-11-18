@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import traceback
 from datetime import datetime, timezone
@@ -724,11 +725,25 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     }
 
 
+async def _release_queue_files(job_id: int, db: SupabaseService) -> None:
+    """Le fichier est déjà copié dans dossier_documents : la copie de file d'attente est inutile."""
+    try:
+        files = await db.fetch_job_files(job_id)
+        await db.delete_storage_files(IMPORT_QUEUE_BUCKET, [f.get("storage_path") for f in files])
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("nettoyage file d'import job %s : %s", job_id, exc)
+
+
 async def process_import_job(job: dict[str, Any], db: SupabaseService) -> dict[str, Any]:
     doc_type = job.get("doc_type") or "invoice"
     if doc_type == "bank":
-        return await process_bank_import_job(job, db)
-    return await process_invoice_import_job(job, db)
+        result = await process_bank_import_job(job, db)
+    else:
+        result = await process_invoice_import_job(job, db)
+    # Un job « failed » garde ses fichiers : il peut être relancé.
+    if (result or {}).get("status") == "completed":
+        await _release_queue_files(int(job["id"]), db)
+    return result
 
 
 # Un seul traitement à la fois par serveur. Le navigateur relance /process toutes

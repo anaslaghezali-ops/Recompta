@@ -242,6 +242,19 @@ class SupabaseService:
         response.raise_for_status()
         return response.content
 
+    async def delete_storage_files(self, bucket: str, paths: list[str]) -> int:
+        """Supprime des fichiers Storage (par lots de 100). Retourne le nombre demandé."""
+        paths = [p for p in paths if p]
+        for start in range(0, len(paths), 100):
+            response = await self.client.request(
+                "DELETE",
+                f"{self.base}/storage/v1/object/{bucket}",
+                headers=service_headers(),
+                json={"prefixes": paths[start:start + 100]},
+            )
+            response.raise_for_status()
+        return len(paths)
+
     async def load_workspace(self, dossier_id: int) -> dict[str, Any]:
         response = await self.client.get(
             f"{self.base}/rest/v1/dossier_workspaces",
