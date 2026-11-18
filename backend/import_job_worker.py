@@ -284,6 +284,14 @@ def extraction_concurrency() -> int:
 _extraction_slots: asyncio.Semaphore | None = None
 _extractions_running = 0
 _logger = logging.getLogger("recompta.import")
+# Afficher ces lignes dans le terminal du serveur (uvicorn ne montre pas
+# les messages INFO des modules de l'application par défaut).
+if not _logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+    _logger.addHandler(_handler)
+    _logger.setLevel(logging.INFO)
+    _logger.propagate = False
 
 
 def extraction_slots() -> asyncio.Semaphore:
