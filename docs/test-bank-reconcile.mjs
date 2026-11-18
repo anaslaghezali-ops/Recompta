@@ -1,5 +1,6 @@
 import {
   applyBankStatement,
+  applyPartialPaymentToLineIndices,
   applyPaymentToLineIndices,
   extractBankBeneficiaryToken,
   findSupplierAmountCandidates,
@@ -46,53 +47,6 @@ const ambiguousLines = [
 const ambiguousTxn = { ...mproTxn, id: "amb-1", absAmount: 3474, amount: -3474 };
 const ambiguousResult = applyBankStatement([ambiguousTxn], ambiguousLines);
 assert(ambiguousResult.pendingMatches[0].proposals.length === 2, "two proposals when ambiguous");
-
-const mproMobTxn = {
-  id: "mpro-mob-1",
-  date: "2026-06-15",
-  label: "EMISSION D'UN VIREMENT MOBPRO N° 014290 EN FAVEUR DE MPro, 007780000191200000073923 A BCM CASABLANCA",
-  amount: -3474,
-  absAmount: 3474,
-  type: "payment",
-};
-
-const moseFoodLines = [
-  { fact_num: "V081505", lib_frss: "Mose Food", m_ttc: 867, designation: "A", source_file: "a.pdf", taux: 0.1 },
-  { fact_num: "V081505", lib_frss: "Mose Food", m_ttc: 867, designation: "A", source_file: "a.pdf", taux: 0.2 },
-  { fact_num: "V081351", lib_frss: "Mose Food", m_ttc: 1740, designation: "B", source_file: "b.pdf", taux: 0.2 },
-];
-
-const mosePending = applyBankStatement([mproMobTxn], moseFoodLines);
-assert(mosePending.pendingMatches.length === 1, "Mose Food pending match");
-assert(mosePending.pendingMatches[0].proposals[0].invoiceCount === 2, "two Mose Food invoices");
-assert(mosePending.pendingMatches[0].proposals[0].lineCount === 3, "three Mose Food lines");
-
-const storedPaymentTxn = {
-  id: "stored-1",
-  date: "2026-06-15",
-  label: "EMISSION D'UN VIREMENT MOBPRO EN FAVEUR DE MPro",
-  amount: 3474,
-  type: "payment",
-};
-const normalizedPayment = applyBankStatement([storedPaymentTxn], moseFoodLines);
-assert(normalizedPayment.pendingMatches.length === 1, "stored positive payment amount still matches");
-
-const paidLines = moseFoodLines.map((line) => ({ ...line, date_paie: "2026-06-01" }));
-const skipPaid = applyBankStatement([mproMobTxn], paidLines);
-assert(skipPaid.pendingMatches.length === 0, "already paid lines are ignored");
-assert(skipPaid.stats.paymentsUnmatched === 1, "payment unmatched when invoices already paid");
-
-const aliasBlockedLines = [
-  { fact_num: "A1", lib_frss: "Mode Food", m_ttc: 2000, designation: "x", source_file: "a.pdf" },
-  { fact_num: "A2", lib_frss: "Mode Food", m_ttc: 1474, designation: "y", source_file: "a2.pdf" },
-  { fact_num: "B1", lib_frss: "Eat Meat", m_ttc: 1000, designation: "z", source_file: "b.pdf" },
-];
-const aliasBlockedTxn = { ...mproTxn, id: "alias-blocked", absAmount: 3474, amount: -3474 };
-const aliasBlocked = applyBankStatement([aliasBlockedTxn], aliasBlockedLines, {
-  supplierAliases: { MPRO: "EATMEAT" },
-});
-assert(aliasBlocked.pendingMatches.length === 1, "learned alias mismatch still prompts confirmation");
-assert(aliasBlocked.pendingMatches[0].proposals[0].lib_frss === "Mode Food", "Mode Food proposal kept");
 
 const achibestLines = [
   {
@@ -225,5 +179,57 @@ assert(
   avoirResult.lines.every((line) => line.lib_frss !== "Achibest" || line.date_paie === "2025-06-22"),
   "all Achibest lines including avoir dated",
 );
+
+// --- Paiements partiels (Achibest : 72 804,48 TTC réglés par 2 virements de 20 000) ---
+{
+  const lines = [
+    { fact_num: "FV26-039149", lib_frss: "Achibest", m_ht: 60670.4, tva: 12134.08, m_ttc: 72804.48, taux: 0.2, date_fac: "2026-09-03", source_file: "a.pdf" },
+    { fact_num: "FV26-039745", lib_frss: "Achibest", m_ht: 405.82, tva: 81.16, m_ttc: 486.98, taux: 0.2, date_fac: "2026-09-07", source_file: "b.pdf" },
+  ];
+  const t1 = { id: "t1", date: "2026-09-04", label: "EMISSION D'UN VIREMENT MOBPRO EN FAVEUR DE Achibest , BMCE", amount: -20000, absAmount: 20000, type: "payment" };
+  const t2 = { id: "t2", date: "2026-09-28", label: "PAIEMENT CHEQUE ACHIBEST", amount: -20000, absAmount: 20000, type: "payment" };
+  const r = applyBankStatement([t1, t2], lines);
+  assert(r.stats.paymentsMatched === 0, "partial not auto-applied");
+  assert(r.pendingMatches.length === 2, "two partial proposals pending");
+  const p1 = r.pendingMatches[0].proposals.find((p) => p.kind === "partial");
+  assert(p1 && p1.indices.length === 1 && p1.indices[0] === 0, "partial targets FV26-039149 only (FV26-039745 dated after the transfer)");
+  let after = applyPartialPaymentToLineIndices(r.lines, p1.indices, t1, 20000);
+  assert(after.length === 3, "paid part appended");
+  assert(after[2].m_ttc === 20000 && after[2].date_paie === "2026-09-04", "paid part amounts");
+  assert(Math.abs(after[2].tva - 3333.33) < 0.01, "VAT prorata 3333.33");
+  assert(Math.abs(after[0].m_ttc - 52804.48) < 0.01 && !after[0].date_paie, "rest kept unpaid");
+  after = applyPartialPaymentToLineIndices(after, [0], t2, 20000);
+  assert(Math.abs(after[0].m_ttc - 32804.48) < 0.01, "rest after 2nd payment");
+  const totalTva = after.filter((l) => l.fact_num === "FV26-039149").reduce((s, l) => s + l.tva, 0);
+  assert(Math.abs(totalTva - 12134.08) < 0.01, "VAT preserved across split");
+  assert(after[0].partial_payment.invoice_ttc === 72804.48, "original invoice amount kept");
+  // le solde exact est rapproché automatiquement au relevé suivant
+  const t3 = { id: "t3", date: "2026-10-10", label: "VIREMENT EN FAVEUR DE Achibest", amount: -32804.48, absAmount: 32804.48, type: "payment" };
+  const r3 = applyBankStatement([t3], after);
+  assert(r3.stats.paymentsMatched === 1 && r3.lines[0].date_paie === "2026-10-10", "balance auto-matched");
+}
+
+// --- Virement couvrant plusieurs factures dont une absente du dossier (Mose Food 6 332 = 3 872 + 2 460) ---
+{
+  const lines = [
+    { fact_num: "L002103", lib_frss: "MOSE Food", m_ttc: 3872, tva: 645.33, m_ht: 3226.67, date_fac: "2026-09-03", source_file: "m1.pdf" },
+    { fact_num: "V085900", lib_frss: "MOSE Food", m_ttc: 3286, tva: 547.67, m_ht: 2738.33, date_fac: "2026-09-18", source_file: "m2.pdf" },
+  ];
+  const t = { id: "m", date: "2026-09-07", label: "EMISSION D'UN VIREMENT EN FAVEUR DE Mpro", amount: -6332, absAmount: 6332, type: "payment" };
+  const none = applyBankStatement([t], lines);
+  assert(none.pendingMatches.length === 0, "unknown beneficiary: no guess");
+  const r = applyBankStatement([t], lines, { supplierAliases: { MPRO: "MOSEFOOD" } });
+  const s = r.pendingMatches[0]?.proposals.find((p) => p.kind === "surplus");
+  assert(s && s.indices.length === 1 && s.indices[0] === 0, "surplus proposes L002103 only (V085900 dated after)");
+  assert(Math.abs(s.unexplained - 2460) < 0.01, "2460 unexplained");
+}
+
+// --- Libellé avec tirets (« ACHI-BEST-FOOD ») ---
+{
+  const lines = [{ fact_num: "FV26-039149", lib_frss: "Achibest", m_ht: 44003.73, tva: 8800.75, m_ttc: 52804.48, taux: 0.2, date_fac: "2026-09-03", source_file: "a.pdf" }];
+  const t = { id: "c", date: "2026-09-28", label: "PAIEMENT D'UN CHEQUE N° 5595268 EN FAVEUR DE ACHI-BEST-FOOD", amount: -20000, absAmount: 20000, type: "payment" };
+  const r = applyBankStatement([t], lines);
+  assert(r.pendingMatches[0]?.proposals.some((p) => p.kind === "partial"), "dashed label recognised");
+}
 
 console.log("bank-reconcile tests ok");

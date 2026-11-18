@@ -69,4 +69,16 @@ const lp = countPendingAnalysis(legacy, workspace);
 assert.equal(lp.invoicePending, 4, "comportement d'origine conservé sans migration");
 assert.equal(lp.invoiceFailed, 0);
 
+// Pièce de vente (portail « Ventes ») : jamais comptée comme facture d'achat non lue.
+{
+  const sale = { ...doc("vente-F-2026-101.pdf"), doc_type: "sale" };
+  const withSale = [...documents, sale];
+  const cs = classifyInvoiceDocuments(withSale, workspace);
+  const all = [...cs.read, ...cs.failed, ...cs.pending, ...cs.ignored, ...cs.settled].map((d) => d.original_filename);
+  assert.ok(!all.includes("vente-F-2026-101.pdf"), "vente exclue du classement des achats");
+  const ps = countPendingAnalysis(withSale, workspace);
+  assert.equal(ps.invoicePending, 2, "la vente ne bloque pas la déclaration");
+  assert.equal(ps.total, 3);
+}
+
 console.log("OK test-unread-documents");

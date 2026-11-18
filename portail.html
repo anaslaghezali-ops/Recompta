@@ -8,7 +8,7 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=portal2" />
+  <link rel="stylesheet" href="portal.css?v=portal3" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="pt">
@@ -27,6 +27,16 @@
     </section>
 
     <div id="ptApp" hidden>
+      <nav class="pt-tabs" role="tablist" aria-label="Rubriques">
+        <button type="button" role="tab" class="pt-tab is-active" id="docsTab" aria-selected="true" aria-controls="ptDocsView" data-view="docs">
+          <i data-lucide="folder-up"></i> Mes documents
+        </button>
+        <button type="button" role="tab" class="pt-tab" id="salesTab" aria-selected="false" aria-controls="ptSalesView" data-view="sales">
+          <i data-lucide="receipt-text"></i> Mes ventes <span class="pt-tab-badge" id="salesTabBadge" hidden></span>
+        </button>
+      </nav>
+
+      <div id="ptDocsView" role="tabpanel" aria-labelledby="docsTab">
       <section class="pt-section" id="ptRequestsSection" hidden>
         <h2>Votre cabinet attend</h2>
         <ul class="pt-requests" id="ptRequests"></ul>
@@ -66,6 +76,32 @@
         <h2 id="ptSentTitle">Documents envoyés</h2>
         <ul class="pt-sent" id="ptSent"></ul>
       </section>
+      </div>
+
+      <div id="ptSalesView" role="tabpanel" aria-labelledby="salesTab" hidden>
+        <section class="pt-section">
+          <div class="pt-stats">
+            <div class="pt-stat"><span id="slCollectedLabel">Encaissé ce mois</span><strong id="slCollected">—</strong><small>paiements reçus</small></div>
+            <div class="pt-stat" id="slOverdueStat"><span>En retard</span><strong id="slOverdue">—</strong><small id="slOverdueNote"></small></div>
+            <div class="pt-stat"><span>Reste à encaisser</span><strong id="slOpen">—</strong><small id="slOpenNote"></small></div>
+          </div>
+        </section>
+
+        <section class="pt-section">
+          <div class="pt-section-head">
+            <h2>Mes factures de vente</h2>
+            <button type="button" class="pt-btn" id="slAddSale"><i data-lucide="plus"></i> Ajouter une facture</button>
+          </div>
+          <div class="pt-chips" id="slFilters" role="group" aria-label="Filtrer les factures"></div>
+          <ul class="pt-sales" id="slList" aria-live="polite"><li class="pt-empty">Chargement…</li></ul>
+        </section>
+
+        <details class="pt-section pt-account" id="slCustomersBox">
+          <summary><span>Mes clients <span id="slCustomerCount"></span></span></summary>
+          <ul class="pt-sent pt-customers" id="slCustomers"></ul>
+          <button type="button" class="pt-btn is-ghost pt-customers-add" id="slAddCustomer"><i data-lucide="user-plus"></i> Ajouter un client</button>
+        </details>
+      </div>
 
       <details class="pt-section pt-account" id="ptAccount" hidden>
         <summary>Mon mot de passe</summary>
@@ -86,6 +122,80 @@
     </div>
   </main>
 
+  <!-- Ventes : saisie rapide d'une facture faite ailleurs -->
+  <dialog class="pt-dialog" id="slSaleDialog" aria-labelledby="slSaleTitle">
+    <form id="slSaleForm" novalidate>
+      <header><h2 id="slSaleTitle">Ajouter une facture de vente</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <div class="pt-form-grid">
+        <label class="pt-field is-wide"><span>Client</span>
+          <select name="customer_id" required></select></label>
+        <button type="button" class="pt-link pt-inline-link" id="slSaleNewCustomer">+ Nouveau client</button>
+        <label class="pt-field"><span>N° de facture</span><input name="external_number" autocomplete="off" required /></label>
+        <label class="pt-field"><span>Date</span><input type="date" name="issue_date" required /></label>
+        <label class="pt-field"><span>Montant HT</span><input name="ht" inputmode="decimal" placeholder="0,00" /></label>
+        <label class="pt-field"><span>TVA</span><input name="vat" inputmode="decimal" placeholder="0,00" /></label>
+        <label class="pt-field"><span>Montant TTC</span><input name="ttc" inputmode="decimal" placeholder="0,00" required /></label>
+        <label class="pt-field"><span>Échéance <small>(facultatif)</small></span><input type="date" name="due_date" /></label>
+        <label class="pt-field is-wide pt-file"><span>Pièce (PDF ou photo, facultatif)</span>
+          <input type="file" name="document" accept="application/pdf,image/*" />
+          <small id="slSaleFileName">Aucune pièce jointe</small></label>
+      </div>
+      <p class="pt-hint">Deux montants suffisent : le troisième est calculé. Sans échéance, le délai du client (ou 30 jours) s'applique.</p>
+      <p class="pt-form-msg" id="slSaleMsg" role="status" hidden></p>
+      <footer>
+        <button type="button" class="pt-link pt-danger" id="slSaleDelete" hidden>Supprimer le brouillon</button>
+        <button type="submit" class="pt-btn is-ghost" value="draft">Enregistrer le brouillon</button>
+        <button type="submit" class="pt-btn" value="validate">Valider</button>
+      </footer>
+      <p class="pt-hint">Une facture validée ne se modifie plus : pour la corriger, on annule l'enregistrement puis on la ressaisit.</p>
+    </form>
+  </dialog>
+
+  <!-- Ventes : détail, paiements -->
+  <dialog class="pt-dialog" id="slDetailDialog" aria-labelledby="slDetailTitle">
+    <div>
+      <header><h2 id="slDetailTitle">Facture</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <div id="slDetailBody" class="pt-detail"></div>
+      <form id="slPayForm" class="pt-pay-form" novalidate>
+        <h3 class="pt-subhead">Enregistrer un paiement</h3>
+        <div class="pt-form-grid">
+          <label class="pt-field"><span>Date</span><input type="date" name="paid_on" required /></label>
+          <label class="pt-field"><span>Montant (MAD)</span><input name="amount" inputmode="decimal" required /></label>
+          <label class="pt-field"><span>Mode</span><select name="method">
+            <option value="virement">Virement</option><option value="cheque">Chèque</option><option value="especes">Espèces</option>
+            <option value="carte">Carte</option><option value="effet">Effet / traite</option><option value="prelevement">Prélèvement</option>
+            <option value="compensation">Compensation</option><option value="autre">Autre</option></select></label>
+          <label class="pt-field"><span>Référence <small>(facultatif)</small></span><input name="reference" placeholder="N° de chèque, virement…" /></label>
+        </div>
+        <button type="submit" class="pt-btn" id="slPaySave">Enregistrer le paiement</button>
+      </form>
+      <p class="pt-form-msg" id="slPayMsg" role="status" hidden></p>
+      <footer>
+        <button type="button" class="pt-btn is-ghost" id="slDocBtn" hidden><i data-lucide="file-text"></i> Voir la pièce</button>
+        <button type="button" class="pt-link pt-danger" id="slVoidBtn" hidden>Annuler l'enregistrement</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- Ventes : fiche client -->
+  <dialog class="pt-dialog" id="slCustomerDialog" aria-labelledby="slCustomerTitle">
+    <form id="slCustomerForm" novalidate>
+      <header><h2 id="slCustomerTitle">Nouveau client</h2><button type="button" class="pt-link" data-close-dialog>Fermer</button></header>
+      <div class="pt-form-grid">
+        <label class="pt-field is-wide"><span>Nom ou raison sociale</span><input name="name" required /></label>
+        <label class="pt-field"><span>ICE <small>(15 chiffres)</small></span><input name="ice" inputmode="numeric" maxlength="20" /></label>
+        <label class="pt-field"><span>IF</span><input name="if_number" /></label>
+        <label class="pt-field is-wide"><span>Adresse</span><input name="address" /></label>
+        <label class="pt-field"><span>Ville</span><input name="city" /></label>
+        <label class="pt-field"><span>Délai de paiement (jours)</span><input name="payment_days" type="number" min="0" max="365" /></label>
+        <label class="pt-field"><span>Email</span><input name="email" type="email" /></label>
+        <label class="pt-field"><span>Téléphone</span><input name="phone" type="tel" /></label>
+      </div>
+      <p class="pt-form-msg" id="slCustomerMsg" role="status" hidden></p>
+      <footer><button type="submit" class="pt-btn" id="slCustomerSave">Enregistrer</button></footer>
+    </form>
+  </dialog>
+
   <script type="module">
     import { getSupabase, signOut } from "./auth-client.js?v=auth10";
     import {
@@ -101,6 +211,7 @@
       periodLabelCap,
       uploadPortalFile,
     } from "./portal-client.js?v=portal3";
+    import { initSalesView, refreshSales, salesLoaded } from "./portal-sales.js?v=sales1";
 
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -264,6 +375,30 @@
       if (resend) return pickFiles({ docType: resend.dataset.resend });
     });
     $("ptPeriod").addEventListener("change", () => { state.periodKey = $("ptPeriod").value; render(); });
+
+    // ---------- Onglets Documents / Ventes ----------
+    async function showView(view) {
+      const sales = view === "sales";
+      $("ptDocsView").hidden = sales;
+      $("ptSalesView").hidden = !sales;
+      for (const tab of document.querySelectorAll(".pt-tab")) {
+        const on = tab.dataset.view === view;
+        tab.classList.toggle("is-active", on);
+        tab.setAttribute("aria-selected", String(on));
+      }
+      $("ptSub").textContent = sales
+        ? "Suivez vos factures de vente : ce qui est payé, ce qui reste à encaisser, ce qui est en retard."
+        : "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable.";
+      if (sales && !salesLoaded()) {
+        try {
+          await refreshSales();
+        } catch (err) {
+          $("slList").innerHTML = `<li class="pt-empty">${esc(err.message)}</li>`;
+        }
+      }
+      history.replaceState(null, "", sales ? "#ventes" : window.location.pathname);
+    }
+    document.querySelectorAll(".pt-tab").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
     const LOGIN_BUTTON = '<p><a class="pt-btn pt-login-btn" href="login.html">Se connecter avec mon email</a></p>';
     $("ptSignOut").addEventListener("click", async () => {
       await signOut();
@@ -323,6 +458,9 @@
       $("ptState").hidden = true;
       $("ptApp").hidden = false;
       render();
+      initSalesView(ctx);
+      if (window.location.hash === "#ventes") await showView("sales");
+      else refreshSales().catch(() => {});
     }
 
     start().catch((err) => showState(err.message || "Une erreur est survenue. Réessayez dans un instant.", { error: true }));

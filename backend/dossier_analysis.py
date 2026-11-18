@@ -293,6 +293,25 @@ async def list_dossier_documents(db: SupabaseService, dossier_id: int, *, doc_ty
     return response.json()
 
 
+def select_pending_invoice_documents(
+    documents: list[dict[str, Any]],
+    lines: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Factures d'achat à lire. Seuls les documents « invoice » comptent : un relevé,
+    une archive ou une pièce d'un autre type (ventes…) n'est jamais envoyé en lecture TVA déductible."""
+    processed_keys = _processed_invoice_keys(lines)
+    source_ids_with_lines = _source_ids_with_lines(lines)
+    return [
+        doc for doc in _working_documents(documents)
+        if (doc.get("doc_type") or "invoice") == "invoice"
+        and not _extraction_settled(doc)
+        and not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
+        and not _should_skip_zip_for_analysis(
+            doc, documents, processed_keys, source_ids_with_lines,
+        )
+    ]
+
+
 async def queue_dossier_analysis(
     dossier_id: int,
     *,
@@ -308,18 +327,7 @@ async def queue_dossier_analysis(
         documents = await list_dossier_documents(db, dossier_id, doc_type=doc_type)
 
         if doc_type == "invoice":
-            lines = list(workspace.get("lines") or [])
-            processed_keys = _processed_invoice_keys(lines)
-            source_ids_with_lines = _source_ids_with_lines(lines)
-            pending = [
-                doc for doc in _working_documents(documents)
-                if (doc.get("doc_type") or "") != "archive"
-                and not _extraction_settled(doc)
-                and not _is_invoice_processed(doc, processed_keys, source_ids_with_lines)
-                and not _should_skip_zip_for_analysis(
-                    doc, documents, processed_keys, source_ids_with_lines,
-                )
-            ]
+            pending = select_pending_invoice_documents(documents, list(workspace.get("lines") or []))
         elif doc_type == "bank":
             pending = [doc for doc in documents if not _is_bank_processed(doc, workspace)]
         else:
