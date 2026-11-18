@@ -1,4 +1,4 @@
-import { loadClientSupplierNotebook } from "./suppliers-client.js?v=sup2";
+import { loadClientSupplierNotebook } from "./suppliers-client.js?v=sup3";
 import { escapeHtml } from "./dashboard-ui.js?v=bill1";
 
 function formatAmount(value) {
