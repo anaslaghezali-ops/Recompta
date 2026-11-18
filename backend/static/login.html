@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Connexion — Recompta</title>
   <meta name="robots" content="noindex" />
-  <link rel="stylesheet" href="login.css?v=scale2" />
+  <link rel="stylesheet" href="login.css?v=scale3" />
 </head>
 <body class="auth">
   <div class="auth-layout">
@@ -28,7 +28,7 @@
         <!-- Connexion -->
         <section id="viewSignIn" data-view>
           <h1>Connexion</h1>
-          <p class="auth-lead">Accédez aux dossiers de votre cabinet.</p>
+          <p class="auth-lead">Connectez-vous à votre espace Recompta.</p>
           <form class="form" id="signInForm" novalidate>
             <label class="field">
               <span>Email</span>
@@ -48,7 +48,10 @@
             <button id="signInBtn" class="btn btn-primary" type="submit">Se connecter</button>
           </form>
           <p class="auth-switch">Pas encore de compte ? <a href="login.html?mode=signup" data-go="signup">Créer l'espace de votre cabinet</a></p>
-          <p class="auth-switch auth-client-note">Vous êtes client d'un cabinet ? Connectez-vous avec l'email et le mot de passe transmis par votre cabinet : vous arriverez directement dans votre espace documents.</p>
+          <div class="auth-client-note">
+            <strong>Vous êtes client d'un cabinet ?</strong>
+            <p>Connectez-vous ci-dessus avec l'email et le mot de passe transmis par votre cabinet : vous arriverez directement dans votre espace pour déposer vos documents.</p>
+          </div>
         </section>
 
         <!-- Inscription -->
