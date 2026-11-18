@@ -406,6 +406,142 @@ export function findSupplierAmountCandidates(groups, usedGroupKeys, debitAmount)
   return candidates.slice(0, 3);
 }
 
+function groupInvoiceDate(group, lines) {
+  const dates = group.indices.map((idx) => String(lines[idx]?.date_fac || "").slice(0, 10)).filter(Boolean);
+  return dates.sort()[0] || "";
+}
+
+function groupIsNotAfter(group, lines, txnDate) {
+  const date = groupInvoiceDate(group, lines);
+  return !date || !txnDate || date <= txnDate;
+}
+
+/**
+ * Virement d'un fournisseur identifié qui ne correspond à aucune combinaison exacte :
+ * - paiement partiel d'une facture plus élevée (acompte, échéancier) ;
+ * - paiement de plusieurs factures + un reste non justifié (facture absente du dossier ?).
+ * Ces propositions sont toujours soumises à validation.
+ */
+export function findPartialPaymentProposals(groups, usedGroupKeys, supplierKeys, debitAmount, lines, txnDate = "") {
+  const proposals = [];
+  for (const supplierKey of supplierKeys) {
+    const supplierGroups = groups.filter(
+      (group) =>
+        !usedGroupKeys.has(group.key)
+        && group.totalTtc > 0
+        && supplierNameKey(group.lib_frss) === supplierKey
+        && groupIsNotAfter(group, lines, txnDate),
+    );
+    if (!supplierGroups.length) continue;
+
+    supplierGroups
+      .filter((group) => group.totalTtc - debitAmount > AMOUNT_TOLERANCE)
+      .sort((a, b) => groupInvoiceDate(a, lines).localeCompare(groupInvoiceDate(b, lines)))
+      .slice(0, 2)
+      .forEach((group) => {
+        proposals.push({
+          kind: "partial",
+          supplierKey,
+          lib_frss: group.lib_frss,
+          groupKeys: [group.key],
+          indices: [...group.indices],
+          invoiceCount: 1,
+          lineCount: group.indices.length,
+          totalTtc: group.totalTtc,
+          paidAmount: roundMoney(debitAmount),
+          remaining: roundMoney(group.totalTtc - debitAmount),
+        });
+      });
+
+    if (supplierGroups.length <= 16) {
+      const subsets = [];
+      const count = supplierGroups.length;
+      for (let mask = 1; mask < 1 << count; mask += 1) {
+        const subset = [];
+        let sum = 0;
+        for (let i = 0; i < count; i += 1) {
+          if (mask & (1 << i)) {
+            subset.push(supplierGroups[i]);
+            sum += supplierGroups[i].totalTtc;
+          }
+        }
+        if (debitAmount - sum > AMOUNT_TOLERANCE) subsets.push({ subset, sum: roundMoney(sum) });
+      }
+      subsets
+        .sort((a, b) => b.sum - a.sum)
+        .slice(0, 2)
+        .forEach(({ subset, sum }) => {
+          const indices = [];
+          subset.forEach((group) => group.indices.forEach((idx) => indices.push(idx)));
+          proposals.push({
+            kind: "surplus",
+            supplierKey,
+            lib_frss: subset[0].lib_frss,
+            groupKeys: subset.map((group) => group.key),
+            indices,
+            invoiceCount: subset.length,
+            lineCount: indices.length,
+            totalTtc: sum,
+            unexplained: roundMoney(debitAmount - sum),
+          });
+        });
+    }
+  }
+  return proposals;
+}
+
+/**
+ * Paiement partiel : les lignes de la facture sont scindées au prorata du montant payé.
+ * La partie payée est ajoutée en fin de tableau (les index existants restent valides),
+ * le reste garde sa place, sans date de paiement, en attente du prochain règlement.
+ * Retourne une copie des lignes.
+ */
+export function applyPartialPaymentToLineIndices(lines, indices, txn, paidAmount) {
+  const updated = lines.map((line) => ({ ...line }));
+  const valid = indices.filter((idx) => updated[idx]);
+  const groupTtc = valid.reduce((sum, idx) => sum + (Number(updated[idx].m_ttc) || 0), 0);
+  if (!(groupTtc > 0) || !(paidAmount > 0) || paidAmount >= groupTtc) {
+    applyPaymentToLineIndices(updated, valid, txn);
+    return updated;
+  }
+  const ratio = paidAmount / groupTtc;
+  const paidLines = [];
+  let paidTtcSum = 0;
+  valid.forEach((idx, position) => {
+    const line = updated[idx];
+    const ht = Number(line.m_ht) || 0;
+    const tva = Number(line.tva) || 0;
+    const ttc = Number(line.m_ttc) || 0;
+    const invoiceTtc = line.partial_payment?.invoice_ttc ?? roundMoney(groupTtc);
+    let paidTtc = roundMoney(ttc * ratio);
+    if (position === valid.length - 1) paidTtc = roundMoney(paidAmount - paidTtcSum);
+    paidTtcSum = roundMoney(paidTtcSum + paidTtc);
+    const lineRatio = ttc ? paidTtc / ttc : ratio;
+    const paidTva = roundMoney(tva * lineRatio);
+    const paidHt = roundMoney(paidTtc - paidTva);
+    paidLines.push({
+      ...line,
+      m_ht: paidHt,
+      tva: paidTva,
+      m_ttc: paidTtc,
+      date_paie: txn.date,
+      id_paie: 4,
+      date_paie_from_bank: true,
+      partial_payment: { invoice_ttc: invoiceTtc, part: "paid", txn_id: txn.id || "" },
+    });
+    updated[idx] = {
+      ...line,
+      m_ht: roundMoney(ht - paidHt),
+      tva: roundMoney(tva - paidTva),
+      m_ttc: roundMoney(ttc - paidTtc),
+      date_paie: "",
+      date_paie_from_bank: false,
+      partial_payment: { invoice_ttc: invoiceTtc, part: "rest" },
+    };
+  });
+  return [...updated, ...paidLines];
+}
+
 export function applyPaymentToLineIndices(lines, indices, txn) {
   for (const index of indices) {
     if (!lines[index]) continue;
@@ -567,12 +703,22 @@ export function applyBankStatement(
     }
 
     const amountCandidates = findSupplierAmountCandidates(groups, usedGroupKeys, debitAmount);
-    if (amountCandidates.length > 0) {
+    const partialCandidates = findPartialPaymentProposals(
+      groups,
+      usedGroupKeys,
+      supplierKeys,
+      debitAmount,
+      updated,
+      txn.date,
+    );
+    const allCandidates = [...amountCandidates, ...partialCandidates];
+    if (allCandidates.length > 0) {
       pendingMatches.push({
         txn,
         bankToken: extractBankBeneficiaryToken(txn.label),
-        proposals: amountCandidates.map((candidate, index) => ({
+        proposals: allCandidates.map((candidate, index) => ({
           id: `p${index}`,
+          kind: candidate.kind || "exact",
           ...candidate,
         })),
       });

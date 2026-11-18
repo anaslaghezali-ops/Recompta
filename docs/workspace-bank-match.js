@@ -1,8 +1,9 @@
 import {
   applyBankStatement,
+  applyPartialPaymentToLineIndices,
   applyPaymentToLineIndices,
   normalizeBankTransactions,
-} from "./bank-statement-client.js?v=bank3";
+} from "./bank-statement-client.js?v=bank4";
 import {
   bankAliasLookup,
   normalizeBankAliasToken,
@@ -63,6 +64,11 @@ export function createWorkspaceBankMatch({
     return (item.proposals || []).filter((proposal) =>
       proposal.indices.every((index) => !lines[index]?.date_paie_from_bank),
     );
+  }
+
+  function currentTtc(indices) {
+    const total = indices.reduce((sum, index) => sum + (Number(lines[index]?.m_ttc) || 0), 0);
+    return Math.round(total * 100) / 100;
   }
 
   function bankTxnPosition(txn) {
@@ -131,12 +137,22 @@ export function createWorkspaceBankMatch({
           const invoiceLabel = proposal.invoiceCount === 1
             ? "1 facture"
             : `${proposal.invoiceCount} factures (${proposal.lineCount} lignes)`;
+          let detail = `${invoiceLabel} — total ${formatMad(proposal.totalTtc)} MAD`;
+          if (proposal.kind === "partial") {
+            const due = currentTtc(proposal.indices);
+            const paid = Number(item.txn.absAmount) || 0;
+            detail = `Paiement partiel de ${formatMad(paid)} MAD sur ${formatMad(due)} MAD`
+              + ` — reste ${formatMad(Math.max(0, due - paid))} MAD à payer. La TVA est déduite au prorata.`;
+          } else if (proposal.kind === "surplus") {
+            detail = `${invoiceLabel} — total ${formatMad(proposal.totalTtc)} MAD.`
+              + ` ${formatMad(proposal.unexplained)} MAD du virement ne correspondent à aucune facture du dossier (facture manquante ?).`;
+          }
           return `
             <label class="bank-match-option">
               <input type="radio" name="bankProposal" value="${escapeHtml(proposal.id)}" ${index === 0 ? "checked" : ""} />
               <div>
                 <strong>${escapeHtml(proposal.lib_frss)}</strong>
-                ${invoiceLabel} — total ${formatMad(proposal.totalTtc)} MAD
+                ${escapeHtml(detail)}
               </div>
             </label>
           `;
@@ -211,7 +227,11 @@ export function createWorkspaceBankMatch({
     if (els.confirmBtn) els.confirmBtn.disabled = true;
     try {
       const { clientIce } = getContext() || {};
-      applyPaymentToLineIndices(lines, proposal.indices, item.txn);
+      if (proposal.kind === "partial") {
+        lines = applyPartialPaymentToLineIndices(lines, proposal.indices, item.txn, Number(item.txn.absAmount) || 0);
+      } else {
+        applyPaymentToLineIndices(lines, proposal.indices, item.txn);
+      }
       const bankToken = item.bankToken || normalizeBankAliasToken(item.txn.label);
       if (els.learnAlias?.checked && bankToken) {
         saveBankAlias(clientIce, bankToken, proposal.supplierKey, proposal.lib_frss);

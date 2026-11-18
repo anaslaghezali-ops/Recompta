@@ -1648,15 +1648,19 @@ function duplicateSignatures(line) {
   const sourceId = String(line.source_id || "").trim();
   const isBankFee = String(line.designation || "").toUpperCase().includes("FRAIS BANCAIRE");
 
+  // Paiements partiels d'une même facture : une ligne par règlement, pas des doublons.
+  const partial = line.partial_payment
+    ? `|pp:${line.partial_payment.part || ""}:${line.partial_payment.txn_id || ""}:${line.date_paie || ""}`
+    : "";
   const keys = [];
   if (supplier && factNum) {
-    keys.push(`fact:${supplier}|${factNum}|${taux}|${ttc}`);
+    keys.push(`fact:${supplier}|${factNum}|${taux}|${ttc}${partial}`);
   }
   if (sourceId && factNum) {
-    keys.push(`sid:${sourceId}|${factNum}|${taux}|${ttc}`);
+    keys.push(`sid:${sourceId}|${factNum}|${taux}|${ttc}${partial}`);
   }
   if (!isBankFee && source && factNum && ttc !== 0) {
-    keys.push(`file:${source}|${factNum}|${taux}|${ttc}`);
+    keys.push(`file:${source}|${factNum}|${taux}|${ttc}${partial}`);
   }
   if (!isBankFee && !factNum && source && date && ttc !== 0) {
     keys.push(`filedate:${source}|${date}|${ttc}`);

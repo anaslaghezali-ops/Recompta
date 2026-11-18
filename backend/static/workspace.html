@@ -753,7 +753,7 @@
     async function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
       if (!bankMatchModulePromise) {
-        bankMatchModulePromise = import("./workspace-bank-match.js?v=bankws3");
+        bankMatchModulePromise = import("./workspace-bank-match.js?v=bankws4");
       }
       const { createWorkspaceBankMatch } = await bankMatchModulePromise;
       bankMatchController = createWorkspaceBankMatch({
@@ -1066,7 +1066,7 @@
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
       if (!reviewModulePromise) {
-        reviewModulePromise = import("./workspace-review.js?v=review16");
+        reviewModulePromise = import("./workspace-review.js?v=review17");
       }
       const { createWorkspaceReview } = await reviewModulePromise;
       reviewController = createWorkspaceReview({
@@ -1154,7 +1154,7 @@
       const panel = document.getElementById("suppliersPanel");
       if (!panel) return null;
       if (!suppliersModulePromise) {
-        suppliersModulePromise = import("./workspace-suppliers.js?v=sup2");
+        suppliersModulePromise = import("./workspace-suppliers.js?v=sup3");
       }
       const { createWorkspaceSuppliers } = await suppliersModulePromise;
       suppliersController = createWorkspaceSuppliers({
