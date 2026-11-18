@@ -288,6 +288,10 @@ function buildInvoiceGroups(lines, usedLineIndices = new Set()) {
   return [...groups.values()];
 }
 
+function compactText(value) {
+  return normalizeText(value).replace(/[^A-Z0-9]/g, "");
+}
+
 function labelScore(label, libFrss, factNum) {
   const hay = normalizeText(label);
   let score = 0;
@@ -296,6 +300,11 @@ function labelScore(label, libFrss, factNum) {
     supplier.split(/\s+/).filter((w) => w.length > 3).forEach((word) => {
       if (hay.includes(word)) score += 2;
     });
+    // Libellés bancaires écrits avec tirets ou espaces : « ACHI-BEST-FOOD » = Achibest.
+    if (!score) {
+      const key = supplierNameKey(libFrss);
+      if (key.length >= 5 && compactText(label).includes(key)) score += 2;
+    }
   }
   if (factNum && hay.includes(normalizeText(factNum))) score += 3;
   return score;
@@ -348,7 +357,9 @@ function supplierKeysFromLabel(label, groups, lines, usedLineIndices, supplierAl
   });
 
   for (const [bankToken, supplierKey] of Object.entries(supplierAliases || {})) {
-    if (bankToken && supplierKey && hay.includes(bankToken)) keys.add(supplierKey);
+    if (bankToken && supplierKey && (hay.includes(bankToken) || compactText(label).includes(bankToken))) {
+      keys.add(supplierKey);
+    }
   }
 
   return keys;
