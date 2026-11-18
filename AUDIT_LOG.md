@@ -153,3 +153,37 @@ Chaque changement doit avoir une section datée contenant :
 8. état de validation par rapport à `main2`.
 
 Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord explicite de l'utilisateur, l'appliquer uniquement après validation, puis vérifier le résultat et consigner le SHA/fichier de migration et les tests. Ne jamais modifier la base de production pendant une phase d'audit.
+
+
+## 2026-11-18 — Lot de corrections préparé sur main2-chatgpt
+
+### GitHub — modifications de code
+
+- Branche : `main2-chatgpt` uniquement.
+- Commits de travail : `b4a0af9`, `5a48534`, `7e09fbc`, `78ceb87`, `a4ec5e4`, `174503d`, `d4994ea`, `efcbab7`, `1f06b41`, `fbfc971`, `9006768`.
+- Fichiers modifiés :
+  - `backend/zip_utils.py` : limites de taille archive/document, nombre d'entrées, volume décompressé, ratio de compression, rejet des chemins traversants, liens symboliques et archives chiffrées.
+  - `backend/main.py` : lecture des uploads par blocs avec plafond ; contrôle d'identité pour upload de job, analyse de dossier et déclenchement du worker.
+  - `backend/request_auth.py` : validation du JWT par l'endpoint Auth Supabase et vérification d'accès par requêtes PostgREST soumises aux RLS.
+  - `backend/import_job_queue.py` : contrôle de cohérence du dossier entre la lecture RLS du job et l'opération privilégiée Service Role.
+  - `docs/api-client.js` : envoi du JWT utilisateur et de la clé publique Supabase sur les routes protégées ; messages distincts pour session expirée et droits insuffisants.
+  - `backend/scripts/test_zip_security.py` : tests de traversée de chemin, chemins absolus/Windows, ratio ZIP, taille individuelle et archive normale.
+  - `supabase/tests/test_sales_phase2.sql` : tests de déplacement interdit depuis une facture émise et de recalcul des deux brouillons lors d'un déplacement.
+- Compatibilité : les routes historiques `/api/extract` et `/api/import-bank-statement` restent accessibles sans session à ce stade afin de ne pas casser les anciens parcours ; leurs uploads sont désormais bornés. Leur protection contre l'abus doit être traitée séparément.
+- Aucun déploiement du backend effectué.
+- Tests : fichiers de test ajoutés ; exécution CI complète et tests en environnement isolé encore en attente. Aucun test de facturation n'a été exécuté sur les données réelles.
+
+### Supabase — migration préparée, application en attente
+
+- Fichier ajouté : `supabase/migrations/20261118221000_fix_billing_line_reassignment.sql`.
+- Objet : vérifier les factures OLD et NEW dans le trigger de garde et recalculer les deux factures brouillon après déplacement d'une ligne ; le trigger de recalcul couvre également DELETE.
+- Migration préparée à partir de la définition réelle des triggers de `public.invoice_lines` observée sur le projet connecté.
+- État au moment de cette entrée : **fichier GitHub préparé ; migration non appliquée à Supabase**.
+- Aucun autre objet Supabase (table, donnée, policy, bucket, Auth, Edge Function) modifié.
+- Application et vérification post-migration à consigner dans une entrée séparée après exécution.
+
+### Limites et déploiement
+
+- Les modifications de sécurité des routes nécessitent le redéploiement du backend et la mise à jour du frontend depuis `main2-chatgpt` pour prendre effet.
+- Le backend doit continuer à pointer vers le projet Supabase attendu ; la clé publique transmise par le navigateur est uniquement utilisée comme clé de projet, tandis que le JWT utilisateur porte l'identité et déclenche l'application des RLS.
+- Ne pas déployer ce lot avant validation des tests et vérification de la configuration réelle du service backend.
