@@ -22,6 +22,7 @@ set role authenticated;
 
 do $$
 declare cust bigint; inv bigint; q bigint; r record; failed boolean; tok text; doc jsonb; item bigint;
+  move_draft_a bigint; move_draft_b bigint; move_line bigint;
 begin
   insert into public.client_customers (issuer_client_id, name, ice, payment_days)
   values (9311, 'Client P2', '007777777000077', 60) returning id into cust;
@@ -66,6 +67,36 @@ begin
   failed := false;
   begin update public.invoices set share_token = repeat('x', 64) where id = inv; exception when others then failed := true; end;
   assert failed, 'jeton non modifiable à la main';
+
+  -- Déplacement interdit depuis une facture émise vers un brouillon
+  insert into public.invoices (issuer_client_id, customer_id, origin, issue_date)
+  values (9311, cust, 'created', date '2026-11-11') returning id into move_draft_a;
+  insert into public.invoice_lines (invoice_id, label, quantity, unit_price_ht, vat_rate)
+  values (move_draft_a, 'Brouillon cible', 1, 100, 20);
+  select id into move_line from public.invoice_lines where invoice_id = inv order by id limit 1;
+  failed := false;
+  begin
+    update public.invoice_lines set invoice_id = move_draft_a where id = move_line;
+  exception when others then failed := true;
+  end;
+  assert failed, 'ligne d''une facture émise impossible à déplacer vers un brouillon';
+  assert (select invoice_id = inv from public.invoice_lines where id = move_line), 'ligne émise conservée sur sa facture';
+  assert (select total_ttc = 120 from public.invoices where id = move_draft_a), 'total du brouillon cible inchangé après refus';
+
+  -- Déplacement entre deux brouillons : recalcul des deux factures
+  insert into public.invoices (issuer_client_id, customer_id, origin, issue_date)
+  values (9311, cust, 'created', date '2026-11-11') returning id into move_draft_a;
+  insert into public.invoices (issuer_client_id, customer_id, origin, issue_date)
+  values (9311, cust, 'created', date '2026-11-11') returning id into move_draft_b;
+  insert into public.invoice_lines (invoice_id, label, quantity, unit_price_ht, vat_rate)
+  values (move_draft_a, 'Ligne mobile', 1, 100, 20);
+  insert into public.invoice_lines (invoice_id, label, quantity, unit_price_ht, vat_rate)
+  values (move_draft_b, 'Ligne conservée', 1, 50, 20);
+  select id into move_line from public.invoice_lines
+  where invoice_id = move_draft_a and label = 'Ligne mobile';
+  update public.invoice_lines set invoice_id = move_draft_b where id = move_line;
+  assert (select total_ttc = 0 from public.invoices where id = move_draft_a), 'ancien brouillon recalculé après déplacement';
+  assert (select total_ttc = 180 from public.invoices where id = move_draft_b), 'nouveau brouillon recalculé après déplacement';
 
   -- Lien public
   tok := public.sales_share_token(inv);
