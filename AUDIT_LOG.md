@@ -282,3 +282,16 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - PR #169 : reste en brouillon, non fusionnée ; sa branche source suit les nouveaux commits.
 - `main2` et `main3-chatgpt` : non modifiées. Aucun merge effectué.
 - Limites restantes : CORS autorise encore toutes les origines ; les routes legacy authentifient l'utilisateur mais ne lient pas encore la requête à un dossier via RLS ; l'audit des permissions de tous les endpoints admin et des fonctions SECURITY DEFINER reste à poursuivre.
+
+
+### 2026-11-19 — Ajustement du test et première exécution CI du lot 1
+
+- Commit complémentaire : `4df73efb2fdd94823869f57b101473710c069d87`.
+- Fichier : `backend/scripts/test_admin_saas_auth.py`.
+- Première exécution CI du lot : run `44427016037` (commit `f2c32d7ed93ee5862b01692dc2a3462bed179cdb`).
+  - Job SQL : succès.
+  - Job Python : échec dès le nouveau script de test, car le chemin du dossier `backend` n'était pas ajouté à `sys.path` lors de l'exécution directe par le workflow.
+  - Cause identifiée dans les logs : `ModuleNotFoundError: No module named 'admin_saas'`.
+- Correction : ajout du dossier backend à `sys.path`, selon le même modèle que le test existant `test_request_auth.py`.
+- Validation après correction : commit poussé sur la branche source de la PR #169 ; nouvelle exécution CI à vérifier. Aucun autre changement de code dans ce correctif.
+- Aucun déploiement ni changement Supabase.
