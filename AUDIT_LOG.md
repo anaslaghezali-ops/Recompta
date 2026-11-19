@@ -187,3 +187,30 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Les modifications de sécurité des routes nécessitent le redéploiement du backend et la mise à jour du frontend depuis `main2-chatgpt` pour prendre effet.
 - Le backend doit continuer à pointer vers le projet Supabase attendu ; la clé publique transmise par le navigateur est uniquement utilisée comme clé de projet, tandis que le JWT utilisateur porte l'identité et déclenche l'application des RLS.
 - Ne pas déployer ce lot avant validation des tests et vérification de la configuration réelle du service backend.
+
+
+### 2026-11-18 — Application et vérification de la migration Supabase
+
+- Projet : `pbyoxfxngfutoiqjirkx` (`chicknster@gmail.com's Project`).
+- Migration appliquée via Supabase : `fix_billing_line_reassignment`.
+- Version effectivement enregistrée par Supabase : `20261118235947`.
+- Fichier GitHub aligné sur cette version : `supabase/migrations/20261118235947_fix_billing_line_reassignment.sql`.
+- Vérification SQL après application :
+  - `private.billing_lines_guard()` vérifie le statut de la facture source OLD et de la destination NEW pour UPDATE.
+  - `invoice_lines_totals` est bien un trigger AFTER INSERT OR UPDATE OR DELETE.
+  - `private.billing_lines_after()` recalcule la facture d'origine lors d'un déplacement, puis la facture de destination.
+  - La migration apparaît dans `supabase_migrations.schema_migrations` avec la version ci-dessus.
+- Données métier : aucune ligne de facture, facture, client ou document n'a été modifiée par cette migration ; seules les définitions de fonctions/triggers et l'historique de migration ont changé.
+- Tests SQL métier : le test de régression est ajouté dans `supabase/tests/test_sales_phase2.sql`, mais n'a pas encore été exécuté sur une base de test isolée. Aucun test destructif n'a été exécuté sur la base de production.
+- Supabase Advisors après migration :
+  - Les alertes de sécurité restantes incluent 1 fonction publique `SECURITY DEFINER` destinée au partage public, 22 fonctions `SECURITY DEFINER` accessibles à `authenticated`, et la protection des mots de passe compromis désactivée.
+  - Les alertes de performance restantes incluent 20 clés étrangères sans index couvrant, 14 index inutilisés, 23 cas de politiques permissives qui se chevauchent et l'absence de clé primaire sur `billing_counters` (un index unique fonctionnel est toutefois présent).
+  - Ces alertes ne sont pas automatiquement des vulnérabilités ; elles nécessitent une revue dédiée. Aucun de ces points n'a été modifié dans cette migration.
+
+### 2026-11-18 — Vérification des tests et limites du lot
+
+- Le scénario ZIP de sécurité a été exécuté dans un environnement Python isolé sur une copie du code : chemins traversants/absolus/Windows refusés, ratio ZIP anormal refusé, fichier trop volumineux refusé et ZIP normal accepté.
+- La suite complète `.github/workflows/tests.yml` n'a pas été déclenchée : le workflow est configuré sur pull request ou push vers `main`, pas sur un push de branche de travail.
+- Aucun déploiement frontend/backend n'a été effectué.
+- Les corrections d'authentification API ne prennent effet qu'après déploiement coordonné de `backend/` et `docs/` depuis `main2-chatgpt`.
+- La migration Supabase est appliquée ; les corrections du backend et du frontend restent uniquement sur la branche de travail.
