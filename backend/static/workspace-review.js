@@ -39,7 +39,7 @@ import {
   hasSourceFile,
   registerSourceFile,
   showLinePreview,
-} from "./document-preview.js?v=preview9";
+} from "./document-preview.js?v=s6a";
 import { rememberOfficialSupplierName } from "./suppliers-client.js?v=sup3";
 import { periodToMmaaaa } from "./dossiers-client.js?v=dash3";
 import { escapeHtml } from "./dashboard-ui.js?v=bill1";

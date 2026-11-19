@@ -616,9 +616,9 @@
       waitForDossierAnalysisComplete,
       startImportCompletionWatcher,
       importJobPageUrl,
-    } from "./import-jobs-client.js?v=sec1";
+    } from "./import-jobs-client.js?v=s6a";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=sec1";
-    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=perf3";
+    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=s6a";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -1078,7 +1078,7 @@
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
       if (!reviewModulePromise) {
-        reviewModulePromise = import("./workspace-review.js?v=perf3");
+        reviewModulePromise = import("./workspace-review.js?v=s6a");
       }
       const { createWorkspaceReview } = await reviewModulePromise;
       reviewController = createWorkspaceReview({

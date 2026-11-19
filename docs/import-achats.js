@@ -11,7 +11,7 @@ import {
   cacheSourceFiles,
   parseSourceFilename,
   tagSourceFilename,
-} from "./document-preview.js?v=preview8";
+} from "./document-preview.js?v=s6a";
 import {
   extractViaServer,
   ensureImportWorkerRunning,
@@ -32,7 +32,7 @@ import {
   listImportJobs,
   startImportJobPolling,
   startInvoiceImportUpload,
-} from "./import-jobs-client.js?v=sec1";
+} from "./import-jobs-client.js?v=s6a";
 import {
   createWorkspaceSaver,
   formatFileSize,

@@ -41,7 +41,7 @@ import {
   parseSourceFilename,
   showLinePreview,
   tagSourceFilename,
-} from "./document-preview.js?v=preview8";
+} from "./document-preview.js?v=s6a";
 import {
   extractViaServer,
   fetchServerHealth,

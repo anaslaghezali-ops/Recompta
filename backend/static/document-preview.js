@@ -9,6 +9,7 @@ import {
   parseSourceFilename,
   tagSourceFilename,
 } from "./source-id.js?v=preview6";
+import { escapeHtml } from "./dashboard-ui.js?v=bill1";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
@@ -210,7 +211,7 @@ function renderLineIssues(container, line) {
   issues.sort((a, b) => (a.level === "error" ? 0 : 1) - (b.level === "error" ? 0 : 1));
   container.hidden = false;
   container.innerHTML = `<p class="preview-issues-title">Champs à relire sur cette ligne</p><ul>${issues
-    .map((issue) => `<li class="preview-issue preview-${issue.level}">${issue.text}</li>`)
+    .map((issue) => `<li class="preview-issue preview-${escapeHtml(issue.level)}">${escapeHtml(issue.text)}</li>`)
     .join("")}</ul>`;
 }
 
