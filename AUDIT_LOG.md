@@ -326,3 +326,18 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Le contexte de crédits IA et les exclusions ICE sont libérés dans un bloc `finally`, y compris en cas d'échec du traitement.
 - Tests : vérification de l'itérateur progressif et test worker de bout en bout sur la taille de lot configurée. GitHub Actions run `44434178914`, commit `417dd4b1898d99111fde2922d1326d3d3053d3c4` : jobs `tests` et `sql` terminés avec succès ; `test_worker_zip_batches` et `test_zip_security` confirmés verts.
 - Aucun changement Supabase, aucune fusion et aucun déploiement.
+
+
+### 2026-11-19 — Réduction des privilèges SQL excessifs sur les tables publiques
+
+- Projet Supabase : `pbyoxfxngfutoiqjirkx` (PostgreSQL 17).
+- Migration appliquée et enregistrée : `20261119011756_revoke_excess_public_table_privileges`.
+- Fichier versionné sur `main2-chatgpt` : `supabase/migrations/20261119011756_revoke_excess_public_table_privileges.sql`.
+- Tables ciblées : `user_roles`, `cabinet_members`, `cabinet_vision_credits`, `platform_settings`, `invoices`, `invoice_lines`, `invoice_payments`.
+- Correction : révocation de `TRUNCATE`, `REFERENCES`, `TRIGGER` et `MAINTAIN` pour `anon` et `authenticated`. Les droits CRUD (`SELECT/INSERT/UPDATE/DELETE`) n'ont pas été modifiés ; les politiques RLS existantes n'ont pas été modifiées.
+- Vérification post-migration : `has_table_privilege` retourne `false` pour les quatre privilèges révoqués sur les 7 tables et les deux rôles ; les quatre droits CRUD restent `true`. La version `20261119011756` apparaît dans `supabase_migrations.schema_migrations`.
+- Limite : la tentative de corriger les privilèges par défaut pour les futures tables a échoué avec `permission denied to change default privileges` ; cette partie a été annulée et n'a pas été appliquée. Les privilèges par défaut restent à traiter avec un rôle autorisé (propriétaire concerné). La migration appliquée ne prétend donc corriger que les 7 tables existantes.
+- Contrôles RLS relus : les tables d'administration restent réservées aux rôles/fonctions attendus par les policies ; aucune policy ni donnée métier n'a été modifiée.
+- Supabase Advisors : alertes SECURITY DEFINER toujours présentes (1 fonction publique de partage et 22 fonctions accessibles à `authenticated`, à auditer au niveau de leurs gardes internes) ; la protection des mots de passe compromis reste désactivée. Aucun changement Auth.
+- Tests : vérification SQL post-migration réussie ; aucun test applicatif ou scénario API n'a été exécuté, car la migration ne change que les privilèges SQL. Aucun test destructif sur les données métier.
+- Déploiement : aucun. Fusion : aucune. `main2` et `main3-chatgpt` non modifiées. `production.html` non modifié.
