@@ -216,7 +216,7 @@ export function createWorkspaceSales({ mountEl, getContext, toast }) {
     }
     const empty = !state.sales.length;
     mountEl.innerHTML = `
-      ${empty ? `<section class="rc-panel"><p class="rc-portal-empty">${esc(ctx().clientName || "Ce client")} n'a encore aucune vente dans son registre. Il les saisit depuis son portail (onglet « Mes ventes »).</p></section>` : ""}
+      ${empty ? `<section class="rc-panel"><p class="rc-portal-empty">${esc(ctx().clientName || "Ce client")} n'a encore aucune vente dans son registre. Il les saisit depuis son portail (onglet « Ventes »).</p></section>` : ""}
       ${vatPanel()}
       ${bankPanel()}
       ${monthPanel()}`;
