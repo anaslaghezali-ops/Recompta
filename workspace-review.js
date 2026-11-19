@@ -1,4 +1,4 @@
-import { measurePerformance } from "./performance-metrics.js?v=perf1";
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf1";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -825,6 +825,7 @@ export function createWorkspaceReview({
   }
 
   function renderTable() {
+    return measureSyncPerformance("workspace.review.render", () => {
     if (!els.tableBody) return;
     refreshConfidence();
     els.tableBody.innerHTML = "";
@@ -988,6 +989,8 @@ export function createWorkspaceReview({
     } else {
       refreshOpenPreview();
     }
+  
+    });
   }
 
   function render() {
