@@ -341,3 +341,18 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Supabase Advisors : alertes SECURITY DEFINER toujours présentes (1 fonction publique de partage et 22 fonctions accessibles à `authenticated`, à auditer au niveau de leurs gardes internes) ; la protection des mots de passe compromis reste désactivée. Aucun changement Auth.
 - Tests : vérification SQL post-migration réussie ; aucun test applicatif ou scénario API n'a été exécuté, car la migration ne change que les privilèges SQL. Aucun test destructif sur les données métier.
 - Déploiement : aucun. Fusion : aucune. `main2` et `main3-chatgpt` non modifiées. `production.html` non modifié.
+
+
+### 2026-11-19 — Restriction des privilèges par défaut de postgres dans public
+
+- Projet Supabase : `pbyoxfxngfutoiqjirkx` (PostgreSQL 17).
+- Migration appliquée : `20261119012120_revoke_excess_postgres_public_default_table_privileges`.
+- Fichier versionné : `supabase/migrations/20261119012120_revoke_excess_postgres_public_default_table_privileges.sql`.
+- Portée exacte : privilèges par défaut des futures tables créées par le rôle `postgres` dans le schéma `public` uniquement.
+- Correction : retrait de `TRUNCATE`, `REFERENCES`, `TRIGGER` et `MAINTAIN` pour `anon` et `authenticated`.
+- Vérification post-migration : entrée `pg_default_acl` de `postgres/public` pour les tables = `{postgres=arwdDxtm/postgres,anon=arwd/postgres,authenticated=arwd/postgres,service_role=arwdDxtm/postgres}`. Les rôles `anon` et `authenticated` conservent `SELECT`, `INSERT`, `UPDATE`, `DELETE` et n'ont plus les quatre privilèges retirés.
+- Historique : version `20261119012120` confirmée dans `supabase_migrations.schema_migrations`.
+- Limite non corrigée : les privilèges par défaut de `supabase_admin` n'ont pas été modifiés ; la session SQL courante ne peut pas prendre ce rôle superutilisateur. Les défauts concernant les fonctions et les séquences n'ont pas été modifiés dans ce lot.
+- Aucun privilège par défaut global ni autre schéma n'a été modifié. Aucune table existante, policy RLS, fonction, séquence ou donnée métier n'a été touchée par cette migration.
+- Tests : vérification SQL de l'ACL par défaut et de l'historique de migration réussie. Un contrôle auxiliaire avec une table fictive a été abandonné car la table de sonde n'existait pas ; aucun objet de test n'a été créé.
+- Déploiement : aucun. Fusion : aucune. `main2` et `main3-chatgpt` non modifiées. `production.html` non modifié.
