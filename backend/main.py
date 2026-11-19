@@ -17,14 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from admin_saas import router as admin_router
+from admin_saas import require_super_admin, router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
 from dossier_analysis import queue_dossier_analysis
 from import_job_queue import complete_job_upload
 from import_job_worker import (
     extraction_slot,
-    import_runtime_status,
     process_pending_import_jobs,
     wait_for_job_finished,
 )
@@ -55,13 +54,13 @@ app.include_router(admin_router)
 async def json_errors_with_cors(request: Request, call_next):
     try:
         return await call_next(request)
-    except Exception as exc:  # noqa: BLE001
-        import traceback
+    except Exception:  # noqa: BLE001
+        import logging
 
-        traceback.print_exc()
+        logging.getLogger(__name__).exception("Erreur interne sur %s", request.url.path)
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Erreur serveur : {type(exc).__name__}: {exc}"},
+            content={"detail": "Erreur interne du serveur. Réessayez ultérieurement."},
         )
 
 
@@ -154,7 +153,7 @@ async def stop_import_worker() -> None:
 
 @app.get("/api/health")
 async def health(refresh: bool = False) -> dict:
-    from invoice_extractor import ai_available, preferred_engine, tesseract_available, verify_openai_key
+    from invoice_extractor import ai_available, preferred_engine, verify_openai_key
 
     configured = ai_available()
     verified = False
@@ -179,12 +178,9 @@ async def health(refresh: bool = False) -> dict:
         "extraction_engine": preferred_engine(),
         "ai_configured": configured,
         "ai_verified": verified,
-        "ai_message": ai_message,
-        "tesseract_available": tesseract_available(),
+        "ai_message": "" if verified else ("Service IA indisponible." if configured else ""),
         "import_worker_enabled": import_worker_enabled(),
         "import_worker_poll_seconds": float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8")),
-        # Lectures en parallèle et mémoire, pour régler EXTRACTION_CONCURRENCY.
-        **import_runtime_status(),
         # Le frontend Freemium refuse l'extraction IA si ce flag est absent (backend trop ancien).
         "vision_credits_enforced": True,
         "vision_credits_version": 2,
@@ -232,9 +228,11 @@ async def reference() -> dict:
 
 @app.post("/api/extract", response_model=list[ExtractionResult])
 async def extract_files(
+    request: Request,
     files: Annotated[list[UploadFile], File(...)],
     client_ice: Annotated[str, Form()] = "",
 ) -> list[ExtractionResult]:
+    await authenticate_request(request)
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
     if len(files) > MAX_EXTRACT_REQUEST_FILES:
@@ -304,8 +302,10 @@ async def extract_files(
 
 @app.post("/api/import-bank-statement", response_model=BankStatementResult)
 async def import_bank_statement(
+    request: Request,
     file: Annotated[UploadFile, File(...)],
 ) -> BankStatementResult:
+    await authenticate_request(request)
     upload_name = file.filename or "releve_bancaire"
     mime_type = file.content_type or "application/octet-stream"
     content = await read_upload_limited(file, max_bytes=MAX_SINGLE_FILE_BYTES)
@@ -417,7 +417,9 @@ async def analyze_dossier_documents(
 @app.post("/api/import-jobs/process")
 async def process_import_jobs(request: Request, limit: int = 1) -> dict:
     """Déclenche le traitement des jobs en file d'attente (réponse immédiate, travail en arrière-plan)."""
-    await authenticate_request(request)
+    # Le worker traite une file globale avec Service Role : seul un super-admin
+    # peut déclencher manuellement un lot. Le worker de fond reste automatique.
+    await require_super_admin(request.headers.get("authorization"))
     if not import_worker_enabled():
         raise HTTPException(
             status_code=503,
