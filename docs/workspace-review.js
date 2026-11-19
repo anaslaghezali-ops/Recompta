@@ -1,4 +1,4 @@
-import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf2";
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf3";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -27,7 +27,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=perf2";
+} from "./dossier-persistence.js?v=perf3";
 import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
@@ -526,12 +526,12 @@ export function createWorkspaceReview({
     try {
       // La revue ne modifie pas le relevé : elle reprend celui du serveur, et
       // la sauvegarde gardera un relevé importé entre-temps.
-      const workspace = await measurePerformance("review.load-before-save", () => loadDossierWorkspace(dossierId, {
+      const workspace = await measurePerformance("workspace.review.reload-before-save", () => loadDossierWorkspace(dossierId, {
         tracker,
         adoptLines: false,
         adoptBank: true,
       }), { source: "review" });
-      const saved = await measurePerformance("review.save", () => saveDossierWorkspace(dossierId, {
+      const saved = await measurePerformance("workspace.review.save", () => saveDossierWorkspace(dossierId, {
         lines,
         bankTransactions: workspace?.bank_transactions || [],
         bankMeta: workspace?.bank_meta || {},
@@ -1011,7 +1011,7 @@ export function createWorkspaceReview({
     setStatus("Chargement…");
     try {
       tracker = createWorkspaceTracker();
-      const data = await measurePerformance("review.load", () => loadDossierWorkspace(dossierId, { tracker }), { source: "review" });
+      const data = await measurePerformance("workspace.review.load", () => loadDossierWorkspace(dossierId, { tracker }), { source: "review" });
       lines = [...(data?.lines || [])];
       documentsCache = [];
       clearSourceFiles();
