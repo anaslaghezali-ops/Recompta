@@ -168,9 +168,9 @@ button { font: inherit; }
 .pt-hint { margin: 0.7rem 0 0; font-size: 0.84rem; color: var(--pt-muted); }
 .pt-login-btn { display: inline-block; margin-top: 0.6rem; text-decoration: none; }
 
-/* ---------- Onglets Documents / Ventes ---------- */
+/* ---------- Onglets Suivi / Achats / Ventes ---------- */
 .pt-tabs {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; padding: 0.35rem;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; padding: 0.35rem;
   margin-bottom: 0.9rem; border-radius: 12px; background: var(--pt-surface);
   box-shadow: 0 1px 3px rgba(22, 35, 58, 0.08);
 }
@@ -314,3 +314,15 @@ button { font: inherit; }
 .pt-remind .pt-requests li { border-color: #efc2bd; background: #fff7f6; }
 .pt-remind .pt-requests li > svg { color: var(--pt-stop); }
 .pt-field textarea { font: inherit; font-size: 0.95rem; color: var(--pt-ink); padding: 0.6rem 0.75rem; border: 1px solid #c6d0dc; border-radius: 8px; resize: vertical; }
+
+/* ---------- Suivi : à faire, achats des derniers mois, ventes ---------- */
+@media (max-width: 400px) {
+  .pt-tabs { gap: 0.2rem; padding: 0.25rem; }
+  .pt-tab { gap: 0.3rem; font-size: 0.88rem; padding: 0 0.2rem; }
+  .pt-tab svg { width: 16px; height: 16px; }
+}
+.pt-todo li.is-stop { border-color: #efc2bd; background: #fff7f6; }
+.pt-todo li.is-stop > svg { color: var(--pt-stop); }
+.pt-todo li.pt-empty { background: transparent; border-color: var(--pt-line); }
+.pt-months li > svg { color: var(--pt-brand-ink); }
+.pt-su-note { margin: 0; }

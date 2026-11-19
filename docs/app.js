@@ -67,7 +67,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=perf3";
+} from "./dossier-persistence.js?v=suivi1";
 
 // Lignes et relevé repris du dossier par cette page (fusion des imports
 // serveur concurrents, voir dossier-persistence.js).

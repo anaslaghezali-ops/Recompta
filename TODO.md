@@ -44,10 +44,10 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | P3 | Analyser la référence (A5) et choisir le premier point | Claude | ⬜ | Dépend de A5. |
 | P4 | Stocker les lignes dans une table (`dossier_lines`) au lieu d'un bloc JSON | Dev | ⬜ | 377 Ko réécrits à chaque modification (369 lignes). Avant P5. Migration = accord d'Anas, code et base livrés ensemble. |
 | P5 | Optimiser la revue des lignes | Dev | ⬜ | Après P4. |
-| P11 | Sauvegarde à la fermeture de la page de revue (espace client) | Dev | ⬜ | Une modification faite moins de 1,5 s avant de fermer peut être perdue (préexistant). |
-| P12 | Mesurer l'ouverture de l'espace client | Dev | ⬜ | Manque dans les 4 mesures de référence. |
+| P11 | Sauvegarde à la fermeture de la page de revue (espace client) | Agent + Claude | ✅ 19/11 | Enregistrement en arrière-plan / à la fermeture, confirmation si une sauvegarde est en cours ; contrôleur de revue créé une seule fois. |
+| P12 | Mesurer l'ouverture de l'espace client | Agent | ✅ 19/11 | Mesure `workspace.open`. |
 | P6 | Filtrer et paginer les ventes | Dev | ⬜ | |
-| P7 | Index sur les 20 clés étrangères | Dev | ⬜ | Ne supprimer aucun index « inutilisé ». Migration `20261119040000_index_foreign_keys` prête et testée en local (branche `cursor/lot-c-index`) ; **non appliquée en production** (accord d'Anas requis). |
+| P7 | Index sur les 20 clés étrangères | Dev | ⬜ | Ne supprimer aucun index « inutilisé ». Migration `20261119040000_index_foreign_keys` prête, testée (suite SQL + test dédié) ; **non appliquée en production** (accord d'Anas requis). |
 | P8 | Rationaliser les règles d'accès (23 doublons) | Dev | ⬜ | Tests entre 2 cabinets et portail client d'abord. |
 | P9 | Lecture en parallèle plafonnée (2 factures à la fois) | Claude | ✅ 18/11 | Mémoire dans le terminal. |
 | P10 | Hébergement permanent (VPS LWS) | Anas + Dev | ⬜ | Remplace le Codespace. |
@@ -62,7 +62,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | S4 | CI Postgres 17 sur `main2`, versions de cache, progression ZIP | Claude | ✅ 19/11 | |
 | S5 | Le client du portail peut lancer l'analyse IA de son dossier (crédits du cabinet) | Claude | ✅ 19/11 | Comptes portail refusés (403) sur analyse, import, extraction et relevé. Actif après relance du serveur (A1). |
 | S6 | Échappement HTML systématique | Claude (4 agents) | ✅ 19/11 | 23 fichiers relus ; 9 insertions corrigées (outil solo, notifications, aperçu, portail) ; liens des notifications limités aux URL relatives / http(s). |
-| S7 | CORS : n'autoriser que les adresses de Recompta | Dev | ⬜ | Aujourd'hui toutes les origines. |
+| S7 | CORS : n'autoriser que les adresses de Recompta | Agent | ✅ 19/11 | GitHub Pages, Codespaces, localhost ; `CORS_ALLOWED_ORIGINS` pour le VPS (ou `*` en urgence). Actif après relance du serveur (A1). |
 | S8 | Contrôle d'intégrité (SRI) des bibliothèques chargées depuis unpkg / jsdelivr | Dev | ⬜ | |
 | S9 | Cabinet désactivé peut encore facturer ; cas multi-cabinet des crédits IA | Dev | ⬜ | Pas de cas réel aujourd'hui. |
 | S10 | Retirer les droits techniques inutiles des 20 autres tables | Dev | ⬜ | Sans risque actuel, nettoyage. Migration = accord d'Anas. |
@@ -87,6 +87,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | R5 | Compresser les scans à l'enregistrement | Dev | ⬜ | Stockage gratuit limité à 1 Go. |
 | R6 | Ventes des clients, phases 1 à 5 | Autre | ✅ 18/11 | |
 | R7 | Application mobile avec scan + WhatsApp | Plus tard | ⬜ | |
+| R8 | Portail client : onglet « Suivi » (vue par défaut) et « Mes documents » renommé « Achats » | Agent + Claude | ✅ 19/11 | À faire, achats des 3 derniers mois, ventes. |
 
 ## 6. Retours du comptable
 
@@ -99,6 +100,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- Lot en parallèle (4 agents) : portail Suivi + Achats (R8), sauvegarde à la fermeture + mesure d'ouverture (P11, P12), CORS (S7), migration d'index préparée (P7, non appliquée).
 - Migration d'index sur les 20 clés étrangères signalées par Supabase (3 index partiels) + test `test_fk_indexes.sql` ; suite SQL locale verte ; non appliquée en production (P7).
 - S6 : relecture en parallèle par 4 agents (groupes de fichiers distincts), corrections relues puis fusionnées.
 - Revue finale du chantier performance : saver (changement perdu après une écriture en échec), mesures partagées entre onglets, filtre de confidentialité strict, contrôle de syntaxe en CI ; fusionné dans `main2`.
