@@ -257,3 +257,28 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Aucun commit ni changement de fichier n'a été effectué sur `main2`. Aucun merge et aucun déploiement n'ont été réalisés.
 - Mise à jour du présent journal effectuée uniquement sur `main2-chatgpt`.
 - Vérifications à suivre : résultats des checks GitHub Actions, revue du diff et tests SQL sur base isolée avant toute décision ultérieure.
+
+
+### 2026-11-19 — Lot 1 de sécurisation API et frontend
+
+- Branche modifiée : `main2-chatgpt` uniquement.
+- Commits du lot :
+  - `af0173b74e32de5743f40394e861f71a7173b566` — garde d'authentification sur les deux routes historiques, restriction super-admin du déclenchement global, réduction des détails de santé et erreurs serveur génériques.
+  - `7b7f3669c2ce12fc407ef8b489e32f87260edb5c` — envoi des credentials sur les deux routes historiques et ajout de `apikey` à l'upload XHR.
+  - `d1f4804d3930d4b21c5debc713dcbace7f5e62c2` — suppression du déclenchement manuel du worker depuis le navigateur ; le worker de fond et le déclenchement après upload restent les mécanismes normaux.
+  - `0f8e8afc2446ea824b03ebc9ec7533db3d2ede8e` — alignement de `api-client.js` à la racine sur `docs/api-client.js` pour satisfaire le contrôle CI des copies.
+  - `2136dd308439d7bb5bc3d3ef5348444c1c3df619` — tests du contrôle de rôle super-admin.
+- Fichiers modifiés :
+  - `backend/main.py` : authentification obligatoire sur `POST /api/extract` et `POST /api/import-bank-statement` ; `POST /api/import-jobs/process` réservé au rôle `super_admin` car il traite une file globale avec Service Role ; retrait des détails d'exécution/mémoire du endpoint health ; réponse d'erreur 500 générique et journalisation serveur.
+  - `docs/api-client.js` : envoi de `Authorization` et `apikey` aux routes historiques ; transmission des deux en-têtes pour l'upload XHR ; le navigateur ne déclenche plus le worker global.
+  - `api-client.js` : copie alignée avec la version sécurisée de `docs/api-client.js`.
+  - `backend/scripts/test_admin_saas_auth.py` : vérifie qu'un super-admin est autorisé et qu'un membre ordinaire reçoit 403.
+- Justification : fermer les routes historiques anonymes, corriger l'en-tête `apikey` manquant sur l'upload XHR et éviter qu'un membre déclenche un lot global avec Service Role.
+- Compatibilité : le worker de fond est lancé au démarrage du backend et les uploads de jobs déclenchent déjà le traitement ; le client ne lance donc plus de kick global. Les routes historiques exigent désormais une session Supabase. Leur ancien contrat ne fournit pas de dossier ; le contrôle d'appartenance à un dossier précis n'est donc pas établi par ces routes. Cette limite doit être traitée si ces parcours legacy restent utilisés pour des traitements liés à un dossier.
+- Tests ajoutés : `backend/scripts/test_admin_saas_auth.py`. Les tests existants `test_request_auth.py` couvrent la validation de session et les contrôles RLS.
+- Tests non encore exécutés après ces modifications : exécution locale des scripts Python, tests JS, comparaison des copies et workflow GitHub Actions complet. Le CI doit être contrôlé sur la PR #169.
+- Supabase : aucun objet, paramètre Auth, policy, fonction, bucket ou donnée modifié.
+- Déploiement : aucun.
+- PR #169 : reste en brouillon, non fusionnée ; sa branche source suit les nouveaux commits.
+- `main2` et `main3-chatgpt` : non modifiées. Aucun merge effectué.
+- Limites restantes : CORS autorise encore toutes les origines ; les routes legacy authentifient l'utilisateur mais ne lient pas encore la requête à un dossier via RLS ; l'audit des permissions de tous les endpoints admin et des fonctions SECURITY DEFINER reste à poursuivre.
