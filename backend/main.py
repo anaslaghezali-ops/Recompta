@@ -17,16 +17,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from admin_saas import router as admin_router
+from admin_saas import require_super_admin, router as admin_router
 from bank_statement import BankStatementResult, extract_bank_statement
 from excel_export import export_filename, export_to_bytes
 from dossier_analysis import queue_dossier_analysis
 from import_job_queue import complete_job_upload
 from import_job_worker import (
     extraction_slot,
-    import_runtime_status,
     process_pending_import_jobs,
     wait_for_job_finished,
+)
+from request_auth import (
+    authenticate_request,
+    require_cabinet_user,
+    require_dossier_access,
+    require_import_job_access,
 )
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
@@ -36,7 +41,15 @@ from normalize_results import (
     normalize_extraction_results,
 )
 from source_id import split_source_tag
-from zip_utils import iter_invoice_files
+from zip_utils import (
+    IMPORT_EXTRACTION_BATCH_SIZE,
+    MAX_SINGLE_FILE_BYTES,
+    MAX_ZIP_ARCHIVE_BYTES,
+    ImportBudgetExceeded,
+    InvoiceExtractionBudget,
+    is_zip_file,
+    iter_invoice_files_batched,
+)
 
 app = FastAPI(title="Recompta API", version="0.2.0")
 app.include_router(admin_router)
@@ -49,25 +62,50 @@ app.include_router(admin_router)
 async def json_errors_with_cors(request: Request, call_next):
     try:
         return await call_next(request)
-    except Exception as exc:  # noqa: BLE001
-        import traceback
+    except Exception:  # noqa: BLE001
+        import logging
 
-        traceback.print_exc()
+        logging.getLogger(__name__).exception("Erreur interne sur %s", request.url.path)
         return JSONResponse(
             status_code=500,
-            content={"detail": f"Erreur serveur : {type(exc).__name__}: {exc}"},
+            content={"detail": "Erreur interne du serveur. Réessayez ultérieurement."},
         )
 
 
-# allow_credentials doit rester False avec allow_origins="*" (spec CORS).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+# Origines autorisées à appeler l'API depuis un navigateur.
+# Le site servi par ce serveur (backend/static/) est sur la même origine : pas de CORS.
+DEFAULT_CORS_ORIGINS = ("https://anaslaghezali-ops.github.io",)
+# Développement local (tout port) et Codespaces (adresse qui change).
+DEFAULT_CORS_ORIGIN_REGEX = (
+    r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+    r"|https://[a-z0-9-]+\.app\.github\.dev"
 )
+
+
+def cors_settings(env: dict[str, str] | None = None) -> dict:
+    """Paramètres CORSMiddleware calculés depuis l'environnement.
+
+    CORS_ALLOWED_ORIGINS : origines en plus, séparées par des virgules (ex. le futur VPS).
+    CORS_ALLOWED_ORIGINS=* : toutes les origines (ancien comportement, secours).
+    allow_credentials reste False (obligatoire avec "*"; l'API utilise un jeton Bearer).
+    """
+    source = os.environ if env is None else env
+    extra = [o.strip().rstrip("/") for o in source.get("CORS_ALLOWED_ORIGINS", "").split(",")]
+    extra = [o for o in extra if o]
+    common = {
+        "allow_credentials": False,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+        "expose_headers": ["Content-Disposition"],
+    }
+    if "*" in extra:
+        return {"allow_origins": ["*"], **common}
+    origins = list(DEFAULT_CORS_ORIGINS)
+    origins += [o for o in extra if o not in origins]
+    return {"allow_origins": origins, "allow_origin_regex": DEFAULT_CORS_ORIGIN_REGEX, **common}
+
+
+app.add_middleware(CORSMiddleware, **cors_settings())
 
 
 # La vérification de clé est un aller-retour réseau vers OpenAI, appelé avant
@@ -75,6 +113,30 @@ app.add_middleware(
 _KEY_CHECK_TTL = 60.0
 _key_check_cache: dict[str, float | bool | str] = {"at": 0.0, "verified": False, "message": ""}
 _worker_task: asyncio.Task | None = None
+MAX_EXTRACT_REQUEST_FILES = 20
+MAX_EXTRACT_REQUEST_BYTES = 100 * 1024 * 1024
+
+
+async def read_upload_limited(upload: UploadFile, *, max_bytes: int) -> bytes:
+    """Lit un upload par blocs et refuse le dépassement avant de charger tout le fichier."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(min(1024 * 1024, max_bytes - total + 1))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Fichier trop volumineux (maximum {max_bytes // (1024 * 1024)} Mio).",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def upload_limit(filename: str, mime_type: str) -> int:
+    return MAX_ZIP_ARCHIVE_BYTES if is_zip_file(filename, mime_type) else MAX_SINGLE_FILE_BYTES
 
 
 def import_worker_enabled() -> bool:
@@ -124,7 +186,7 @@ async def stop_import_worker() -> None:
 
 @app.get("/api/health")
 async def health(refresh: bool = False) -> dict:
-    from invoice_extractor import ai_available, preferred_engine, tesseract_available, verify_openai_key
+    from invoice_extractor import ai_available, preferred_engine, verify_openai_key
 
     configured = ai_available()
     verified = False
@@ -149,12 +211,9 @@ async def health(refresh: bool = False) -> dict:
         "extraction_engine": preferred_engine(),
         "ai_configured": configured,
         "ai_verified": verified,
-        "ai_message": ai_message,
-        "tesseract_available": tesseract_available(),
+        "ai_message": "" if verified else ("Service IA indisponible." if configured else ""),
         "import_worker_enabled": import_worker_enabled(),
         "import_worker_poll_seconds": float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "8")),
-        # Lectures en parallèle et mémoire, pour régler EXTRACTION_CONCURRENCY.
-        **import_runtime_status(),
         # Le frontend Freemium refuse l'extraction IA si ce flag est absent (backend trop ancien).
         "vision_credits_enforced": True,
         "vision_credits_version": 2,
@@ -202,45 +261,26 @@ async def reference() -> dict:
 
 @app.post("/api/extract", response_model=list[ExtractionResult])
 async def extract_files(
+    request: Request,
     files: Annotated[list[UploadFile], File(...)],
     client_ice: Annotated[str, Form()] = "",
 ) -> list[ExtractionResult]:
+    require_cabinet_user(await authenticate_request(request))
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
+    if len(files) > MAX_EXTRACT_REQUEST_FILES:
+        raise HTTPException(status_code=413, detail=f"Maximum {MAX_EXTRACT_REQUEST_FILES} fichiers par requête.")
 
+    total_upload_bytes = 0
     results: list[ExtractionResult] = []
     pending: list[tuple[str, bytes, str, str]] = []
+    budget = InvoiceExtractionBudget()
     token = activate_client_ice_exclusions(client_ice)
     try:
-        for upload in files:
-            content = await upload.read()
-            upload_name = upload.filename or "inconnu"
-            original_name, source_id = split_source_tag(upload_name)
-            mime_type = upload.content_type or "application/octet-stream"
-            invoice_files = iter_invoice_files(original_name, content, mime_type)
-
-            if not invoice_files:
-                results.append(
-                    ExtractionResult(
-                        filename=original_name,
-                        source_id=source_id,
-                        lines=[],
-                        warnings=[
-                            "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
-                        ],
-                    )
-                )
-                continue
-
-            for relative_name, file_content, file_mime in invoice_files:
-                display_name = relative_name if relative_name != original_name else original_name
-                pending.append((display_name, file_content, file_mime, source_id))
-
         async def extract_one(
             name: str, data: bytes, mime: str, source_id: str
         ) -> ExtractionResult:
             # Une facture illisible ne doit jamais faire échouer tout le lot.
-            # Mêmes créneaux que la file d'import : plafond commun au serveur.
             async with extraction_slot(name):
                 try:
                     result = await extract_invoice(name, data, mime)
@@ -256,8 +296,51 @@ async def extract_files(
                         warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
                     )
 
-        results.extend(await asyncio.gather(*(extract_one(*item) for item in pending)))
+        async def flush_pending() -> None:
+            if not pending:
+                return
+            batch = list(pending)
+            pending.clear()
+            results.extend(await asyncio.gather(*(extract_one(*item) for item in batch)))
 
+        for upload in files:
+            upload_name = upload.filename or "inconnu"
+            mime_type = upload.content_type or "application/octet-stream"
+            content = await read_upload_limited(upload, max_bytes=upload_limit(upload_name, mime_type))
+            total_upload_bytes += len(content)
+            if total_upload_bytes > MAX_EXTRACT_REQUEST_BYTES:
+                raise HTTPException(status_code=413, detail="Lot trop volumineux (maximum 100 Mio par requête).")
+            original_name, source_id = split_source_tag(upload_name)
+            extracted_count = 0
+            stream = iter_invoice_files_batched(original_name, content, mime_type, budget=budget)
+            try:
+                for relative_name, file_content, file_mime in stream:
+                    extracted_count += 1
+                    display_name = relative_name if relative_name != original_name else original_name
+                    pending.append((display_name, file_content, file_mime, source_id))
+                    if len(pending) >= IMPORT_EXTRACTION_BATCH_SIZE:
+                        await flush_pending()
+            except ImportBudgetExceeded as exc:
+                raise HTTPException(status_code=413, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            finally:
+                stream.close()
+                del content
+
+            if not extracted_count:
+                results.append(
+                    ExtractionResult(
+                        filename=original_name,
+                        source_id=source_id,
+                        lines=[],
+                        warnings=[
+                            "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
+                        ],
+                    )
+                )
+
+        await flush_pending()
         return normalize_extraction_results(results, client_ice=client_ice)
     finally:
         deactivate_client_ice_exclusions(token)
@@ -265,16 +348,19 @@ async def extract_files(
 
 @app.post("/api/import-bank-statement", response_model=BankStatementResult)
 async def import_bank_statement(
+    request: Request,
     file: Annotated[UploadFile, File(...)],
 ) -> BankStatementResult:
-    content = await file.read()
+    require_cabinet_user(await authenticate_request(request))
     upload_name = file.filename or "releve_bancaire"
     mime_type = file.content_type or "application/octet-stream"
+    content = await read_upload_limited(file, max_bytes=MAX_SINGLE_FILE_BYTES)
     return await extract_bank_statement(upload_name, content, mime_type)
 
 
 @app.post("/api/import-jobs/{job_id}/upload")
 async def upload_import_job_file(
+    request: Request,
     job_id: int,
     file: Annotated[UploadFile, File(...)],
 ) -> dict:
@@ -285,18 +371,22 @@ async def upload_import_job_file(
             detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
         )
 
-    content = await file.read()
+    user = await authenticate_request(request)
+    require_cabinet_user(user)
+    visible_job = await require_import_job_access(job_id, user["access_token"], request.headers.get("apikey", ""))
+    filename = file.filename or "document"
+    mime_type = file.content_type or "application/octet-stream"
+    content = await read_upload_limited(file, max_bytes=upload_limit(filename, mime_type))
     if not content:
         raise HTTPException(status_code=400, detail="Fichier vide.")
 
-    filename = file.filename or "document"
-    mime_type = file.content_type or "application/octet-stream"
     try:
         job = await complete_job_upload(
             job_id,
             filename=filename,
             content=content,
             mime_type=mime_type,
+            expected_dossier_id=int(visible_job["dossier_id"]),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -317,6 +407,7 @@ async def upload_import_job_file(
 
 @app.post("/api/dossiers/{dossier_id}/analyze")
 async def analyze_dossier_documents(
+    request: Request,
     dossier_id: int,
     doc_type: str = "invoice",
     client_ice: str = "",
@@ -328,6 +419,9 @@ async def analyze_dossier_documents(
             status_code=503,
             detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
         )
+    user = await authenticate_request(request)
+    require_cabinet_user(user)
+    await require_dossier_access(dossier_id, user["access_token"], request.headers.get("apikey", ""))
     if doc_type not in {"invoice", "bank"}:
         raise HTTPException(status_code=400, detail="doc_type doit être invoice ou bank.")
 
@@ -369,8 +463,11 @@ async def analyze_dossier_documents(
 
 
 @app.post("/api/import-jobs/process")
-async def process_import_jobs(limit: int = 1) -> dict:
+async def process_import_jobs(request: Request, limit: int = 1) -> dict:
     """Déclenche le traitement des jobs en file d'attente (réponse immédiate, travail en arrière-plan)."""
+    # Le worker traite une file globale avec Service Role : seul un super-admin
+    # peut déclencher manuellement un lot. Le worker de fond reste automatique.
+    await require_super_admin(request.headers.get("authorization"))
     if not import_worker_enabled():
         raise HTTPException(
             status_code=503,

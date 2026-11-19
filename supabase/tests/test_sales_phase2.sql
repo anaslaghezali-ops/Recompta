@@ -22,6 +22,7 @@ set role authenticated;
 
 do $$
 declare cust bigint; inv bigint; q bigint; r record; failed boolean; tok text; doc jsonb; item bigint;
+  move_draft_a bigint; move_draft_b bigint; move_line bigint;
 begin
   insert into public.client_customers (issuer_client_id, name, ice, payment_days)
   values (9311, 'Client P2', '007777777000077', 60) returning id into cust;
@@ -66,6 +67,49 @@ begin
   failed := false;
   begin update public.invoices set share_token = repeat('x', 64) where id = inv; exception when others then failed := true; end;
   assert failed, 'jeton non modifiable à la main';
+
+  -- Déplacement interdit depuis une facture émise vers un brouillon
+  insert into public.invoices (issuer_client_id, customer_id, origin, issue_date)
+  values (9311, cust, 'created', date '2026-11-11') returning id into move_draft_a;
+  insert into public.invoice_lines (invoice_id, label, quantity, unit_price_ht, vat_rate)
+  values (move_draft_a, 'Brouillon cible', 1, 100, 20);
+  select id into move_line from public.invoice_lines where invoice_id = inv order by id limit 1;
+  failed := false;
+  begin
+    update public.invoice_lines set invoice_id = move_draft_a where id = move_line;
+  exception when others then failed := true;
+  end;
+  assert failed, 'ligne d''une facture émise impossible à déplacer vers un brouillon';
+  assert (select invoice_id = inv from public.invoice_lines where id = move_line), 'ligne émise conservée sur sa facture';
+  assert (select total_ttc = 120 from public.invoices where id = move_draft_a), 'total du brouillon cible inchangé après refus';
+
+  -- Déplacement entre deux brouillons : recalcul des deux factures
+  insert into public.invoices (issuer_client_id, customer_id, origin, issue_date)
+  values (9311, cust, 'created', date '2026-11-11') returning id into move_draft_a;
+  insert into public.invoices (issuer_client_id, customer_id, origin, issue_date)
+  values (9311, cust, 'created', date '2026-11-11') returning id into move_draft_b;
+  insert into public.invoice_lines (invoice_id, label, quantity, unit_price_ht, vat_rate)
+  values (move_draft_a, 'Ligne mobile', 1, 100, 20);
+  insert into public.invoice_lines (invoice_id, label, quantity, unit_price_ht, vat_rate)
+  values (move_draft_b, 'Ligne conservée', 1, 50, 20);
+  select id into move_line from public.invoice_lines
+  where invoice_id = move_draft_a and label = 'Ligne mobile';
+  update public.invoice_lines set invoice_id = move_draft_b where id = move_line;
+  assert (select total_ttc = 0 from public.invoices where id = move_draft_a), 'ancien brouillon recalculé après déplacement';
+  assert (select total_ttc = 180 from public.invoices where id = move_draft_b), 'nouveau brouillon recalculé après déplacement';
+
+  -- Un brouillon qui contient des lignes peut être supprimé (cascade des lignes)
+  failed := false;
+  begin delete from public.invoices where id = move_draft_b; exception when others then failed := true; end;
+  assert not failed, 'brouillon avec lignes supprimable';
+  assert (select count(*) = 0 from public.invoice_lines where invoice_id = move_draft_b), 'lignes du brouillon supprimées';
+  -- …mais pas une facture émise ni ses lignes
+  failed := false;
+  begin delete from public.invoices where id = inv; exception when others then failed := true; end;
+  assert failed, 'facture émise non supprimable';
+  failed := false;
+  begin delete from public.invoice_lines where invoice_id = inv; exception when others then failed := true; end;
+  assert failed, 'lignes émises non supprimables';
 
   -- Lien public
   tok := public.sales_share_token(inv);
@@ -127,6 +171,24 @@ begin
   assert public.sales_public_document(repeat('a', 64)) is null, 'jeton inconnu';
 end $$;
 reset role;
+
+-- Document annulé : toujours lisible par son lien, avec son statut (mention « Annulée »)
+do $$ begin
+  perform set_config('recompta.billing_internal', 'on', true);
+  update public.invoices set status = 'cancelled' where share_token = (select s from t2 where k = 'tok');
+end $$;
+set role anon;
+do $$
+declare doc jsonb := public.sales_public_document((select s from t2 where k = 'tok'));
+begin
+  assert doc is not null, 'document annulé encore lisible';
+  assert doc ->> 'status' = 'cancelled', 'statut annulé transmis';
+end $$;
+reset role;
+do $$ begin
+  perform set_config('recompta.billing_internal', 'on', true);
+  update public.invoices set status = 'issued' where share_token = (select s from t2 where k = 'tok');
+end $$;
 
 -- Société B : ne voit pas le catalogue ni les documents de A, ne peut rien émettre pour A
 do $$ begin perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000002b2","role":"authenticated"}', false); end $$;

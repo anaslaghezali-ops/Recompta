@@ -1,3 +1,4 @@
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf3";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -26,7 +27,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=suivi1";
 import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
@@ -38,7 +39,7 @@ import {
   hasSourceFile,
   registerSourceFile,
   showLinePreview,
-} from "./document-preview.js?v=preview9";
+} from "./document-preview.js?v=s6a";
 import { rememberOfficialSupplierName } from "./suppliers-client.js?v=sup3";
 import { periodToMmaaaa } from "./dossiers-client.js?v=dash3";
 import { escapeHtml } from "./dashboard-ui.js?v=bill1";
@@ -51,6 +52,36 @@ const DESIGNATIONS = [
 ];
 
 const SUPPLIER_SCOPED_BULK_FIELDS = new Set(["ice_frs", "if"]);
+
+// Sauvegarde à la fermeture : les écouteurs de page sont posés une seule fois,
+// même si plusieurs contrôleurs de revue étaient créés dans la même page.
+const pageExitSavers = new Set();
+let pageExitListenersInstalled = false;
+
+function flushPageExitSavers() {
+  for (const saver of pageExitSavers) {
+    saver.flush().catch(() => {}); // sans attendre : l'erreur est déjà affichée par la revue
+  }
+}
+
+function installPageExitSave(saver) {
+  pageExitSavers.add(saver);
+  if (pageExitListenersInstalled) return;
+  pageExitListenersInstalled = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPageExitSavers();
+  });
+  window.addEventListener("pagehide", flushPageExitSavers);
+  window.addEventListener("beforeunload", (event) => {
+    // Rien en attente (cas normal, ou autre onglet de l'espace) : aucune confirmation.
+    if (![...pageExitSavers].some((saver) => saver.hasPending())) return;
+    // Limite : l'écriture est asynchrone ; le navigateur peut l'interrompre si
+    // l'utilisateur confirme la fermeture avant qu'elle ne se termine.
+    event.preventDefault();
+    event.returnValue = "";
+    flushPageExitSavers();
+  });
+}
 
 export function createWorkspaceReview({
   mountEl,
@@ -525,17 +556,17 @@ export function createWorkspaceReview({
     try {
       // La revue ne modifie pas le relevé : elle reprend celui du serveur, et
       // la sauvegarde gardera un relevé importé entre-temps.
-      const workspace = await loadDossierWorkspace(dossierId, {
+      const workspace = await measurePerformance("workspace.review.reload-before-save", () => loadDossierWorkspace(dossierId, {
         tracker,
         adoptLines: false,
         adoptBank: true,
-      });
-      const saved = await saveDossierWorkspace(dossierId, {
+      }), { source: "review" });
+      const saved = await measurePerformance("workspace.review.save", () => saveDossierWorkspace(dossierId, {
         lines,
         bankTransactions: workspace?.bank_transactions || [],
         bankMeta: workspace?.bank_meta || {},
         tracker,
-      });
+      }), { lineCount: lines.length });
       if (saved?.added) {
         // Un import s'est terminé pendant la revue : ses lignes sont gardées.
         lines = [...saved.lines];
@@ -824,6 +855,7 @@ export function createWorkspaceReview({
   }
 
   function renderTable() {
+    return measureSyncPerformance("workspace.review.render", () => {
     if (!els.tableBody) return;
     refreshConfidence();
     els.tableBody.innerHTML = "";
@@ -987,6 +1019,8 @@ export function createWorkspaceReview({
     } else {
       refreshOpenPreview();
     }
+  
+    });
   }
 
   function render() {
@@ -1007,7 +1041,7 @@ export function createWorkspaceReview({
     setStatus("Chargement…");
     try {
       tracker = createWorkspaceTracker();
-      const data = await loadDossierWorkspace(dossierId, { tracker });
+      const data = await measurePerformance("workspace.review.load", () => loadDossierWorkspace(dossierId, { tracker }), { source: "review" });
       lines = [...(data?.lines || [])];
       documentsCache = [];
       clearSourceFiles();
@@ -1135,6 +1169,7 @@ export function createWorkspaceReview({
   saver = createDebouncedSaver(async ({ eventType, summary }) => {
     await persistNow(eventType, summary, { line_count: lines.length });
   }, 1500);
+  installPageExitSave(saver);
 
   return {
     load,

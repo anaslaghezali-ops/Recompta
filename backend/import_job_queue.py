@@ -61,6 +61,7 @@ async def complete_job_upload(
     filename: str,
     content: bytes,
     mime_type: str,
+    expected_dossier_id: int,
 ) -> dict[str, Any]:
     async with SupabaseService() as db:
         response = await db.client.get(
@@ -77,6 +78,8 @@ async def complete_job_upload(
             raise ValueError("Ce job n'accepte plus de fichier.")
 
         dossier_id = int(job["dossier_id"])
+        if dossier_id != int(expected_dossier_id):
+            raise ValueError("Import introuvable ou accès refusé.")
         source_id = _next_source_id()
         storage_path = build_import_storage_path(dossier_id, job_id, filename)
 

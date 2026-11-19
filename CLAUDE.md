@@ -28,6 +28,12 @@ sans affirmation non vérifiée. Expliquer en langage simple ce qu'il doit faire
 6. **Crédits IA** : chaque document lu par l'IA consomme un crédit (`cabinet_vision_credits.used_this_period`).
    Ne pas relancer d'extractions inutilement ; rendre les crédits consommés par une panne.
 
+## Suivi
+
+`TODO.md` liste ce qui est fait et à faire (décisions d'Anas, performance, sécurité, qualité, produit) avec un journal
+daté. Tenu par Anas et Claude : le mettre à jour dans le même commit que le code ; une tâche n'est « Fait »
+qu'une fois fusionnée dans `main2`.
+
 ## Architecture
 
 - **Front** : HTML + modules JS natifs (pas de build), Supabase JS côté navigateur, RLS pour l'isolement.

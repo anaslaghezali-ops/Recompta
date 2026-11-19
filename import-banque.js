@@ -9,8 +9,8 @@ import {
   normalizeBankAliasToken,
   saveBankAlias,
 } from "./bank-match-client.js";
-import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=api8";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
+import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=sec1";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=suivi1";
 import {
   JOB_STATUS_LABELS,
   jobProgressPercent,
@@ -18,7 +18,7 @@ import {
   showImportCompletionToast,
   startBankImportUpload,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=jobs31";
+} from "./import-jobs-client.js?v=s6a";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import {
   createWorkspaceSaver,
@@ -28,7 +28,7 @@ import {
   renderImportContextBar,
   shortFilename,
   workspaceBackHref,
-} from "./import-dossier.js?v=imp1";
+} from "./import-dossier.js?v=suivi1";
 import { uploadDossierDocument } from "./dossier-documents.js?v=doc21";
 
 const els = {};

@@ -1,6 +1,6 @@
 import { prepareDossierUploadContext, uploadDossierFileForImport } from "./dossier-documents.js?v=doc21";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
-import { formatFileSize } from "./import-dossier.js?v=imp1";
+import { formatFileSize } from "./import-dossier.js?v=suivi1";
 
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip";
 

@@ -11,15 +11,15 @@ import {
   cacheSourceFiles,
   parseSourceFilename,
   tagSourceFilename,
-} from "./document-preview.js?v=preview8";
+} from "./document-preview.js?v=s6a";
 import {
   extractViaServer,
   ensureImportWorkerRunning,
   fetchServerHealth,
   getApiUrl,
   saveApiUrl,
-} from "./api-client.js?v=api7";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
+} from "./api-client.js?v=sec1";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=suivi1";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
@@ -32,7 +32,7 @@ import {
   listImportJobs,
   startImportJobPolling,
   startInvoiceImportUpload,
-} from "./import-jobs-client.js?v=jobs31";
+} from "./import-jobs-client.js?v=s6a";
 import {
   createWorkspaceSaver,
   formatFileSize,
@@ -41,7 +41,7 @@ import {
   renderImportContextBar,
   shortFilename,
   workspaceBackHref,
-} from "./import-dossier.js?v=imp1";
+} from "./import-dossier.js?v=suivi1";
 import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc21";
 
 const els = {};

@@ -8,7 +8,7 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=portal6" />
+  <link rel="stylesheet" href="portal.css?v=suivi2" />
   <link rel="stylesheet" href="archive.css?v=arch1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
@@ -29,8 +29,11 @@
 
     <div id="ptApp" hidden>
       <nav class="pt-tabs" role="tablist" aria-label="Rubriques">
-        <button type="button" role="tab" class="pt-tab is-active" id="docsTab" aria-selected="true" aria-controls="ptDocsView" data-view="docs">
-          <i data-lucide="folder-up"></i> Mes documents
+        <button type="button" role="tab" class="pt-tab is-active" id="suiviTab" aria-selected="true" aria-controls="ptSuiviView" data-view="suivi">
+          <i data-lucide="list-checks"></i> Suivi
+        </button>
+        <button type="button" role="tab" class="pt-tab" id="docsTab" aria-selected="false" aria-controls="ptDocsView" data-view="docs">
+          <i data-lucide="folder-up"></i> Achats
         </button>
         <button type="button" role="tab" class="pt-tab" id="salesTab" aria-selected="false" aria-controls="ptSalesView" data-view="sales">
           <i data-lucide="receipt-text"></i> Mes ventes <span class="pt-tab-badge" id="salesTabBadge" hidden></span>
@@ -40,7 +43,35 @@
         </button>
       </nav>
 
-      <div id="ptDocsView" role="tabpanel" aria-labelledby="docsTab">
+      <div id="ptSuiviView" role="tabpanel" aria-labelledby="suiviTab">
+        <section class="pt-section">
+          <h2 id="suTodoTitle">À faire</h2>
+          <ul class="pt-requests pt-todo" id="suTodo" aria-live="polite"><li class="pt-empty">Chargement…</li></ul>
+        </section>
+
+        <section class="pt-section">
+          <div class="pt-section-head">
+            <h2>Achats</h2>
+            <button type="button" class="pt-link" data-goto="docs">Déposer des documents</button>
+          </div>
+          <ul class="pt-sent pt-months" id="suMonths"></ul>
+        </section>
+
+        <section class="pt-section">
+          <div class="pt-section-head">
+            <h2>Ventes</h2>
+            <button type="button" class="pt-link" data-goto="sales">Voir mes ventes</button>
+          </div>
+          <p class="pt-hint pt-su-note" id="suSalesNote">Chargement…</p>
+          <div class="pt-stats" id="suSalesStats" hidden>
+            <div class="pt-stat"><span id="suCollectedLabel">Encaissé ce mois</span><strong id="suCollected">—</strong><small>paiements reçus</small></div>
+            <div class="pt-stat" id="suOverdueStat"><span>En retard</span><strong id="suOverdue">—</strong><small id="suOverdueNote"></small></div>
+            <div class="pt-stat"><span>Reste à encaisser</span><strong id="suOpen">—</strong><small id="suOpenNote"></small></div>
+          </div>
+        </section>
+      </div>
+
+      <div id="ptDocsView" role="tabpanel" aria-labelledby="docsTab" hidden>
       <section class="pt-section" id="ptRequestsSection" hidden>
         <h2>Votre cabinet attend</h2>
         <ul class="pt-requests" id="ptRequests"></ul>
@@ -359,12 +390,12 @@
       periodLabelCap,
       uploadPortalFile,
     } from "./portal-client.js?v=portal3";
-    import { initSalesView, refreshSales, salesLoaded } from "./portal-sales.js?v=sales3";
+    import { initSalesView, onSalesChange, portalTodo, purchaseMonths, refreshSales, salesLoaded, salesOverview } from "./portal-sales.js?v=suivi1";
 
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const icons = () => window.lucide?.createIcons?.();
-    const state = { ctx: null, requests: [], uploads: [], periodKey: null, pick: null };
+    const state = { ctx: null, requests: [], uploads: [], periodKey: null, pick: null, view: "suivi", salesError: false };
     const key = (y, m) => `${y}-${String(m).padStart(2, "0")}`;
     const fmtDate = (iso) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -404,7 +435,6 @@
       const { client, cabinet } = state.ctx;
       $("ptCabinet").textContent = cabinet?.name || "Votre cabinet comptable";
       $("ptTitle").textContent = client.name;
-      $("ptSub").textContent = "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable.";
       $("ptFootText").textContent = `Vos documents sont transmis uniquement à ${cabinet?.name || "votre cabinet comptable"}, par une connexion sécurisée.`;
       document.title = `${client.name} — espace documents`;
 
@@ -447,8 +477,65 @@
             <span>${esc(PORTAL_DOC_TYPES[u.doc_type]?.short || "")} · ${fmtDate(u.created_at)}</span>
             ${u.status === "rejected" ? `<em>À renvoyer : ${esc(u.reject_reason || "document à reprendre")}</em>` : ""}
           </div>
-          ${u.status === "rejected" ? `<button type="button" class="pt-btn" data-resend="${u.doc_type}">Renvoyer</button>` : '<span class="pt-ok">Reçu</span>'}
+          ${u.status === "rejected" ? `<button type="button" class="pt-btn" data-resend="${esc(u.doc_type)}">Renvoyer</button>` : '<span class="pt-ok">Reçu</span>'}
         </li>`).join("") : '<li class="pt-empty">Aucun document envoyé pour ce mois.</li>';
+      renderSuivi();
+      icons();
+    }
+
+    // ---------- Suivi : aperçu (données déjà chargées : demandes, envois, périodes, ventes) ----------
+    function renderSuivi() {
+      if (!state.ctx) return;
+      const sales = salesOverview();
+      const todo = portalTodo({ requests: state.requests, uploads: state.uploads, dossiers: state.ctx.dossiers, sales });
+      const done = (title, detail) => `<li class="is-done"><i data-lucide="check-circle-2"></i><div><strong>${esc(title)}</strong><span>${esc(detail)}</span></div></li>`;
+      let html = todo.map((t) => `
+        <li class="is-${esc(t.tone)}">
+          <i data-lucide="${esc(t.icon)}"></i>
+          <div><strong>${esc(t.title)}</strong>${t.detail ? `<span>${esc(t.detail)}</span>` : ""}</div>
+          <button type="button" class="pt-btn" data-goto="${esc(t.view)}" data-period="${esc(t.period || "")}" data-filter="${esc(t.filter || "")}" data-scroll="${esc(t.scroll || "")}">${esc(t.action)}</button>
+        </li>`).join("");
+      if (!todo.length) {
+        if (sales) html = done("Tout est à jour", "Rien à envoyer ni à relancer pour le moment.");
+        else if (state.salesError) html = done("Achats : tout est à jour", "Vos ventes n'ont pas pu être chargées pour le moment.");
+        else html = '<li class="pt-empty">Chargement…</li>';
+      } else if (!sales) {
+        html += `<li class="pt-empty">${state.salesError ? "Vos ventes n'ont pas pu être chargées pour le moment." : "Ventes en cours de chargement…"}</li>`;
+      }
+      $("suTodo").innerHTML = html;
+      $("suTodoTitle").textContent = todo.length ? `À faire (${todo.length})` : "À faire";
+
+      const months = purchaseMonths({ dossiers: state.ctx.dossiers, uploads: state.uploads });
+      $("suMonths").innerHTML = months.map((m) => {
+        const n = m.invoiceCount;
+        const parts = [
+          n ? `${n} facture${n > 1 ? "s" : ""} d'achat envoyée${n > 1 ? "s" : ""}` : "Aucune facture d'achat envoyée",
+          m.bankSent ? "relevé envoyé" : "relevé non envoyé",
+        ];
+        if (m.otherCount) parts.push(`${m.otherCount} autre${m.otherCount > 1 ? "s" : ""} document${m.otherCount > 1 ? "s" : ""}`);
+        return `
+          <li>
+            <i data-lucide="${m.closed ? "lock" : "calendar"}"></i>
+            <div><strong>${esc(periodLabelCap(m.year, m.month))}</strong><span>${esc(parts.join(" · "))}</span></div>
+            <span class="pt-badge ${m.closed ? "is-ok" : "is-muted"}">${m.closed ? "Clôturé" : "En cours"}</span>
+          </li>`;
+      }).join("");
+
+      $("suSalesStats").hidden = !sales?.hasSales;
+      $("suSalesNote").hidden = !!sales?.hasSales;
+      if (!sales) {
+        $("suSalesNote").textContent = state.salesError ? "Vos ventes n'ont pas pu être chargées pour le moment." : "Chargement…";
+      } else if (!sales.hasSales) {
+        $("suSalesNote").textContent = "Aucune facture de vente enregistrée pour l'instant.";
+      } else {
+        $("suCollectedLabel").textContent = sales.text.collectedLabel;
+        $("suCollected").textContent = sales.text.collected;
+        $("suOverdue").textContent = sales.text.overdue;
+        $("suOverdueNote").textContent = sales.text.overdueNote;
+        $("suOverdueStat").classList.toggle("is-alert", sales.overdueCount > 0);
+        $("suOpen").textContent = sales.text.open;
+        $("suOpenNote").textContent = sales.text.openNote;
+      }
       icons();
     }
 
@@ -511,6 +598,8 @@
     });
 
     document.addEventListener("click", (event) => {
+      const go = event.target.closest("[data-goto]");
+      if (go) return goTo(go.dataset);
       const tile = event.target.closest("[data-pick]");
       if (tile) return pickFiles({ docType: tile.dataset.pick });
       const req = event.target.closest("[data-request]");
@@ -524,25 +613,27 @@
     });
     $("ptPeriod").addEventListener("change", () => { state.periodKey = $("ptPeriod").value; render(); });
 
-    // ---------- Onglets Documents / Ventes ----------
+    // ---------- Onglets Suivi / Achats / Ventes ----------
+    const VIEWS = {
+      suivi: { panel: "ptSuiviView", hash: "", sub: "Un coup d'œil sur ce qui reste à faire, vos achats et vos ventes." },
+      docs: { panel: "ptDocsView", hash: "#achats", sub: "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable." },
+      sales: { panel: "ptSalesView", hash: "#ventes", sub: "Suivez vos factures de vente : ce qui est payé, ce qui reste à encaisser, ce qui est en retard." },
+      archive: { panel: "ptArchiveView", hash: "#archives", sub: "Toutes vos factures et tous vos relevés, toutes périodes confondues. Retrouvez-les par mois ou par fournisseur, et téléchargez-les en une fois." },
+    };
     let archiveView = null;
     async function showView(view) {
-      const sales = view === "sales";
-      const archive = view === "archive";
-      $("ptDocsView").hidden = view !== "docs";
-      $("ptSalesView").hidden = !sales;
-      $("ptArchiveView").hidden = !archive;
+      if (!VIEWS[view]) view = "suivi";
+      state.view = view;
+      for (const [k, v] of Object.entries(VIEWS)) $(v.panel).hidden = k !== view;
       for (const tab of document.querySelectorAll(".pt-tab")) {
         const on = tab.dataset.view === view;
         tab.classList.toggle("is-active", on);
         tab.setAttribute("aria-selected", String(on));
       }
-      $("ptSub").textContent = sales
-        ? "Suivez vos factures de vente : ce qui est payé, ce qui reste à encaisser, ce qui est en retard."
-        : archive
-          ? "Toutes vos factures et tous vos relevés, toutes périodes confondues. Retrouvez-les par mois ou par fournisseur, et téléchargez-les en une fois."
-          : "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable.";
-      if (archive) {
+      $("ptSub").textContent = VIEWS[view].sub;
+      history.replaceState(null, "", window.location.pathname + VIEWS[view].hash);
+      if (view === "suivi") renderSuivi();
+      if (view === "archive") {
         if (!archiveView) {
           const { createArchiveView } = await import("./archive-view.js?v=arch1");
           archiveView = createArchiveView({
@@ -553,14 +644,28 @@
         }
         await archiveView.load();
       }
-      if (sales && !salesLoaded()) {
+      if (view === "sales" && !salesLoaded()) {
         try {
           await refreshSales();
         } catch (err) {
           $("slList").innerHTML = `<li class="pt-empty">${esc(err.message)}</li>`;
+          state.salesError = true;
+          renderSuivi();
         }
       }
-      history.replaceState(null, "", sales ? "#ventes" : archive ? "#archives" : window.location.pathname);
+    }
+
+    // Bouton du Suivi : onglet visé, mois à afficher, filtre des ventes, section à montrer.
+    async function goTo({ goto, period, filter, scroll }) {
+      if (period && goto === "docs") {
+        state.periodKey = period;
+        render();
+      }
+      await showView(goto);
+      if (filter) document.querySelector(`[data-sales-filter="${CSS.escape(filter)}"]`)?.click();
+      const target = scroll && $(scroll);
+      if (target && !target.hidden) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.scrollTo({ top: 0 });
     }
     document.querySelectorAll(".pt-tab").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
     const LOGIN_BUTTON = '<p><a class="pt-btn pt-login-btn" href="login.html">Se connecter avec mon email</a></p>';
@@ -623,9 +728,10 @@
       $("ptApp").hidden = false;
       render();
       initSalesView(ctx);
-      if (window.location.hash === "#ventes") await showView("sales");
-      else if (window.location.hash === "#archives") await showView("archive");
-      else refreshSales().catch(() => {});
+      onSalesChange(() => { state.salesError = false; renderSuivi(); });
+      const first = Object.keys(VIEWS).find((k) => VIEWS[k].hash && VIEWS[k].hash === window.location.hash) || "suivi";
+      await showView(first);
+      if (first !== "sales") refreshSales().catch(() => { state.salesError = true; renderSuivi(); });
     }
 
     start().catch((err) => showState(err.message || "Une erreur est survenue. Réessayez dans un instant.", { error: true }));

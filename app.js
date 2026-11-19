@@ -1,3 +1,4 @@
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf3";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -13,6 +14,7 @@ import {
   setExtractionContext,
 } from "./extract-client.js?v=dedup2";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
+import { escapeHtml as escapeHtmlText } from "./dashboard-ui.js?v=bill1";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
@@ -39,14 +41,14 @@ import {
   parseSourceFilename,
   showLinePreview,
   tagSourceFilename,
-} from "./document-preview.js?v=preview8";
+} from "./document-preview.js?v=s6a";
 import {
   extractViaServer,
   fetchServerHealth,
   getApiUrl,
   parseBankStatementViaServer,
   saveApiUrl,
-} from "./api-client.js?v=api8";
+} from "./api-client.js?v=sec1";
 import {
   getSession,
   getUserCabinetMembership,
@@ -65,7 +67,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=suivi1";
 
 // Lignes et relevé repris du dossier par cette page (fusion des imports
 // serveur concurrents, voir dossier-persistence.js).
@@ -106,7 +108,7 @@ async function persistWorkspaceNow(eventType, summary, meta = {}) {
   const dossierId = dossierState.context.dossierId;
   setSaveStatus("Enregistrement…");
   try {
-    const saved = await saveDossierWorkspace(dossierId, getWorkspacePayload());
+    const saved = await measurePerformance("solo.save", () => saveDossierWorkspace(dossierId, getWorkspacePayload()), { lineCount: state.lines.length, bankCount: state.bankTransactions.length });
     if (saved?.added || saved?.bankChanged) {
       // Données importées par le serveur pendant que la page était ouverte.
       if (saved.added) state.lines = saved.lines;
@@ -149,6 +151,9 @@ function initWorkspacePersistence() {
       return;
     }
     if (workspaceSaver) {
+      // Limite connue : l'écriture est une requête réseau asynchrone que le
+      // navigateur peut interrompre à la fermeture. Une modification faite
+      // dans les ~1,5 s précédant la fermeture peut donc être perdue.
       workspaceSaver.flush();
     }
   });
@@ -159,10 +164,10 @@ async function loadPersistedWorkspace() {
   setSaveStatus("Chargement du dossier…");
   try {
     workspaceTracker = createWorkspaceTracker();
-    const data = await loadDossierWorkspace(dossierState.context.dossierId, {
+    const data = await measurePerformance("solo.load", () => loadDossierWorkspace(dossierState.context.dossierId, {
       tracker: workspaceTracker,
       adoptBank: true,
-    });
+    }));
     state.lines = data.lines || [];
     state.bankTransactions = data.bank_transactions || [];
     state.bankMeta = { ...state.bankMeta, ...(data.bank_meta || {}) };
@@ -520,7 +525,7 @@ function renderFileList() {
     .map((file) => {
       const isZip = file.name.toLowerCase().endsWith(".zip");
       const icon = isZip ? "🗜️" : file.type === "application/pdf" ? "📄" : "🖼️";
-      return `<div class="file-item">${icon} <span>${file.name}</span> <span class="file-size">${formatSize(file.size)}</span></div>`;
+      return `<div class="file-item">${icon} <span>${escapeHtmlText(file.name)}</span> <span class="file-size">${formatSize(file.size)}</span></div>`;
     })
     .join("");
 }
@@ -540,6 +545,7 @@ function lineNeedsReviewRow(line, isDuplicate) {
 }
 
 function renderTable() {
+    return measureSyncPerformance("solo.review.render", () => {
   refreshAllFieldConfidence();
   els.linesTableBody.innerHTML = "";
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));
@@ -695,7 +701,9 @@ function renderTable() {
 
     els.linesTableBody.appendChild(tr);
   });
-}
+
+    });
+  }
 
 function addFiles(fileList) {
   const incoming = Array.from(fileList);
@@ -722,7 +730,7 @@ function renderWarnings(warnings) {
     return;
   }
   els.warningList.hidden = false;
-  els.warningList.innerHTML = warnings.map((w) => `<li>${w}</li>`).join("");
+  els.warningList.innerHTML = warnings.map((w) => `<li>${escapeHtmlText(w)}</li>`).join("");
 }
 
 function clearWarnings() {
@@ -1141,7 +1149,7 @@ function openExportReview(issues) {
       ? `${warns} champ(s) à relire. Corrigez les lignes ou exportez après confirmation.`
       : "Confirmez puis exportez.";
   els.exportReviewList.innerHTML = issues
-    .map((issue) => `<li class="review-${issue.level}">${issue.text}</li>`)
+    .map((issue) => `<li class="review-${escapeHtmlText(issue.level)}">${escapeHtmlText(issue.text)}</li>`)
     .join("");
   els.exportReviewDialog.showModal();
 }
@@ -1190,7 +1198,7 @@ function renderBankFileInfo() {
   const payments = state.bankTransactions.filter((t) => t.type === "payment").length;
   const fees = state.bankTransactions.filter((t) => t.type === "fee").length;
   els.bankFileInfo.hidden = false;
-  els.bankFileInfo.innerHTML = `<div class="file-item">${shortFilename(state.bankFile.name)} — ${state.bankTransactions.length} mouvement(s) (${payments} paiement(s), ${fees} frais)</div>`;
+  els.bankFileInfo.innerHTML = `<div class="file-item">${escapeHtmlText(shortFilename(state.bankFile.name))} — ${state.bankTransactions.length} mouvement(s) (${payments} paiement(s), ${fees} frais)</div>`;
 }
 
 async function loadBankFile(file) {
@@ -1372,7 +1380,7 @@ function showNextBankMatchDialog() {
           ? "1 facture"
           : `${proposal.invoiceCount} factures (${proposal.lineCount} lignes)`;
       text.innerHTML =
-        `<strong>${proposal.lib_frss}</strong>` +
+        `<strong>${escapeHtmlText(proposal.lib_frss)}</strong>` +
         `${invoiceLabel} — total ${formatMad(proposal.totalTtc)} MAD`;
       option.append(radio, text);
       els.bankMatchProposals.appendChild(option);

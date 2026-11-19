@@ -7,7 +7,8 @@ import {
   shouldSkipZipForAnalysis,
   sourceIdsWithLines,
 } from "./dossier-documents.js?v=doc21";
-import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=api3";
+import { startDossierAnalysis as apiStartDossierAnalysis, uploadImportJobFile } from "./api-client.js?v=sec1";
+import { escapeHtml } from "./dashboard-ui.js?v=bill1";
 
 export const IMPORT_QUEUE_BUCKET = "import-queue";
 
@@ -289,6 +290,15 @@ function isSilentStaleImportFailure(job) {
     && (job?.processed_files || 0) === 0;
 }
 
+// Lien de toast : URL relative ou http(s) uniquement (pas de javascript:, data:, …).
+function safeToastLinkUrl(url) {
+  if (!url) return null;
+  const value = String(url).trim();
+  const compact = value.replace(/[\u0000-\u0020\u007f]/g, "");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(compact) && !/^https?:/i.test(compact)) return null;
+  return value || null;
+}
+
 export function showWorkspaceToast({
   title,
   message,
@@ -312,15 +322,16 @@ export function showWorkspaceToast({
       container.querySelector(".import-toast-error")?.remove();
     }
   }
+  const safeLinkUrl = safeToastLinkUrl(linkUrl);
   const toast = document.createElement("div");
   toast.className = `import-toast import-toast-${variant}`;
   toast.innerHTML = `
     <div class="import-toast-body">
-      <strong>${title || ""}</strong>
-      ${message ? `<p>${message}</p>` : ""}
+      <strong>${escapeHtml(title || "")}</strong>
+      ${message ? `<p>${escapeHtml(message)}</p>` : ""}
     </div>
-    ${linkUrl ? `<a class="import-toast-link" href="${linkUrl}">${linkLabel}</a>` : ""}
-    ${onAction && actionLabel ? `<button type="button" class="import-toast-link import-toast-action">${actionLabel}</button>` : ""}
+    ${safeLinkUrl ? `<a class="import-toast-link" href="${escapeHtml(safeLinkUrl)}">${escapeHtml(linkLabel)}</a>` : ""}
+    ${onAction && actionLabel ? `<button type="button" class="import-toast-link import-toast-action">${escapeHtml(actionLabel)}</button>` : ""}
   `;
   container.appendChild(toast);
 

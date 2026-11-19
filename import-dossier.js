@@ -5,7 +5,7 @@ import {
   loadDossierWorkspace,
   logDossierActivity,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=suivi1";
 import { escapeHtml } from "./dashboard-ui.js?v=bill1";
 
 export function shortFilename(name) {

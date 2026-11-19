@@ -1,4 +1,4 @@
-import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=persist5";
+import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=suivi1";
 import {
   formatMonthLabel,
   formatRelativeTime,
@@ -11,7 +11,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=portfolio10";
+} from "./portfolio-client.js?v=s6a";
 import { countAnomaliesFromStoredConfidence } from "./workspace-summary.js?v=summary1";
 
 export function pickActiveDossier(dossiers, preferredId = null) {
