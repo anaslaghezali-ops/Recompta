@@ -12,6 +12,7 @@ from zip_utils import (
     ImportBudgetExceeded,
     InvoiceExtractionBudget,
     iter_invoice_files,
+    iter_invoice_files_batched,
 )
 
 
@@ -66,6 +67,24 @@ def test_accept_normal_zip() -> None:
     assert len(result) == 1
     assert result[0][0] == "Fournisseur/facture.pdf"
     assert result[0][1] == payload
+
+
+def test_batched_iterator_yields_incrementally_after_validation() -> None:
+    budget = InvoiceExtractionBudget(max_uncompressed_bytes=2000, max_documents=10)
+    archive = BytesIO()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
+        bundle.writestr("b.pdf", b"b" * 500)
+        bundle.writestr("a.pdf", b"a" * 500)
+    stream = iter_invoice_files_batched(
+        "batch.zip", archive.getvalue(), "application/zip", budget=budget
+    )
+    first = next(stream)
+    assert first[0] == "a.pdf"
+    assert first[1] == b"a" * 500
+    assert budget.document_count == 2
+    second = next(stream)
+    assert second[0] == "b.pdf"
+    stream.close()
 
 
 def test_cumulative_uncompressed_budget_across_archives() -> None:

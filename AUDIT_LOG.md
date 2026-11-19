@@ -316,3 +316,13 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Tests ajoutés : cumul décompressé multi-archives, plafond documentaire multi-archives et absence de consommation du budget lorsqu'une archive est rejetée.
 - Validation : à exécuter par GitHub Actions après le commit ; aucun résultat de test n'est présumé à ce stade.
 - Aucun changement Supabase, aucune fusion, aucun déploiement. `main2`, `main3-chatgpt` et `production.html` non modifiés.
+
+
+### 2026-11-19 — Worker d'import progressif par lots
+
+- Le worker partage désormais un budget cumulatif par job : 100 Mio décompressés et 1 000 documents maximum pour l'ensemble de ses fichiers.
+- Les archives sont prévalidées puis consommées document par document ; le worker n'accumule plus les contenus binaires de tous les fichiers du job dans `work_items`.
+- Les documents sont extraits par lots de deux. La liste conservée pour la fusion, les statuts et l'audit ne contient que les métadonnées et identifiants de source.
+- Le contexte de crédits IA et les exclusions ICE sont libérés dans un bloc `finally`, y compris en cas d'échec du traitement.
+- Tests : ajout d'une vérification de l'itérateur progressif et conservation des tests de budgets cumulés. Nouvelle CI à vérifier après ce commit.
+- Aucun changement Supabase, aucune fusion et aucun déploiement.

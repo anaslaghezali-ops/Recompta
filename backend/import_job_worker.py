@@ -20,7 +20,12 @@ from normalize_results import (
 from supabase_service import SupabaseService, _document_identity_keys
 from supplier_notebook import enrich_supplier_identities
 from vision_credits import cabinet_id_for_dossier, reset_active_cabinet_id, set_active_cabinet_id
-from zip_utils import iter_invoice_files, storage_path_for_zip_member
+from zip_utils import (
+    IMPORT_EXTRACTION_BATCH_SIZE,
+    InvoiceExtractionBudget,
+    iter_invoice_files_batched,
+    storage_path_for_zip_member,
+)
 
 IMPORT_QUEUE_BUCKET = "import-queue"
 
@@ -530,164 +535,37 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
 
     workspace = await db.load_workspace(dossier_id)
     lines: list[dict[str, Any]] = list(workspace.get("lines") or [])
-
-    work_items: list[dict[str, Any]] = []
-    archive_failures = 0
-
-    for file_row in files:
-        file_id = int(file_row["id"])
-        storage_path = file_row["storage_path"]
-        filename = file_row["original_filename"]
-        mime_type = file_row.get("mime_type") or "application/octet-stream"
-        parent_source = file_row.get("source_id") or _next_source_id()
-
-        await db.update_job_file(file_id, {"status": "processing"})
-        try:
-            content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
-            expanded = iter_invoice_files(filename, content, mime_type)
-            if not expanded:
-                raise RuntimeError("Aucune facture exploitable (PDF, image ou ZIP).")
-
-            if len(expanded) == 1:
-                relative_name, file_content, file_mime = expanded[0]
-                if persist_source_document(job):
-                    await db.save_dossier_document(
-                        dossier_id,
-                        filename=relative_name,
-                        content=file_content,
-                        mime_type=file_mime,
-                        doc_type="invoice",
-                        source_id=parent_source,
-                    )
-
-            zip_expanded = len(expanded) > 1
-            for relative_name, file_content, file_mime in expanded:
-                normalized_name = (
-                    storage_path_for_zip_member(filename, relative_name)
-                    if zip_expanded
-                    else relative_name.replace("\\", "/")
-                )
-                source_id = parent_source if len(expanded) == 1 else _next_source_id()
-                if zip_expanded and persist_source_document(job):
-                    saved = await db.save_dossier_document(
-                        dossier_id,
-                        filename=normalized_name,
-                        content=file_content,
-                        mime_type=file_mime,
-                        doc_type="invoice",
-                        source_id=source_id,
-                    )
-                    if saved and saved.get("source_id"):
-                        source_id = str(saved["source_id"])
-                work_items.append(
-                    {
-                        "parent_file_id": file_id,
-                        "filename": normalized_name,
-                        "content": file_content,
-                        "mime_type": file_mime,
-                        "source_id": source_id,
-                    }
-                )
-        except Exception as exc:  # noqa: BLE001
-            archive_failures += 1
-            await db.update_job_file(
-                file_id,
-                {
-                    "status": "failed",
-                    "error_message": f"{type(exc).__name__}: {exc}",
-                    "processed_at": _iso_now(),
-                },
-            )
-
-    if not work_items:
-        await db.update_job(
-            job_id,
-            {
-                "status": "failed",
-                "processed_files": 0,
-                "failed_files": archive_failures,
-                "error_summary": "Aucune facture exploitable dans l'archive.",
-                "finished_at": _iso_now(),
-            },
-        )
-        return {"job_id": job_id, "processed": 0, "failed": archive_failures, "status": "failed"}
-
-    await db.update_job(
-        job_id,
-        {
-            "total_files": len(work_items),
-            "uploaded_files": len(work_items),
-            "processed_files": 0,
-            "failed_files": 0,
-        },
-    )
-
     processed_keys = _processed_invoice_keys(lines)
-    pending_items = [item for item in work_items if not _work_item_already_processed(item, processed_keys)]
-    skipped_items = len(work_items) - len(pending_items)
-    work_items = pending_items
 
-    if not work_items:
-        final_status = "failed"
-        error_summary = (
-            f"{skipped_items} fichier(s) déjà extrait(s), rien à refaire."
-            if skipped_items
-            else "Aucun fichier n'a pu être extrait."
-        )
-        await db.update_job(
-            job_id,
-            {
-                "status": final_status,
-                "processed_files": 0,
-                "failed_files": 0 if skipped_items else archive_failures,
-                "error_summary": error_summary,
-                "finished_at": _iso_now(),
-            },
-        )
-        done_parents = {item["parent_file_id"] for item in work_items} if work_items else {
-            int(file_row["id"]) for file_row in files
-        }
-        for file_id in done_parents:
-            await db.update_job_file(
-                file_id,
-                {
-                    "status": "done",
-                    "processed_at": _iso_now(),
-                    "error_message": None,
-                },
-            )
-        return {
-            "job_id": job_id,
-            "processed": 0,
-            "failed": 0,
-            "new_lines": 0,
-            "status": final_status,
-            "skipped": skipped_items,
-        }
-
-    processed = 0
-    failed = 0
+    # Le budget est partagé par tous les fichiers uploadés dans ce job.
+    budget = InvoiceExtractionBudget()
+    work_items: list[dict[str, Any]] = []  # métadonnées seulement : aucun octet ici
     extraction_results: list[ExtractionResult] = []
     extraction_errors: dict[str, BaseException] = {}
+    archive_failures = 0
+    total_documents = 0
+    skipped_items = 0
+    processed = 0
+    failed = 0
+    successful_parent_ids: set[int] = set()
+
     cabinet_id = await cabinet_id_for_dossier(dossier_id, db.client)
     if cabinet_id is None:
-        import logging
-
-        logging.getLogger(__name__).warning(
+        _logger.warning(
             "vision credits: cabinet_id introuvable pour dossier %s — extractions IA bloquées",
             dossier_id,
         )
     credits_token = set_active_cabinet_id(cabinet_id)
+    client_token = activate_client_ice_exclusions(client_ice)
 
-    async def process_item(item: dict[str, Any]) -> ExtractionResult:
+    async def process_item(item: dict[str, Any], content: bytes) -> ExtractionResult:
         nonlocal processed, failed
         filename = item["filename"]
         source_id = item["source_id"]
         item_token = set_active_cabinet_id(cabinet_id)
         try:
-            # Seule la lecture occupe un créneau ; les écritures en base non.
             async with extraction_slot(filename):
-                result = await extract_invoice(filename, item["content"], item["mime_type"])
+                result = await extract_invoice(filename, content, item["mime_type"])
             result.filename = filename
             result.source_id = source_id
             if result.lines:
@@ -696,12 +574,16 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 failed += 1
                 if not result.warnings:
                     result.warnings = ["Aucune ligne extraite — vérifiez le scan ou relancez l'extraction."]
-            await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
+            await db.update_job(
+                job_id, {"processed_files": processed, "failed_files": failed}
+            )
             return result
         except Exception as exc:  # noqa: BLE001
             failed += 1
             extraction_errors[source_id] = exc
-            await db.update_job(job_id, {"processed_files": processed, "failed_files": failed})
+            await db.update_job(
+                job_id, {"processed_files": processed, "failed_files": failed}
+            )
             return ExtractionResult(
                 filename=filename,
                 source_id=source_id,
@@ -711,13 +593,189 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
         finally:
             reset_active_cabinet_id(item_token)
 
-    token = activate_client_ice_exclusions(client_ice)
-    new_lines: list[dict[str, Any]] = []
-    try:
-        raw_results = await asyncio.gather(*(process_item(item) for item in work_items))
-        extraction_results = [item for item in raw_results if item is not None]
+    async def flush_batch(batch: list[tuple[dict[str, Any], bytes]]) -> None:
+        if not batch:
+            return
+        current_batch = list(batch)
+        batch.clear()
+        extraction_results.extend(
+            await asyncio.gather(
+                *(process_item(item, content) for item, content in current_batch)
+            )
+        )
 
-        normalized = normalize_extraction_results(extraction_results, client_ice=client_ice)
+    try:
+        for file_row in files:
+            file_id = int(file_row["id"])
+            storage_path = file_row["storage_path"]
+            filename = file_row["original_filename"]
+            mime_type = file_row.get("mime_type") or "application/octet-stream"
+            parent_source = file_row.get("source_id") or _next_source_id()
+            batch: list[tuple[dict[str, Any], bytes]] = []
+            stream = None
+            content = b""
+            try:
+                await db.update_job_file(file_id, {"status": "processing"})
+                content = await db.download_storage_file(IMPORT_QUEUE_BUCKET, storage_path)
+                stream = iter_invoice_files_batched(
+                    filename, content, mime_type, budget=budget
+                )
+                first = next(stream, None)
+                if first is None:
+                    raise RuntimeError("Aucune facture exploitable (PDF, image ou ZIP).")
+                second = next(stream, None)
+                zip_expanded = second is not None
+
+                if not zip_expanded and persist_source_document(job):
+                    relative_name, file_content, file_mime = first
+                    await db.save_dossier_document(
+                        dossier_id,
+                        filename=relative_name,
+                        content=file_content,
+                        mime_type=file_mime,
+                        doc_type="invoice",
+                        source_id=parent_source,
+                    )
+
+                async def handle_entry(entry: tuple[str, bytes, str]) -> None:
+                    nonlocal total_documents, skipped_items
+                    relative_name, file_content, file_mime = entry
+                    normalized_name = (
+                        storage_path_for_zip_member(filename, relative_name)
+                        if zip_expanded
+                        else relative_name.replace("\\", "/")
+                    )
+                    source_id = parent_source if not zip_expanded else _next_source_id()
+                    if zip_expanded and persist_source_document(job):
+                        saved = await db.save_dossier_document(
+                            dossier_id,
+                            filename=normalized_name,
+                            content=file_content,
+                            mime_type=file_mime,
+                            doc_type="invoice",
+                            source_id=source_id,
+                        )
+                        if saved and saved.get("source_id"):
+                            source_id = str(saved["source_id"])
+
+                    total_documents += 1
+                    item = {
+                        "parent_file_id": file_id,
+                        "filename": normalized_name,
+                        "mime_type": file_mime,
+                        "source_id": source_id,
+                    }
+                    if _work_item_already_processed(item, processed_keys):
+                        skipped_items += 1
+                        return
+                    work_items.append(item)
+                    batch.append((item, file_content))
+                    if len(batch) >= IMPORT_EXTRACTION_BATCH_SIZE:
+                        await flush_batch(batch)
+
+                await handle_entry(first)
+                if second is not None:
+                    await handle_entry(second)
+                for entry in stream:
+                    await handle_entry(entry)
+                await flush_batch(batch)
+                successful_parent_ids.add(file_id)
+
+                await db.update_job(
+                    job_id,
+                    {
+                        "total_files": total_documents,
+                        "uploaded_files": total_documents,
+                        "processed_files": processed,
+                        "failed_files": failed,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001
+                archive_failures += 1
+                try:
+                    await flush_batch(batch)
+                except Exception:  # noqa: BLE001
+                    _logger.exception("échec du dernier lot du fichier %s", filename)
+                await db.update_job_file(
+                    file_id,
+                    {
+                        "status": "failed",
+                        "error_message": f"{type(exc).__name__}: {exc}",
+                        "processed_at": _iso_now(),
+                    },
+                )
+            finally:
+                if stream is not None:
+                    stream.close()
+                content = b""
+                batch.clear()
+
+        await db.update_job(
+            job_id,
+            {
+                "total_files": total_documents,
+                "uploaded_files": total_documents,
+                "processed_files": processed,
+                "failed_files": failed,
+            },
+        )
+
+        if total_documents == 0:
+            await db.update_job(
+                job_id,
+                {
+                    "status": "failed",
+                    "processed_files": 0,
+                    "failed_files": archive_failures,
+                    "error_summary": "Aucune facture exploitable dans l'archive.",
+                    "finished_at": _iso_now(),
+                },
+            )
+            return {
+                "job_id": job_id,
+                "processed": 0,
+                "failed": archive_failures,
+                "status": "failed",
+            }
+
+        if not work_items:
+            error_summary = (
+                f"{skipped_items} fichier(s) déjà extrait(s), rien à refaire."
+                if skipped_items
+                else "Aucun fichier n'a pu être extrait."
+            )
+            await db.update_job(
+                job_id,
+                {
+                    "status": "failed",
+                    "processed_files": 0,
+                    "failed_files": archive_failures,
+                    "error_summary": error_summary,
+                    "finished_at": _iso_now(),
+                },
+            )
+            for file_id in successful_parent_ids:
+                await db.update_job_file(
+                    file_id,
+                    {
+                        "status": "done",
+                        "processed_at": _iso_now(),
+                        "error_message": None,
+                    },
+                )
+            return {
+                "job_id": job_id,
+                "processed": 0,
+                "failed": archive_failures,
+                "new_lines": 0,
+                "status": "failed",
+                "skipped": skipped_items,
+            }
+
+        new_lines: list[dict[str, Any]] = []
+        normalized = normalize_extraction_results(
+            extraction_results, client_ice=client_ice
+        )
         file_summaries = []
         for result in normalized:
             file_summaries.append({
@@ -736,8 +794,6 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     )
                 )
 
-        # Statut de lecture par document : une facture non lue doit rester
-        # visible (et bloquer la déclaration) tant qu'elle n'est pas traitée.
         results_by_source = {str(r.source_id): r for r in normalized}
         document_id = options.get("document_id")
         for mark in extraction_marks(
@@ -770,14 +826,11 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             merge_trace: dict[str, int] = {}
 
             def add_new_lines(current: dict[str, Any]) -> dict[str, Any]:
-                # Rejouée sur l'état relu à chaque essai (écriture conditionnelle).
                 current_lines = list(current.get("lines") or [])
                 merge_trace["before"] = len(current_lines)
                 merged = _merge_workspace_lines(
                     current_lines, [dict(line) for line in new_lines]
                 )
-                # IF / ICE / nom complétés depuis le carnet et tout le dossier
-                # (y compris les lignes déjà présentes, champs vides seulement).
                 merge_trace.update(enrich_supplier_identities(
                     merged, notebook, client_ice=str(options.get("client_ice") or "")
                 ))
@@ -809,92 +862,100 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 f"Import terminé — {len(new_lines)} ligne(s) extraite(s)",
                 activity_meta,
             )
-    finally:
-        deactivate_client_ice_exclusions(token)
-        reset_active_cabinet_id(credits_token)
 
-    total = len(work_items)
-    credit_blocked = 0
-    for result in extraction_results:
-        for warning in result.warnings or []:
-            text = str(warning or "").lower()
-            if "quota" in text and ("crédit" in text or "credit" in text):
-                credit_blocked += 1
-                break
-
-    if processed == 0:
-        final_status = "failed"
-        warning_bits = []
+        total = len(work_items)
+        credit_blocked = 0
         for result in extraction_results:
-            for warning in (result.warnings or [])[:2]:
-                if warning and warning not in warning_bits:
-                    warning_bits.append(warning)
-        if credit_blocked > 0:
-            error_summary = (
-                f"{credit_blocked} scan(s) non extraits — quota IA épuisé ce mois."
-            )
-        else:
-            error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
-    elif failed > 0 or archive_failures > 0:
-        final_status = "completed"
-        other_failed = max(failed + archive_failures - credit_blocked, 0)
-        if credit_blocked > 0 and other_failed == 0:
-            error_summary = (
-                f"{processed} extrait(s) — {credit_blocked} scan(s) non extraits "
-                f"(quota IA épuisé)."
-            )
-        elif credit_blocked > 0:
-            error_summary = (
-                f"{failed + archive_failures} fichier(s) en erreur sur {total} "
-                f"dont {credit_blocked} faute de crédits."
-            )
-        else:
-            error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
-    else:
-        final_status = "completed"
-        error_summary = None
+            for warning in result.warnings or []:
+                warning_text = str(warning or "").lower()
+                if "quota" in warning_text and ("crédit" in warning_text or "credit" in warning_text):
+                    credit_blocked += 1
+                    break
 
-    await db.update_job(
-        job_id,
-        {
-            "status": final_status,
-            "processed_files": processed,
-            "failed_files": failed + archive_failures,
-            "error_summary": error_summary,
-            "finished_at": _iso_now(),
-        },
-    )
+        if processed == 0:
+            final_status = "failed"
+            warning_bits = []
+            for result in extraction_results:
+                for warning in (result.warnings or [])[:2]:
+                    if warning and warning not in warning_bits:
+                        warning_bits.append(warning)
+            if credit_blocked > 0:
+                error_summary = (
+                    f"{credit_blocked} scan(s) non extraits — quota IA épuisé ce mois."
+                )
+            else:
+                error_summary = warning_bits[0] if warning_bits else "Aucun fichier n'a pu être extrait."
+        elif failed > 0 or archive_failures > 0:
+            final_status = "completed"
+            other_failed = max(failed + archive_failures - credit_blocked, 0)
+            if credit_blocked > 0 and other_failed == 0:
+                error_summary = (
+                    f"{processed} extrait(s) — {credit_blocked} scan(s) non extraits "
+                    "(quota IA épuisé)."
+                )
+            elif credit_blocked > 0:
+                error_summary = (
+                    f"{failed + archive_failures} fichier(s) en erreur sur {total} "
+                    f"dont {credit_blocked} faute de crédits."
+                )
+            else:
+                error_summary = f"{failed + archive_failures} fichier(s) en erreur sur {total}."
+        else:
+            final_status = "completed"
+            error_summary = None
 
-    done_parents = {item["parent_file_id"] for item in work_items}
-    lines_by_source: dict[str, int] = {}
-    for line in new_lines:
-        key = str(line.get("source_id") or "")
-        lines_by_source[key] = lines_by_source.get(key, 0) + 1
-    for file_id in done_parents:
-        children = [item for item in work_items if item["parent_file_id"] == file_id]
-        count = sum(lines_by_source.get(str(item["source_id"]), 0) for item in children)
-        unread = sum(1 for item in children if not lines_by_source.get(str(item["source_id"])))
-        await db.update_job_file(
-            file_id,
+        await db.update_job(
+            job_id,
             {
-                # Un fichier dont rien n'a été lu est un échec, pas « terminé ».
-                "status": "done" if count else "failed",
-                "line_count": count,
-                "processed_at": _iso_now(),
-                "error_message": (
-                    None if not unread
-                    else f"{unread} document(s) non lu(s) sur {len(children)}."
-                ),
+                "status": final_status,
+                "processed_files": processed,
+                "failed_files": failed + archive_failures,
+                "error_summary": error_summary,
+                "finished_at": _iso_now(),
             },
         )
 
-    return {
-        "job_id": job_id,
-        "processed": processed,
-        "failed": failed + archive_failures,
-        "new_lines": len(new_lines),
-        "status": final_status,
-    }
+        done_parents = {item["parent_file_id"] for item in work_items}
+        lines_by_source: dict[str, int] = {}
+        for line in new_lines:
+            key = str(line.get("source_id") or "")
+            lines_by_source[key] = lines_by_source.get(key, 0) + 1
+        for file_id in done_parents:
+            children = [item for item in work_items if item["parent_file_id"] == file_id]
+            count = sum(lines_by_source.get(str(item["source_id"]), 0) for item in children)
+            unread = sum(1 for item in children if not lines_by_source.get(str(item["source_id"])))
+            await db.update_job_file(
+                file_id,
+                {
+                    "status": "done" if count else "failed",
+                    "line_count": count,
+                    "processed_at": _iso_now(),
+                    "error_message": (
+                        None if not unread
+                        else f"{unread} document(s) non lu(s) sur {len(children)}."
+                    ),
+                },
+            )
+        for file_id in successful_parent_ids - done_parents:
+            await db.update_job_file(
+                file_id,
+                {
+                    "status": "done",
+                    "processed_at": _iso_now(),
+                    "error_message": None,
+                },
+            )
+
+        return {
+            "job_id": job_id,
+            "processed": processed,
+            "failed": failed + archive_failures,
+            "new_lines": len(new_lines),
+            "status": final_status,
+        }
+    finally:
+        deactivate_client_ice_exclusions(client_token)
+        reset_active_cabinet_id(credits_token)
 
 
 async def _release_queue_files(job_id: int, db: SupabaseService) -> None:
