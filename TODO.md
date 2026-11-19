@@ -9,6 +9,17 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 
 ---
 
+## ▶ À faire par Anas dès qu'il est devant son PC
+
+1. **A1 — Serveur sur `main2`** : dans le terminal du Codespace, Ctrl+C puis
+   `git checkout main2` → `git pull origin main2` → `cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000`.
+   Recharger ensuite les pages Recompta ouvertes (se reconnecter si « Connectez-vous » s'affiche).
+2. **A2 — Libérer le stockage** : dans un second terminal, `python backend/scripts/purge_import_queue.py`,
+   puis envoyer le résultat à Claude avant de lancer `--supprimer`.
+3. **A6 — Pic mémoire** : après un lot d'une vingtaine de factures, noter le nombre « pic » affiché dans le terminal.
+4. **A5 — Mesures de référence** : voir la ligne A5 ci-dessous, puis Administration → « Exporter les mesures ».
+5. **A7 — Fermer la PR #169** sur GitHub.
+
 ## 1. Décisions et actions d'Anas
 
 | # | Tâche | Statut | Détail |
