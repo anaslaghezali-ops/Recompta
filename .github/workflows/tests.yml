@@ -41,6 +41,29 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Syntaxe JavaScript (fichiers racine + scripts module des pages)
+        # Aucun test ne charge app.js, workspace-review.js… : sans ce contrôle,
+        # une erreur de syntaxe passait la CI (incident du 19/11).
+        run: |
+          set -e
+          dir="$(mktemp -d)"
+          for f in *.js test-*.mjs; do
+            cp "$f" "$dir/${f%.*}.mjs"
+            node --check "$dir/${f%.*}.mjs" || { echo "::error file=$f::erreur de syntaxe"; exit 1; }
+          done
+          python3 - "$dir" <<'PY'
+          import re, glob, subprocess, sys
+          bad = 0
+          for f in sorted(glob.glob("*.html")):
+              for i, body in enumerate(re.findall(r'<script type="module">(.*?)</script>', open(f).read(), re.S)):
+                  path = f"{sys.argv[1]}/{f}.{i}.mjs"
+                  open(path, "w").write(body)
+                  if subprocess.run(["node", "--check", path]).returncode:
+                      print(f"::error file={f}::erreur de syntaxe dans le script module {i}")
+                      bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Tests JS
         run: |
           set -e

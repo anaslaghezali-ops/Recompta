@@ -95,4 +95,24 @@ const pause = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
   assert.deepEqual(writes, []);
 }
 
+// Un changement arrivé pendant une écriture qui échoue est quand même écrit
+// (régression : il restait en attente sans nouvel essai).
+{
+  const writes = [];
+  let failNext = true;
+  const saver = createDebouncedSaver(async (value) => {
+    await pause(20);
+    if (failNext) {
+      failNext = false;
+      throw new Error("réseau");
+    }
+    writes.push(value);
+  }, 5);
+  saver.schedule("A");
+  await pause(10);
+  saver.schedule("B");
+  await pause(120);
+  assert.deepEqual(writes, ["B"]);
+}
+
 console.log("OK test-debounced-saver");

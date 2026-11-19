@@ -17,7 +17,13 @@ export function createDebouncedSaver(fn, delayMs = 2000) {
     // Une seule écriture à la fois. Les changements arrivés pendant l'écriture
     // sont regroupés dans le dernier payload et traités juste après.
     if (inFlight) {
-      await inFlight;
+      try {
+        await inFlight;
+      } catch {
+        // L'échec appartient à l'écriture précédente (déjà signalée par son
+        // appelant). Le changement plus récent doit quand même être écrit :
+        // sans ce rattrapage, il restait en attente sans aucun nouvel essai.
+      }
       return run();
     }
     if (pending === null) return;

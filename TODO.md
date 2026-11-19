@@ -44,6 +44,8 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | P3 | Analyser la référence (A5) et choisir le premier point | Claude | ⬜ | Dépend de A5. |
 | P4 | Stocker les lignes dans une table (`dossier_lines`) au lieu d'un bloc JSON | Dev | ⬜ | 377 Ko réécrits à chaque modification (369 lignes). Avant P5. Migration = accord d'Anas, code et base livrés ensemble. |
 | P5 | Optimiser la revue des lignes | Dev | ⬜ | Après P4. |
+| P11 | Sauvegarde à la fermeture de la page de revue (espace client) | Dev | ⬜ | Une modification faite moins de 1,5 s avant de fermer peut être perdue (préexistant). |
+| P12 | Mesurer l'ouverture de l'espace client | Dev | ⬜ | Manque dans les 4 mesures de référence. |
 | P6 | Filtrer et paginer les ventes | Dev | ⬜ | |
 | P7 | Index sur les 20 clés étrangères | Dev | ⬜ | Ne supprimer aucun index « inutilisé ». |
 | P8 | Rationaliser les règles d'accès (23 doublons) | Dev | ⬜ | Tests entre 2 cabinets et portail client d'abord. |
@@ -72,7 +74,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | Q1 | Supprimer la triple copie des fichiers (racine, `docs/`, `backend/static/`) | Dev | ⬜ | Source unique + copie automatique au déploiement. |
 | Q2 | Décider du sort de `production.html` / `app.js` (outil TVA solo, 1 670 lignes) | Anas | ⏸️ | Supprimer ou garder. |
 | Q3 | Découper `workspace.html` (2 450 lignes de JS dans la page) | Dev | ⬜ | |
-| Q4 | Contrôle de syntaxe JS et linter dans la CI | Dev | ⬜ | Aurait détecté les erreurs du 19/11. |
+| Q4 | Contrôle de syntaxe JS et linter dans la CI | Claude | 🔄 | Syntaxe ✅ 19/11 (étape CI) ; linter à faire. |
 
 ## 5. Produit et précision
 
@@ -97,6 +99,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- Revue finale du chantier performance : saver (changement perdu après une écriture en échec), mesures partagées entre onglets, filtre de confidentialité strict, contrôle de syntaxe en CI ; fusionné dans `main2`.
 - Serveur : routes d'analyse, d'import, d'extraction et de relevé réservées aux comptes du cabinet (S5).
 - Liens publics des ventes : document annulé ou devis refusé de nouveau visible avec sa mention (décision d'Anas, migration appliquée) (A4).
 - Migration `billing_allow_draft_delete` appliquée en production avec l'accord d'Anas ; vérifiée (brouillon supprimable, facture émise et ses lignes protégées) (A3).

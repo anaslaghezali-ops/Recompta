@@ -1,4 +1,4 @@
-import { measurePerformance } from "./performance-metrics.js?v=perf2";
+import { measurePerformance } from "./performance-metrics.js?v=perf3";
 /**
  * Onglet « Ventes » de l'espace client (cabinet) — phases 4 et 5.
  *  - TVA collectée du mois selon le régime du client (encaissement / débit),
@@ -10,7 +10,7 @@ import { measurePerformance } from "./performance-metrics.js?v=perf2";
  */
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import { getSupabase } from "./auth-client.js?v=auth10";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf2";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf3";
 import { collectedByRate, collectedCsv, matchSalesReceipts, paymentRows } from "./bank-sales-match.js?v=bsm1";
 
 const esc = (v) => escapeHtml(v ?? "");
@@ -52,7 +52,7 @@ export function createWorkspaceSales({ mountEl, getContext, toast }) {
     state.loading = true;
     render();
     try {
-      const [client, sales, payments, detail, ws] = await measurePerformance("sales.load", () => Promise.all([
+      const [client, sales, payments, detail, ws] = await measurePerformance("workspace.sales.load", () => Promise.all([
         db().from("cabinet_clients").select("vat_regime").eq("id", clientId).maybeSingle(),
         db().from("sales_invoices").select("*").eq("issuer_client_id", clientId),
         db().from("invoice_payments").select("*").eq("issuer_client_id", clientId).order("paid_on"),

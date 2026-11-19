@@ -1,4 +1,4 @@
-import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf2";
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf3";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -66,7 +66,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=perf2";
+} from "./dossier-persistence.js?v=perf3";
 
 // Lignes et relevé repris du dossier par cette page (fusion des imports
 // serveur concurrents, voir dossier-persistence.js).
@@ -107,7 +107,7 @@ async function persistWorkspaceNow(eventType, summary, meta = {}) {
   const dossierId = dossierState.context.dossierId;
   setSaveStatus("Enregistrement…");
   try {
-    const saved = await measurePerformance("dossier.save", () => saveDossierWorkspace(dossierId, getWorkspacePayload()), { lineCount: state.lines.length, bankCount: state.bankTransactions.length });
+    const saved = await measurePerformance("solo.save", () => saveDossierWorkspace(dossierId, getWorkspacePayload()), { lineCount: state.lines.length, bankCount: state.bankTransactions.length });
     if (saved?.added || saved?.bankChanged) {
       // Données importées par le serveur pendant que la page était ouverte.
       if (saved.added) state.lines = saved.lines;
@@ -150,6 +150,9 @@ function initWorkspacePersistence() {
       return;
     }
     if (workspaceSaver) {
+      // Limite connue : l'écriture est une requête réseau asynchrone que le
+      // navigateur peut interrompre à la fermeture. Une modification faite
+      // dans les ~1,5 s précédant la fermeture peut donc être perdue.
       workspaceSaver.flush();
     }
   });
@@ -160,7 +163,7 @@ async function loadPersistedWorkspace() {
   setSaveStatus("Chargement du dossier…");
   try {
     workspaceTracker = createWorkspaceTracker();
-    const data = await measurePerformance("dossier.load", () => loadDossierWorkspace(dossierState.context.dossierId, {
+    const data = await measurePerformance("solo.load", () => loadDossierWorkspace(dossierState.context.dossierId, {
       tracker: workspaceTracker,
       adoptBank: true,
     }));
@@ -541,7 +544,7 @@ function lineNeedsReviewRow(line, isDuplicate) {
 }
 
 function renderTable() {
-    return measureSyncPerformance("app.review.render", () => {
+    return measureSyncPerformance("solo.review.render", () => {
   refreshAllFieldConfidence();
   els.linesTableBody.innerHTML = "";
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));

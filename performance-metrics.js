@@ -1,14 +1,18 @@
 // Mesures de performance locales.
 // - Aucune requête réseau : les mesures restent dans ce navigateur (localStorage).
 // - Aucune donnée métier : seulement le nom de l'action, la durée, le succès et
-//   des volumes (clés contenant count / rows / bytes / attempts).
+//   des volumes (clés se terminant par Count / Rows / Bytes / Attempts, ex. lineCount).
+// - Plusieurs onglets écrivent dans la même liste : chaque mesure relit le stockage
+//   avant d'ajouter la sienne, pour ne pas effacer celles des autres onglets.
 // - Les 500 dernières mesures sont gardées entre deux pages ; export depuis l'admin.
 const STORAGE_KEY = "recompta_perf_samples";
 const MAX_SAMPLES = 500;
 
+let storageBroken = false; // écriture refusée (quota) : on reste en mémoire
 let samples = loadSamples();
 
 function storage() {
+  if (storageBroken) return null;
   try {
     return globalThis.localStorage ?? null;
   } catch {
@@ -16,21 +20,32 @@ function storage() {
   }
 }
 
-function loadSamples() {
+// Liste lue dans le stockage, ou null s'il est indisponible (on garde alors la mémoire).
+function readStoredSamples() {
+  const store = storage();
+  if (!store) return null;
   try {
-    const raw = storage()?.getItem(STORAGE_KEY);
+    const raw = store.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.slice(-MAX_SAMPLES) : [];
   } catch {
-    return [];
+    return null;
   }
 }
+
+function loadSamples() {
+  return readStoredSamples() ?? [];
+}
+
+const SAFE_DETAIL_KEY = /^[a-z][A-Za-z]*(Count|Rows|Bytes|Attempts)$/;
 
 function saveSamples() {
   try {
     storage()?.setItem(STORAGE_KEY, JSON.stringify(samples));
   } catch {
-    // Quota plein ou stockage indisponible : la mesure reste en mémoire.
+    // Quota plein ou stockage indisponible : la mesure reste en mémoire pour
+    // cet onglet (sinon la relecture du stockage l'effacerait).
+    storageBroken = true;
   }
 }
 
@@ -42,10 +57,12 @@ function record(name, startedAt, details = {}, error = null) {
   const durationMs = Math.max(0, now() - startedAt);
   const safeDetails = {};
   for (const [key, value] of Object.entries(details || {})) {
-    if (/count|rows|bytes|attempts/i.test(key) && Number.isFinite(Number(value))) {
+    // Liste blanche stricte : « discount » ou « accountNumber » ne passent pas.
+    if (SAFE_DETAIL_KEY.test(key) && Number.isFinite(Number(value))) {
       safeDetails[key] = Number(value);
     }
   }
+  samples = readStoredSamples() ?? samples;
   samples.push({
     name: String(name),
     durationMs: Math.round(durationMs * 100) / 100,
@@ -93,6 +110,7 @@ export async function measurePerformance(name, operation, details = {}) {
 }
 
 export function getPerformanceSnapshot() {
+  samples = readStoredSamples() ?? samples;
   return samples.map((sample) => ({ ...sample }));
 }
 
@@ -102,7 +120,7 @@ export function clearPerformanceSnapshot() {
 }
 
 /** Médiane et pire cas par action, pour comparer avant / après. */
-export function summarizePerformance(list = samples) {
+export function summarizePerformance(list = getPerformanceSnapshot()) {
   const byName = new Map();
   for (const sample of list) {
     if (!sample.ok) continue;

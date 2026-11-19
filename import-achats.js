@@ -19,7 +19,7 @@ import {
   getApiUrl,
   saveApiUrl,
 } from "./api-client.js?v=sec1";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf2";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf3";
 import {
   countConfidenceIssues,
   refreshLinesFieldConfidence,
@@ -41,7 +41,7 @@ import {
   renderImportContextBar,
   shortFilename,
   workspaceBackHref,
-} from "./import-dossier.js?v=perf2";
+} from "./import-dossier.js?v=perf3";
 import { prepareDossierUploadContext, uploadDossierDocumentFromBlob, uploadDossierFileForImport } from "./dossier-documents.js?v=doc21";
 
 const els = {};

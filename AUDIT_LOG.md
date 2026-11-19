@@ -478,3 +478,18 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Correction (`backend/request_auth.py`, `backend/main.py`) : `authenticate_request` lit `app_metadata.portal_client_id` (posé uniquement par l'Edge Function `client-portal`, non modifiable par l'utilisateur) ; `require_cabinet_user` renvoie 403 sur `/api/dossiers/{id}/analyze`, `/api/import-jobs/{id}/upload`, `/api/extract`, `/api/import-bank-statement`.
 - Vérifié en base (lecture seule) : 1 accès portail, marqué ; aucun membre de cabinet marqué. Le front du portail n'appelle pas ces routes.
 - Test : `test_request_auth.py` (compte portail refusé, membre accepté). Aucun changement Supabase.
+
+### 2026-11-19 — Revue finale du chantier performance et synchronisation (Claude, `main2-chatgpt`)
+
+- Point de départ : `8b80aa7`. Fichiers relus : `dossier-persistence.js`, `test-debounced-saver.mjs`, `performance-metrics.js`, `test-performance-metrics.mjs`, `app.js`, `workspace-review.js`, `workspace-sales.js`, `admin.html`, `admin-client.js`, `workspace.html`, `.github/workflows/tests.yml`, journaux CI du commit `8b80aa7`.
+- Syntaxe : `node --check` réellement exécuté (copie en `.mjs`, car les fichiers sont des modules ES sans `package.json`) sur tous les `.js` / `.mjs` modifiés depuis `ade6b47` et sur les scripts module de toutes les pages : aucune erreur. Résolution des imports nommés : 0 export manquant.
+- Défauts confirmés (reproduits par un script avant correction) et corrigés :
+  1. Saver différé : un changement planifié pendant une écriture qui échoue n'était jamais écrit (il attendait l'écriture précédente, recevait son erreur et s'arrêtait). Correction : l'attente ignore l'erreur de l'écriture précédente puis écrit l'état le plus récent. Test de régression ajouté (échoue sur l'ancien code, passe sur le nouveau).
+  2. Mesures : deux onglets s'effaçaient mutuellement dans `localStorage` (chaque instance réécrivait sa propre liste). Correction : relecture du stockage avant chaque ajout. Stockage saturé : repli en mémoire pour l'onglet.
+  3. Mesures : le filtre `/count|rows|bytes|attempts/i` laissait passer `discount` (montant) ou `accountNumber`. Correction : liste blanche stricte (clés se terminant par Count / Rows / Bytes / Attempts).
+  4. Noms des mesures harmonisés avant la référence : `solo.*` (outil solo) et `workspace.*` (espace client).
+- Limite documentée dans `app.js` : la sauvegarde lancée au `beforeunload` est une requête asynchrone que le navigateur peut interrompre. Risque restant (préexistant, non modifié) : la revue de l'espace client (`workspace-review.js`) n'a pas de sauvegarde à la fermeture de la page.
+- CI : les journaux de `8b80aa7` montrent les tests Python, les tests JS (dont `test-debounced-saver.mjs` et `test-performance-metrics.mjs`), la comparaison des copies et les tests SQL exécutés. Absent : aucun contrôle de syntaxe des modules non chargés par les tests (`app.js`, `workspace-review.js`, pages). Ajout d'une étape « Syntaxe JavaScript » (vérifiée localement, y compris sur une erreur volontaire).
+- Versions de cache : `?v=perf3` sur les 5 modules modifiés et leurs importeurs, en remontant jusqu'aux pages (`production.html` ne change que par la version de `app.js`, indispensable pour que la correction du saver y arrive). Copies `docs/` et `backend/static/` identiques.
+- `main2` contient 6 fusions après `8b80aa7` (S5, TODO, liens publics annulés, brouillons, TODO). Non fusionné dans `main2-chatgpt` (consigne) ; aucun conflit attendu sur les fichiers de ce chantier.
+- Aucune modification Supabase, aucune migration, aucune donnée métier. PR #169 non fusionnée.
