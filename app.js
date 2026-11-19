@@ -1,4 +1,4 @@
-import { measurePerformance } from "./performance-metrics.js?v=perf1";
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf1";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -541,6 +541,7 @@ function lineNeedsReviewRow(line, isDuplicate) {
 }
 
 function renderTable() {
+    return measureSyncPerformance("app.review.render", () => {
   refreshAllFieldConfidence();
   els.linesTableBody.innerHTML = "";
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));
@@ -696,7 +697,9 @@ function renderTable() {
 
     els.linesTableBody.appendChild(tr);
   });
-}
+
+    });
+  }
 
 function addFiles(fileList) {
   const incoming = Array.from(fileList);
