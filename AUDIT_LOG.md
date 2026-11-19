@@ -214,3 +214,13 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Aucun déploiement frontend/backend n'a été effectué.
 - Les corrections d'authentification API ne prennent effet qu'après déploiement coordonné de `backend/` et `docs/` depuis `main2-chatgpt`.
 - La migration Supabase est appliquée ; les corrections du backend et du frontend restent uniquement sur la branche de travail.
+
+
+### 2026-11-18 — Tests isolés supplémentaires
+
+- Fichier ajouté : `backend/scripts/test_request_auth.py`.
+- Couverture : absence de Bearer refusée, vérification du JWT via Auth, transmission de la clé publique, vérification RLS du dossier, refus d'un dossier non visible, lecture RLS du job d'import.
+- Exécution isolée de ces scénarios avec réponses HTTP simulées : `OK test_request_auth`.
+- Compilation Python des modules de test et du helper d'authentification : réussie dans l'environnement isolé.
+- Le workflow complet GitHub Actions reste à exécuter ; aucune validation CI globale n'est revendiquée.
+- Commit du test : `fd9a4d9`.
