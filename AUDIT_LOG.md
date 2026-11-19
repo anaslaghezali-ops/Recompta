@@ -493,3 +493,15 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Versions de cache : `?v=perf3` sur les 5 modules modifiés et leurs importeurs, en remontant jusqu'aux pages (`production.html` ne change que par la version de `app.js`, indispensable pour que la correction du saver y arrive). Copies `docs/` et `backend/static/` identiques.
 - `main2` contient 6 fusions après `8b80aa7` (S5, TODO, liens publics annulés, brouillons, TODO). Non fusionné dans `main2-chatgpt` (consigne) ; aucun conflit attendu sur les fichiers de ce chantier.
 - Aucune modification Supabase, aucune migration, aucune donnée métier. PR #169 non fusionnée.
+
+
+### 2026-11-19 — S6 : échappement HTML des données non fiables
+
+- Méthode : 4 agents en parallèle sur des groupes de fichiers disjoints (worktrees séparés), puis relecture et intégration par Claude.
+  - A : `workspace.html`, `workspace-portal.js`, `workspace-invoice-upload.js` — déjà conformes ; a signalé `showWorkspaceToast`.
+  - B : `facturation.html`, `facture.html`, `vente.html`, `portal-sales.js`, `portail.html` — 1 correction (`portail.html`, `data-resend`).
+  - C : `app.js`, `import-*.js`, `import-jobs-client.js`, `document-preview.js` — 8 corrections : nom de fichier, avertissements, champs à relire, nom du relevé, `proposal.lib_frss` (`app.js`) ; `showWorkspaceToast` (titre, message, libellés, lien limité aux URL relatives ou http(s)) ; `document-preview.js` (champs à relire).
+  - D : `admin.html`, `equipe.html`, `dossiers.html`, `client-edit.js`, `workspace-review.js`, `workspace-suppliers.js`, `workspace-sales.js`, `workspace-bank-match.js` — déjà conformes.
+- Seul autre fichier construisant du HTML : `dashboard-ui.js`, qui échappe déjà.
+- Vérifié : aucun appelant ne passe de HTML voulu aux fonctions modifiées ; filtre d'URL testé (`javascript:`, `data:`, variantes avec espaces refusées).
+- Versions `?v=s6a` sur la chaîne d'importeurs ; copies synchronisées ; contrôle de syntaxe, résolution des imports et tests JS passés. Aucun changement Supabase.

@@ -61,7 +61,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | S3 | Garde des lignes de facture (déplacement) + droits SQL réduits | Autre | ✅ 19/11 | 4 migrations appliquées en production. |
 | S4 | CI Postgres 17 sur `main2`, versions de cache, progression ZIP | Claude | ✅ 19/11 | |
 | S5 | Le client du portail peut lancer l'analyse IA de son dossier (crédits du cabinet) | Claude | ✅ 19/11 | Comptes portail refusés (403) sur analyse, import, extraction et relevé. Actif après relance du serveur (A1). |
-| S6 | Échappement HTML systématique (~70 insertions non échappées) | Dev | ⬜ | Un seul `escapeHtml` partagé. |
+| S6 | Échappement HTML systématique | Claude (4 agents) | ✅ 19/11 | 23 fichiers relus ; 9 insertions corrigées (outil solo, notifications, aperçu, portail) ; liens des notifications limités aux URL relatives / http(s). |
 | S7 | CORS : n'autoriser que les adresses de Recompta | Dev | ⬜ | Aujourd'hui toutes les origines. |
 | S8 | Contrôle d'intégrité (SRI) des bibliothèques chargées depuis unpkg / jsdelivr | Dev | ⬜ | |
 | S9 | Cabinet désactivé peut encore facturer ; cas multi-cabinet des crédits IA | Dev | ⬜ | Pas de cas réel aujourd'hui. |
@@ -99,6 +99,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- S6 : relecture en parallèle par 4 agents (groupes de fichiers distincts), corrections relues puis fusionnées.
 - Revue finale du chantier performance : saver (changement perdu après une écriture en échec), mesures partagées entre onglets, filtre de confidentialité strict, contrôle de syntaxe en CI ; fusionné dans `main2`.
 - Serveur : routes d'analyse, d'import, d'extraction et de relevé réservées aux comptes du cabinet (S5).
 - Liens publics des ventes : document annulé ou devis refusé de nouveau visible avec sa mention (décision d'Anas, migration appliquée) (A4).

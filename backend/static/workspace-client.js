@@ -11,7 +11,7 @@ import {
   resolveNextAction,
   resolvePriority,
   tvaDeadlineDate,
-} from "./portfolio-client.js?v=sec1";
+} from "./portfolio-client.js?v=s6a";
 import { countAnomaliesFromStoredConfidence } from "./workspace-summary.js?v=summary1";
 
 export function pickActiveDossier(dossiers, preferredId = null) {

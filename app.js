@@ -14,6 +14,7 @@ import {
   setExtractionContext,
 } from "./extract-client.js?v=dedup2";
 import { collectExportReview, exportDedTvaExcel } from "./export-client.js";
+import { escapeHtml as escapeHtmlText } from "./dashboard-ui.js?v=bill1";
 import {
   applyConfidenceToInput,
   countConfidenceIssues,
@@ -40,7 +41,7 @@ import {
   parseSourceFilename,
   showLinePreview,
   tagSourceFilename,
-} from "./document-preview.js?v=preview8";
+} from "./document-preview.js?v=s6a";
 import {
   extractViaServer,
   fetchServerHealth,
@@ -524,7 +525,7 @@ function renderFileList() {
     .map((file) => {
       const isZip = file.name.toLowerCase().endsWith(".zip");
       const icon = isZip ? "🗜️" : file.type === "application/pdf" ? "📄" : "🖼️";
-      return `<div class="file-item">${icon} <span>${file.name}</span> <span class="file-size">${formatSize(file.size)}</span></div>`;
+      return `<div class="file-item">${icon} <span>${escapeHtmlText(file.name)}</span> <span class="file-size">${formatSize(file.size)}</span></div>`;
     })
     .join("");
 }
@@ -729,7 +730,7 @@ function renderWarnings(warnings) {
     return;
   }
   els.warningList.hidden = false;
-  els.warningList.innerHTML = warnings.map((w) => `<li>${w}</li>`).join("");
+  els.warningList.innerHTML = warnings.map((w) => `<li>${escapeHtmlText(w)}</li>`).join("");
 }
 
 function clearWarnings() {
@@ -1148,7 +1149,7 @@ function openExportReview(issues) {
       ? `${warns} champ(s) à relire. Corrigez les lignes ou exportez après confirmation.`
       : "Confirmez puis exportez.";
   els.exportReviewList.innerHTML = issues
-    .map((issue) => `<li class="review-${issue.level}">${issue.text}</li>`)
+    .map((issue) => `<li class="review-${escapeHtmlText(issue.level)}">${escapeHtmlText(issue.text)}</li>`)
     .join("");
   els.exportReviewDialog.showModal();
 }
@@ -1197,7 +1198,7 @@ function renderBankFileInfo() {
   const payments = state.bankTransactions.filter((t) => t.type === "payment").length;
   const fees = state.bankTransactions.filter((t) => t.type === "fee").length;
   els.bankFileInfo.hidden = false;
-  els.bankFileInfo.innerHTML = `<div class="file-item">${shortFilename(state.bankFile.name)} — ${state.bankTransactions.length} mouvement(s) (${payments} paiement(s), ${fees} frais)</div>`;
+  els.bankFileInfo.innerHTML = `<div class="file-item">${escapeHtmlText(shortFilename(state.bankFile.name))} — ${state.bankTransactions.length} mouvement(s) (${payments} paiement(s), ${fees} frais)</div>`;
 }
 
 async function loadBankFile(file) {
@@ -1379,7 +1380,7 @@ function showNextBankMatchDialog() {
           ? "1 facture"
           : `${proposal.invoiceCount} factures (${proposal.lineCount} lignes)`;
       text.innerHTML =
-        `<strong>${proposal.lib_frss}</strong>` +
+        `<strong>${escapeHtmlText(proposal.lib_frss)}</strong>` +
         `${invoiceLabel} — total ${formatMad(proposal.totalTtc)} MAD`;
       option.append(radio, text);
       els.bankMatchProposals.appendChild(option);

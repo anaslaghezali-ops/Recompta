@@ -18,7 +18,7 @@ import {
   showImportCompletionToast,
   startBankImportUpload,
   startImportJobPolling,
-} from "./import-jobs-client.js?v=sec1";
+} from "./import-jobs-client.js?v=s6a";
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import {
   createWorkspaceSaver,
