@@ -139,6 +139,7 @@ def test_failed_archive_does_not_consume_shared_budget() -> None:
 
 
 def main() -> None:
+    test_batched_iterator_yields_incrementally_after_validation()
     test_cumulative_uncompressed_budget_across_archives()
     test_cumulative_document_limit_across_archives()
     test_failed_archive_does_not_consume_shared_budget()
