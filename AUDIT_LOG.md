@@ -295,3 +295,13 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Correction : ajout du dossier backend à `sys.path`, selon le même modèle que le test existant `test_request_auth.py`.
 - Validation après correction : commit poussé sur la branche source de la PR #169 ; nouvelle exécution CI à vérifier. Aucun autre changement de code dans ce correctif.
 - Aucun déploiement ni changement Supabase.
+
+
+### 2026-11-19 — Alignement de la copie backend/static et nouvelle CI
+
+- Diagnostic du run CI `44427112120` : les tests Python et JavaScript ainsi que les tests SQL réussissent ; le contrôle de cohérence échoue sur `api-client.js`.
+- Comparaison des trois copies sur le commit de merge de la PR : `docs/api-client.js` et `api-client.js` à la racine contiennent la version sécurisée, tandis que `backend/static/api-client.js` conservait l'ancienne version sans les en-têtes d'authentification et avec l'ancien déclenchement manuel du worker.
+- Correction ciblée : alignement de `backend/static/api-client.js` sur `docs/api-client.js`, sans modification de `production.html` ni des données métier.
+- Branche modifiée : `main2-chatgpt` uniquement. Aucun changement sur `main2` ou `main3-chatgpt`.
+- Aucune modification Supabase et aucun déploiement.
+- CI à relancer et à vérifier avant de considérer le lot 1 validé.
