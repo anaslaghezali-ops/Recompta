@@ -324,5 +324,5 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Les archives sont prévalidées puis consommées document par document ; le worker n'accumule plus les contenus binaires de tous les fichiers du job dans `work_items`.
 - Les documents sont extraits par lots de deux. La liste conservée pour la fusion, les statuts et l'audit ne contient que les métadonnées et identifiants de source.
 - Le contexte de crédits IA et les exclusions ICE sont libérés dans un bloc `finally`, y compris en cas d'échec du traitement.
-- Tests : ajout d'une vérification de l'itérateur progressif exécutée par le script, et d'un test worker de bout en bout qui vérifie le respect de la taille de lot configurée. Nouvelle CI à vérifier après ce commit.
+- Tests : vérification de l'itérateur progressif et test worker de bout en bout sur la taille de lot configurée. GitHub Actions run `44434178914`, commit `417dd4b1898d99111fde2922d1326d3d3053d3c4` : jobs `tests` et `sql` terminés avec succès ; `test_worker_zip_batches` et `test_zip_security` confirmés verts.
 - Aucun changement Supabase, aucune fusion et aucun déploiement.
