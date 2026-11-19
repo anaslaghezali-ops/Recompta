@@ -149,6 +149,7 @@ async function extractBatch(batch, apiUrl, normalizedIce) {
     `${apiUrl}/api/extract`,
     {
       method: "POST",
+      headers: await requireApiAuthorization(),
       body: formData,
     },
     2,
@@ -243,6 +244,7 @@ export async function parseBankStatementViaServer(file, apiUrl) {
     `${apiUrl}/api/import-bank-statement`,
     {
       method: "POST",
+      headers: await requireApiAuthorization(),
       body: formData,
     },
     2,
@@ -283,10 +285,11 @@ export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
       };
     }
 
-    await kickImportJobWorker(apiUrl, { limit });
+    // Le worker de fond est démarré au lancement du backend ; les uploads
+    // le réveillent également. Ne pas exposer le déclenchement global aux membres.
     return {
       ok: true,
-      message: "Traitement lancé sur le serveur.",
+      message: "Worker actif : les imports sont traités automatiquement.",
       pollSeconds: health.import_worker_poll_seconds,
     };
   } catch (error) {
@@ -345,6 +348,7 @@ export async function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = 
 
     xhr.open("POST", `${base}/api/import-jobs/${jobId}/upload`);
     xhr.setRequestHeader("Authorization", authorization.Authorization);
+    xhr.setRequestHeader("apikey", authorization.apikey);
     xhr.send(formData);
   });
 }
