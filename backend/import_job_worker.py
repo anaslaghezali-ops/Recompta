@@ -299,6 +299,12 @@ if not _logger.handlers:
     _logger.propagate = False
 
 
+def extraction_batch_size() -> int:
+    """Documents gardés en mémoire à la fois par import : au moins le plafond de
+    lectures du serveur, pour qu'un gros ZIP puisse occuper tous les créneaux."""
+    return max(IMPORT_EXTRACTION_BATCH_SIZE, extraction_concurrency())
+
+
 def extraction_slots() -> asyncio.Semaphore:
     global _extraction_slots
     if _extraction_slots is None:
@@ -544,6 +550,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
     extraction_errors: dict[str, BaseException] = {}
     archive_failures = 0
     total_documents = 0
+    expected_documents = 0
     skipped_items = 0
     processed = 0
     failed = 0
@@ -620,9 +627,21 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                 stream = iter_invoice_files_batched(
                     filename, content, mime_type, budget=budget
                 )
+                reserved_before = budget.document_count
                 first = next(stream, None)
                 if first is None:
                     raise RuntimeError("Aucune facture exploitable (PDF, image ou ZIP).")
+                # Le premier document n'est produit qu'après la prévalidation de
+                # toute l'archive : le budget connaît déjà son nombre de documents.
+                # On l'annonce tout de suite pour que la progression « x/y » soit juste.
+                expected_documents += budget.document_count - reserved_before
+                await db.update_job(
+                    job_id,
+                    {
+                        "total_files": max(expected_documents, total_documents),
+                        "uploaded_files": max(expected_documents, total_documents),
+                    },
+                )
                 second = next(stream, None)
                 zip_expanded = second is not None
 
@@ -670,7 +689,7 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                         return
                     work_items.append(item)
                     batch.append((item, file_content))
-                    if len(batch) >= IMPORT_EXTRACTION_BATCH_SIZE:
+                    if len(batch) >= extraction_batch_size():
                         await flush_batch(batch)
 
                 await handle_entry(first)
@@ -794,6 +813,8 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
                     )
                 )
 
+        # Statut de lecture par document : une facture non lue doit rester
+        # visible (et bloquer la déclaration) tant qu'elle n'est pas traitée.
         results_by_source = {str(r.source_id): r for r in normalized}
         document_id = options.get("document_id")
         for mark in extraction_marks(
@@ -826,11 +847,14 @@ async def process_invoice_import_job(job: dict[str, Any], db: SupabaseService) -
             merge_trace: dict[str, int] = {}
 
             def add_new_lines(current: dict[str, Any]) -> dict[str, Any]:
+                # Rejouée sur l'état relu à chaque essai (écriture conditionnelle).
                 current_lines = list(current.get("lines") or [])
                 merge_trace["before"] = len(current_lines)
                 merged = _merge_workspace_lines(
                     current_lines, [dict(line) for line in new_lines]
                 )
+                # IF / ICE / nom complétés depuis le carnet et tout le dossier
+                # (y compris les lignes déjà présentes, champs vides seulement).
                 merge_trace.update(enrich_supplier_identities(
                     merged, notebook, client_ice=str(options.get("client_ice") or "")
                 ))

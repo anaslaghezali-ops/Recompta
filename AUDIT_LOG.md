@@ -434,3 +434,17 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Test ajouté : `test-performance-metrics.mjs` (succès, erreur, filtrage des métadonnées, idempotence et effacement).
 - Cette étape met en place les mesures ; elle ne constitue pas encore une baseline. Les durées réelles devront être relevées sur des sessions représentatives avant toute optimisation.
 - Aucun changement Supabase, aucune donnée métier, aucun déploiement ni merge. `production.html` non modifié.
+
+### 2026-11-19 — Revue indépendante (Claude) et corrections sur `cursor/revue-securite`
+
+- Branche : `cursor/revue-securite`, partie de `main2-chatgpt` (eb8dbf8). `main2-chatgpt` et `main2` non modifiées.
+- Constats vérifiés et corrigés :
+  - CI : le job `sql` échouait sur `MAINTAIN` (inconnu de Postgres 16, image de la CI) alors que la production est en Postgres 17 → image CI `postgres:17`. La CI ne tournait pas sur les envois vers `main2` → déclenchement aussi sur `main2`, `main2-chatgpt`, `cursor/**`.
+  - Cache navigateur : `api-client.js` modifié sans changer sa version chez ses importeurs (règle 3) ; un navigateur gardant l'ancienne copie n'enverrait pas la session → erreurs 401. Version `?v=sec1` appliquée à `api-client.js` et à toute la chaîne d'importeurs jusqu'aux pages ; trois copies resynchronisées.
+  - Progression des imports ZIP : `total_files` n'était connu qu'à la fin du fichier (affichage « 17/1 traités »). Le total est désormais annoncé dès la prévalidation de l'archive (test ajouté dans `test_worker_zip_batches.py`).
+  - Taille de lot du worker liée au plafond `EXTRACTION_CONCURRENCY` (au moins 2) pour qu'un gros ZIP puisse occuper tous les créneaux si le plafond est relevé.
+  - Commentaires explicatifs supprimés dans le worker restaurés.
+  - Message clair si aucune session (outil solo ouvert sans connexion) au lieu de « session expirée ».
+- Défaut préexistant trouvé (présent avant ce chantier, non corrigé par la migration du 18/11) : supprimer un brouillon de facture contenant des lignes échoue avec « Facture émise… » (la facture est déjà supprimée quand la garde des lignes s'exécute en cascade). Migration préparée `20261119120000_billing_allow_draft_delete.sql`, testée en transaction annulée sur la production (brouillon supprimé ; facture émise, ses lignes et leur modification toujours refusées) et dans la suite SQL. **Non appliquée : accord d'Anas requis.**
+- Limite restante notée : `require_dossier_access` s'appuie sur la lecture de `client_dossiers`, que l'utilisateur du portail client peut lire pour son propre dossier ; il peut donc lancer l'analyse IA des documents non traités de son dossier (crédits du cabinet). Portée limitée à son dossier ; à restreindre aux membres du cabinet.
+- Retrait de la mémoire dans `/api/health` (choix de ce chantier) : la mesure reste visible dans le terminal du serveur.

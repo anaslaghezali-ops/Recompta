@@ -98,6 +98,19 @@ begin
   assert (select total_ttc = 0 from public.invoices where id = move_draft_a), 'ancien brouillon recalculé après déplacement';
   assert (select total_ttc = 180 from public.invoices where id = move_draft_b), 'nouveau brouillon recalculé après déplacement';
 
+  -- Un brouillon qui contient des lignes peut être supprimé (cascade des lignes)
+  failed := false;
+  begin delete from public.invoices where id = move_draft_b; exception when others then failed := true; end;
+  assert not failed, 'brouillon avec lignes supprimable';
+  assert (select count(*) = 0 from public.invoice_lines where invoice_id = move_draft_b), 'lignes du brouillon supprimées';
+  -- …mais pas une facture émise ni ses lignes
+  failed := false;
+  begin delete from public.invoices where id = inv; exception when others then failed := true; end;
+  assert failed, 'facture émise non supprimable';
+  failed := false;
+  begin delete from public.invoice_lines where invoice_id = inv; exception when others then failed := true; end;
+  assert failed, 'lignes émises non supprimables';
+
   -- Lien public
   tok := public.sales_share_token(inv);
   assert length(tok) = 64, 'jeton 64 caractères';

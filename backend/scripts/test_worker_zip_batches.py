@@ -85,12 +85,16 @@ async def scenario() -> None:
     active = 0
     maximum_active = 0
     calls: list[str] = []
+    totals_seen: list[int] = []
+    db_holder: dict = {}
 
     async def fake_extract(filename, content, mime):
         nonlocal active, maximum_active
         active += 1
         maximum_active = max(maximum_active, active)
         calls.append(filename)
+        # Progression : le total doit être connu avant la première lecture.
+        totals_seen.append(db_holder["db"].job.get("total_files"))
         await asyncio.sleep(0.005)
         active -= 1
         return ExtractionResult(
@@ -113,15 +117,16 @@ async def scenario() -> None:
 
     old_extract = import_job_worker.extract_invoice
     old_cabinet = import_job_worker.cabinet_id_for_dossier
-    old_batch_size = import_job_worker.IMPORT_EXTRACTION_BATCH_SIZE
+    old_batch_size = import_job_worker.extraction_batch_size
     old_slots = import_job_worker._extraction_slots
     try:
         import_job_worker.extract_invoice = fake_extract
         import_job_worker.cabinet_id_for_dossier = fake_cabinet
-        import_job_worker.IMPORT_EXTRACTION_BATCH_SIZE = 1
+        import_job_worker.extraction_batch_size = lambda: 1
         import_job_worker._extraction_slots = asyncio.Semaphore(12)
 
         db = FakeDb(make_archive())
+        db_holder["db"] = db
         result = await import_job_worker.process_invoice_import_job(
             {"id": 5, "dossier_id": 7, "options": {}}, db
         )
@@ -133,10 +138,12 @@ async def scenario() -> None:
         assert len(db.workspace["lines"]) == 3, db.workspace["lines"]
         assert db.job_files[10]["status"] == "done", db.job_files
         assert db.job["failed_files"] == 0, db.job
+        assert totals_seen == [3, 3, 3], totals_seen
+        assert db.job["total_files"] == 3, db.job
     finally:
         import_job_worker.extract_invoice = old_extract
         import_job_worker.cabinet_id_for_dossier = old_cabinet
-        import_job_worker.IMPORT_EXTRACTION_BATCH_SIZE = old_batch_size
+        import_job_worker.extraction_batch_size = old_batch_size
         import_job_worker._extraction_slots = old_slots
 
 

@@ -3,7 +3,8 @@ name: Tests
 on:
   pull_request:
   push:
-    branches: [main]
+    # main2 est la branche servie : la CI doit aussi tourner sur ses envois.
+    branches: [main, main2, main2-chatgpt, "cursor/**"]
 
 jobs:
   tests:
@@ -67,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17  # même version majeure que la production
         env:
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
