@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
+import sys
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from zip_utils import (
     MAX_SINGLE_FILE_BYTES,
