@@ -87,6 +87,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | R5 | Compresser les scans à l'enregistrement | Dev | ⬜ | Stockage gratuit limité à 1 Go. |
 | R6 | Ventes des clients, phases 1 à 5 | Autre | ✅ 18/11 | |
 | R7 | Application mobile avec scan + WhatsApp | Plus tard | ⬜ | |
+| R9 | Vue « Tous les documents » (cabinet) et « Archives » (portail) : toutes périodes, par mois ou par fournisseur / client, ZIP | Claude | ⏸️ | PR #170, CI verte. Attend l'accord d'Anas pour la migration `20261119090000_archives_all_documents` (testée en production dans une transaction annulée : client Aichoum, 81 documents, 64/64 factures rattachées à leur fournisseur, 72 ms). |
 | R8 | Portail client : onglet « Suivi » (vue par défaut) et « Mes documents » renommé « Achats » | Agent + Claude | ✅ 19/11 | À faire, achats des 3 derniers mois, ventes. |
 
 ## 6. Retours du comptable
@@ -100,6 +101,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- Vue « Tous les documents » / « Archives » (R9) : classement par mois ou par tiers, recherche, ventes incluses (PDF généré pour les documents créés), ZIP par mois / tiers / à plat avec récapitulatif Excel ; portail à quatre onglets (Suivi, Achats, Ventes, Archives). Migration en attente d'accord.
 - Lot en parallèle (4 agents) : portail Suivi + Achats (R8), sauvegarde à la fermeture + mesure d'ouverture (P11, P12), CORS (S7), migration d'index préparée (P7, non appliquée).
 - Migration d'index sur les 20 clés étrangères signalées par Supabase (3 index partiels) + test `test_fk_indexes.sql` ; suite SQL locale verte ; non appliquée en production (P7).
 - S6 : relecture en parallèle par 4 agents (groupes de fichiers distincts), corrections relues puis fusionnées.

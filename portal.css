@@ -170,7 +170,7 @@ button { font: inherit; }
 
 /* ---------- Onglets Suivi / Achats / Ventes ---------- */
 .pt-tabs {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; padding: 0.35rem;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; padding: 0.35rem;
   margin-bottom: 0.9rem; border-radius: 12px; background: var(--pt-surface);
   box-shadow: 0 1px 3px rgba(22, 35, 58, 0.08);
 }
@@ -186,6 +186,12 @@ button { font: inherit; }
   min-width: 1.35rem; padding: 0 0.35rem; border-radius: 999px; background: var(--pt-stop);
   color: #fff; font-size: 0.75rem; line-height: 1.35rem; text-align: center;
 }
+
+/* Quatre onglets : sur petit téléphone, le texte seul. */
+@media (max-width: 420px) {
+  .pt-tab svg { display: none; }
+}
+.pt-archive { padding: 0; background: transparent; box-shadow: none; }
 
 /* ---------- Ventes : chiffres du mois ---------- */
 .pt-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }

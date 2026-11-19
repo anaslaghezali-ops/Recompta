@@ -8,7 +8,8 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=suivi1" />
+  <link rel="stylesheet" href="portal.css?v=suivi2" />
+  <link rel="stylesheet" href="archive.css?v=arch1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="pt">
@@ -35,7 +36,10 @@
           <i data-lucide="folder-up"></i> Achats
         </button>
         <button type="button" role="tab" class="pt-tab" id="salesTab" aria-selected="false" aria-controls="ptSalesView" data-view="sales">
-          <i data-lucide="receipt-text"></i> Mes ventes <span class="pt-tab-badge" id="salesTabBadge" hidden></span>
+          <i data-lucide="receipt-text"></i> Ventes <span class="pt-tab-badge" id="salesTabBadge" hidden></span>
+        </button>
+        <button type="button" role="tab" class="pt-tab" id="archiveTab" aria-selected="false" aria-controls="ptArchiveView" data-view="archive">
+          <i data-lucide="archive"></i> Archives
         </button>
       </nav>
 
@@ -107,6 +111,12 @@
         <h2 id="ptSentTitle">Documents envoyés</h2>
         <ul class="pt-sent" id="ptSent"></ul>
       </section>
+      </div>
+
+      <div id="ptArchiveView" role="tabpanel" aria-labelledby="archiveTab" hidden>
+        <section class="pt-section pt-archive">
+          <div id="ptArchivePanel"></div>
+        </section>
       </div>
 
       <div id="ptSalesView" role="tabpanel" aria-labelledby="salesTab" hidden>
@@ -608,7 +618,9 @@
       suivi: { panel: "ptSuiviView", hash: "", sub: "Un coup d'œil sur ce qui reste à faire, vos achats et vos ventes." },
       docs: { panel: "ptDocsView", hash: "#achats", sub: "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable." },
       sales: { panel: "ptSalesView", hash: "#ventes", sub: "Suivez vos factures de vente : ce qui est payé, ce qui reste à encaisser, ce qui est en retard." },
+      archive: { panel: "ptArchiveView", hash: "#archives", sub: "Toutes vos factures et tous vos relevés, toutes périodes confondues. Retrouvez-les par mois ou par fournisseur, et téléchargez-les en une fois." },
     };
+    let archiveView = null;
     async function showView(view) {
       if (!VIEWS[view]) view = "suivi";
       state.view = view;
@@ -621,6 +633,17 @@
       $("ptSub").textContent = VIEWS[view].sub;
       history.replaceState(null, "", window.location.pathname + VIEWS[view].hash);
       if (view === "suivi") renderSuivi();
+      if (view === "archive") {
+        if (!archiveView) {
+          const { createArchiveView } = await import("./archive-view.js?v=arch1");
+          archiveView = createArchiveView({
+            mountEl: $("ptArchivePanel"),
+            audience: "portal",
+            getContext: () => ({ clientId: state.ctx?.client?.id, clientName: state.ctx?.client?.name || "" }),
+          });
+        }
+        await archiveView.load();
+      }
       if (view === "sales" && !salesLoaded()) {
         try {
           await refreshSales();
@@ -706,7 +729,7 @@
       render();
       initSalesView(ctx);
       onSalesChange(() => { state.salesError = false; renderSuivi(); });
-      const first = window.location.hash === "#ventes" ? "sales" : window.location.hash === "#achats" ? "docs" : "suivi";
+      const first = Object.keys(VIEWS).find((k) => VIEWS[k].hash && VIEWS[k].hash === window.location.hash) || "suivi";
       await showView(first);
       if (first !== "sales") refreshSales().catch(() => { state.salesError = true; renderSuivi(); });
     }
