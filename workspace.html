@@ -619,6 +619,7 @@
     } from "./import-jobs-client.js?v=s6a";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=sec1";
     import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=s6a";
+    import { startPerformance } from "./performance-metrics.js?v=perf3";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -2936,8 +2937,26 @@
             persistAnalysisApiSettings();
             refreshAnalysisServerStatus().catch(() => {});
           });
-          await reloadCockpit(dossierParam, { refreshClient: false });
-          if (tabParam) setTab(tabParam, { view: viewParam });
+          // Mesure unique par ouverture de page : du chargement de la période
+          // active au premier affichage de l'onglet d'ouverture.
+          const endWorkspaceOpen = startPerformance("workspace.open");
+          try {
+            await reloadCockpit(dossierParam, { refreshClient: false });
+          } catch (error) {
+            endWorkspaceOpen(error);
+            throw error;
+          }
+          const openingTabReady = tabParam ? setTab(tabParam, { view: viewParam }) : null;
+          Promise.resolve(openingTabReady).then(
+            () => endWorkspaceOpen(null, {
+              lineCount: cockpit?.lineCount,
+              documentCount: documentsCache.length,
+            }),
+            (error) => {
+              endWorkspaceOpen(error);
+              throw error; // garder l'erreur visible dans la console, comme avant
+            },
+          );
           const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
           if (dossierIds.length) {
             dismissHistoricImportJobs(dossierIds).catch(() => {});

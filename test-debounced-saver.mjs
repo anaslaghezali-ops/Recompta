@@ -115,4 +115,33 @@ const pause = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
   assert.deepEqual(writes, ["B"]);
 }
 
+// hasPending : vrai tant qu'un changement attend ou qu'une écriture est en cours.
+{
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const saver = createDebouncedSaver(async () => { await gate; }, 60_000);
+  assert.equal(saver.hasPending(), false, "rien avant schedule");
+  saver.schedule("A");
+  assert.equal(saver.hasPending(), true, "payload en attente après schedule");
+  const writing = saver.flush();
+  await pause();
+  assert.equal(saver.hasPending(), true, "écriture en cours");
+  release();
+  await writing;
+  assert.equal(saver.hasPending(), false, "plus rien après la fin de l'écriture");
+  saver.schedule("B");
+  saver.cancel();
+  assert.equal(saver.hasPending(), false, "plus rien après cancel");
+}
+
+// hasPending reste vrai après un échec (le payload est gardé pour un nouvel essai).
+{
+  const saver = createDebouncedSaver(async () => { throw new Error("réseau"); }, 60_000);
+  saver.schedule("A");
+  await assert.rejects(saver.flush(), /réseau/);
+  assert.equal(saver.hasPending(), true);
+  saver.cancel();
+  assert.equal(saver.hasPending(), false);
+}
+
 console.log("OK test-debounced-saver");
