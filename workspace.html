@@ -1078,7 +1078,7 @@
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
       if (!reviewModulePromise) {
-        reviewModulePromise = import("./workspace-review.js?v=review19");
+        reviewModulePromise = import("./workspace-review.js?v=review20");
       }
       const { createWorkspaceReview } = await reviewModulePromise;
       reviewController = createWorkspaceReview({
