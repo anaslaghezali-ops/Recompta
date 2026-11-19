@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
+import sys
 from unittest.mock import patch
 
 from fastapi import HTTPException
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import admin_saas
 
