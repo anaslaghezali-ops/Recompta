@@ -240,3 +240,20 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Comparaison finale avec `main2` : 22 commits en avance, 0 en retard ; base commune toujours `ade6b47c256db8c2b9ac2377ec19996d2edad96a`.
 - Fichiers applicatifs et tests présents dans le diff : `backend/import_job_queue.py`, `backend/main.py`, `backend/request_auth.py`, `backend/scripts/test_request_auth.py`, `backend/scripts/test_zip_security.py`, `backend/zip_utils.py`, `docs/api-client.js`, `supabase/migrations/20261118235947_fix_billing_line_reassignment.sql`, `supabase/tests/test_sales_phase2.sql`, ainsi que ce journal.
 - `main2` n'a pas été modifiée ni fusionnée. Aucun déploiement n'a été déclenché.
+
+
+### 2026-11-19 — Création de la Pull Request brouillon #169
+
+- Type : création d'une Pull Request GitHub en brouillon, sans fusion.
+- URL : https://github.com/anaslaghezali-ops/Recompta/pull/169
+- Titre : `[DRAFT] Revue sécurisation imports et facturation`.
+- Branche source : `main2-chatgpt`.
+- Branche cible : `main2`.
+- HEAD source au moment de la création : `dba933f0b6cfc7de2058eb13286d46e344e4be83`.
+- Base de la PR : `ade6b47c256db8c2b9ac2377ec19996d2edad96a`.
+- État confirmé par GitHub après création : ouverte, `draft=true`, `merged=false`; 23 commits, 10 fichiers modifiés.
+- Paramètre : `maintainer_can_modify=false`.
+- Finalité : demander la revue et déclencher les vérifications configurées pour les Pull Requests.
+- Aucun commit ni changement de fichier n'a été effectué sur `main2`. Aucun merge et aucun déploiement n'ont été réalisés.
+- Mise à jour du présent journal effectuée uniquement sur `main2-chatgpt`.
+- Vérifications à suivre : résultats des checks GitHub Actions, revue du diff et tests SQL sur base isolée avant toute décision ultérieure.
