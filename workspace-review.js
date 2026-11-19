@@ -536,7 +536,7 @@ export function createWorkspaceReview({
         bankTransactions: workspace?.bank_transactions || [],
         bankMeta: workspace?.bank_meta || {},
         tracker,
-      ), { lineCount: lines.length });
+      }), { lineCount: lines.length });
       if (saved?.added) {
         // Un import s'est terminé pendant la revue : ses lignes sont gardées.
         lines = [...saved.lines];

@@ -163,7 +163,7 @@ async function loadPersistedWorkspace() {
     const data = await measurePerformance("dossier.load", () => loadDossierWorkspace(dossierState.context.dossierId, {
       tracker: workspaceTracker,
       adoptBank: true,
-    });
+    }));
     state.lines = data.lines || [];
     state.bankTransactions = data.bank_transactions || [];
     state.bankMeta = { ...state.bankMeta, ...(data.bank_meta || {}) };
