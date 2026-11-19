@@ -1,3 +1,4 @@
+import { measurePerformance } from "./performance-metrics.js?v=perf1";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
