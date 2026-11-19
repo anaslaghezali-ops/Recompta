@@ -78,7 +78,7 @@ async def require_import_job_access(job_id: int, access_token: str, api_key: str
                     "select": "id,dossier_id,status",
                     "limit": "1",
                 },
-                headers=_user_headers(access_token),
+                headers=_user_headers(access_token, api_key),
             )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="Vérification des droits indisponible.") from exc
