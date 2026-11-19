@@ -8,7 +8,8 @@
   <title>Votre espace documents</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="portal.css?v=portal5" />
+  <link rel="stylesheet" href="portal.css?v=portal6" />
+  <link rel="stylesheet" href="archive.css?v=arch1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="pt">
@@ -33,6 +34,9 @@
         </button>
         <button type="button" role="tab" class="pt-tab" id="salesTab" aria-selected="false" aria-controls="ptSalesView" data-view="sales">
           <i data-lucide="receipt-text"></i> Mes ventes <span class="pt-tab-badge" id="salesTabBadge" hidden></span>
+        </button>
+        <button type="button" role="tab" class="pt-tab" id="archiveTab" aria-selected="false" aria-controls="ptArchiveView" data-view="archive">
+          <i data-lucide="archive"></i> Archives
         </button>
       </nav>
 
@@ -76,6 +80,12 @@
         <h2 id="ptSentTitle">Documents envoyés</h2>
         <ul class="pt-sent" id="ptSent"></ul>
       </section>
+      </div>
+
+      <div id="ptArchiveView" role="tabpanel" aria-labelledby="archiveTab" hidden>
+        <section class="pt-section pt-archive">
+          <div id="ptArchivePanel"></div>
+        </section>
       </div>
 
       <div id="ptSalesView" role="tabpanel" aria-labelledby="salesTab" hidden>
@@ -515,10 +525,13 @@
     $("ptPeriod").addEventListener("change", () => { state.periodKey = $("ptPeriod").value; render(); });
 
     // ---------- Onglets Documents / Ventes ----------
+    let archiveView = null;
     async function showView(view) {
       const sales = view === "sales";
-      $("ptDocsView").hidden = sales;
+      const archive = view === "archive";
+      $("ptDocsView").hidden = view !== "docs";
       $("ptSalesView").hidden = !sales;
+      $("ptArchiveView").hidden = !archive;
       for (const tab of document.querySelectorAll(".pt-tab")) {
         const on = tab.dataset.view === view;
         tab.classList.toggle("is-active", on);
@@ -526,7 +539,20 @@
       }
       $("ptSub").textContent = sales
         ? "Suivez vos factures de vente : ce qui est payé, ce qui reste à encaisser, ce qui est en retard."
-        : "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable.";
+        : archive
+          ? "Toutes vos factures et tous vos relevés, toutes périodes confondues. Retrouvez-les par mois ou par fournisseur, et téléchargez-les en une fois."
+          : "Déposez ici vos factures et relevés : ils arrivent directement chez votre comptable.";
+      if (archive) {
+        if (!archiveView) {
+          const { createArchiveView } = await import("./archive-view.js?v=arch1");
+          archiveView = createArchiveView({
+            mountEl: $("ptArchivePanel"),
+            audience: "portal",
+            getContext: () => ({ clientId: state.ctx?.client?.id, clientName: state.ctx?.client?.name || "" }),
+          });
+        }
+        await archiveView.load();
+      }
       if (sales && !salesLoaded()) {
         try {
           await refreshSales();
@@ -534,7 +560,7 @@
           $("slList").innerHTML = `<li class="pt-empty">${esc(err.message)}</li>`;
         }
       }
-      history.replaceState(null, "", sales ? "#ventes" : window.location.pathname);
+      history.replaceState(null, "", sales ? "#ventes" : archive ? "#archives" : window.location.pathname);
     }
     document.querySelectorAll(".pt-tab").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
     const LOGIN_BUTTON = '<p><a class="pt-btn pt-login-btn" href="login.html">Se connecter avec mon email</a></p>';
@@ -598,6 +624,7 @@
       render();
       initSalesView(ctx);
       if (window.location.hash === "#ventes") await showView("sales");
+      else if (window.location.hash === "#archives") await showView("archive");
       else refreshSales().catch(() => {});
     }
 

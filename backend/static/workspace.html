@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="dashboard.css?v=unread2" />
   <link rel="stylesheet" href="workspace-ui.css?v=rc8" />
+  <link rel="stylesheet" href="archive.css?v=arch1" />
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body class="rc-app">
@@ -112,7 +113,8 @@
 
         <nav class="rc-tabs ws-tabs" id="viewTabs" role="tablist" aria-label="Sections du dossier">
           <button type="button" class="active" data-tab="cockpit" role="tab">Production</button>
-          <button type="button" data-tab="documents" role="tab">Documents</button>
+          <button type="button" data-tab="documents" role="tab">Documents du mois</button>
+          <button type="button" data-tab="archive" role="tab" id="archiveTabBtn">Tous les documents</button>
           <button type="button" data-tab="portal" role="tab" id="portalTabBtn">Portail client</button>
           <button type="button" data-tab="sales" role="tab" id="salesTabBtn">Ventes</button>
           <button type="button" data-tab="review" role="tab">Revue &amp; export</button>
@@ -427,6 +429,10 @@
 
         <div id="portalView" hidden>
           <div class="rc-portal" id="portalPanel"></div>
+        </div>
+
+        <div id="archiveView" hidden>
+          <div id="archivePanel"></div>
         </div>
 
         <div id="salesView" hidden>
@@ -1179,6 +1185,19 @@
         toast: showWorkspaceToast,
       });
       return salesController;
+    }
+
+    let archiveController = null;
+    async function ensureArchiveController() {
+      if (archiveController) return archiveController;
+      const { createArchiveView } = await import("./archive-view.js?v=arch1");
+      archiveController = createArchiveView({
+        mountEl: document.getElementById("archivePanel"),
+        audience: "cabinet",
+        getContext: () => ({ clientId: client?.id, clientName: client?.name || "" }),
+        toast: showWorkspaceToast,
+      });
+      return archiveController;
     }
 
     async function ensureSuppliersController() {
@@ -2287,6 +2306,11 @@
       document.getElementById("historyView").hidden = tab !== "history";
       document.getElementById("portalView").hidden = tab !== "portal";
       document.getElementById("salesView").hidden = tab !== "sales";
+      document.getElementById("archiveView").hidden = tab !== "archive";
+      if (tab === "archive") {
+        const archive = await ensureArchiveController();
+        await archive.load();
+      }
       if (tab === "sales") {
         const sales = await ensureSalesController();
         await sales.load();
