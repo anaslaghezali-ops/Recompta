@@ -47,7 +47,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | P11 | Sauvegarde à la fermeture de la page de revue (espace client) | Dev | ⬜ | Une modification faite moins de 1,5 s avant de fermer peut être perdue (préexistant). |
 | P12 | Mesurer l'ouverture de l'espace client | Dev | ⬜ | Manque dans les 4 mesures de référence. |
 | P6 | Filtrer et paginer les ventes | Dev | ⬜ | |
-| P7 | Index sur les 20 clés étrangères | Dev | ⬜ | Ne supprimer aucun index « inutilisé ». |
+| P7 | Index sur les 20 clés étrangères | Dev | ⬜ | Ne supprimer aucun index « inutilisé ». Migration `20261119040000_index_foreign_keys` prête et testée en local (branche `cursor/lot-c-index`) ; **non appliquée en production** (accord d'Anas requis). |
 | P8 | Rationaliser les règles d'accès (23 doublons) | Dev | ⬜ | Tests entre 2 cabinets et portail client d'abord. |
 | P9 | Lecture en parallèle plafonnée (2 factures à la fois) | Claude | ✅ 18/11 | Mémoire dans le terminal. |
 | P10 | Hébergement permanent (VPS LWS) | Anas + Dev | ⬜ | Remplace le Codespace. |
@@ -99,6 +99,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- Migration d'index sur les 20 clés étrangères signalées par Supabase (3 index partiels) + test `test_fk_indexes.sql` ; suite SQL locale verte ; non appliquée en production (P7).
 - S6 : relecture en parallèle par 4 agents (groupes de fichiers distincts), corrections relues puis fusionnées.
 - Revue finale du chantier performance : saver (changement perdu après une écriture en échec), mesures partagées entre onglets, filtre de confidentialité strict, contrôle de syntaxe en CI ; fusionné dans `main2`.
 - Serveur : routes d'analyse, d'import, d'extraction et de relevé réservées aux comptes du cabinet (S5).
