@@ -457,3 +457,9 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - `performance-metrics.js` : mesures gardées dans `localStorage` (500 dernières, clé `recompta_perf_samples`), résumé médiane / pire cas, export JSON. Bouton « Exporter les mesures » dans `admin.html`. Toujours aucune requête réseau ni donnée métier.
 - Versions de cache `?v=perf2` sur les modules modifiés et toute la chaîne d'importeurs ; trois copies synchronisées (`performance-metrics.js` ajouté à `docs/` et `backend/static/`).
 - Contrôles : `node --check` sur tous les `.js` de la racine et tous les scripts module des pages ; résolution de tous les imports nommés (0 export manquant) ; tests JS et Python ; CI.
+
+
+### 2026-11-19 — Application de la migration `billing_allow_draft_delete`
+
+- Accord explicite d'Anas (19/11, 02:26). Version enregistrée par Supabase : `20261119022708` ; fichier renommé en conséquence.
+- Vérification en transaction annulée après application : brouillon avec lignes supprimé ; ligne et facture émises toujours protégées.

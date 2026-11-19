@@ -31,7 +31,8 @@ sans affirmation non vérifiée. Expliquer en langage simple ce qu'il doit faire
 ## Suivi
 
 `TODO.md` liste ce qui est fait et à faire (décisions d'Anas, performance, sécurité, qualité, produit) avec un journal
-daté. Le mettre à jour dans le même commit que le code ; une tâche n'est « Fait » qu'une fois fusionnée dans `main2`.
+daté. Tenu par Anas et Claude : le mettre à jour dans le même commit que le code ; une tâche n'est « Fait »
+qu'une fois fusionnée dans `main2`.
 
 ## Architecture
 
