@@ -343,6 +343,49 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Déploiement : aucun. Fusion : aucune. `main2` et `main3-chatgpt` non modifiées. `production.html` non modifié.
 
 
+### 2026-11-19 — Restriction des privilèges par défaut de postgres dans public
+
+- Projet Supabase : `pbyoxfxngfutoiqjirkx` (PostgreSQL 17).
+- Migration appliquée : `20261119012120_revoke_excess_postgres_public_default_table_privileges`.
+- Fichier versionné : `supabase/migrations/20261119012120_revoke_excess_postgres_public_default_table_privileges.sql`.
+- Portée exacte : privilèges par défaut des futures tables créées par le rôle `postgres` dans le schéma `public` uniquement.
+- Correction : retrait de `TRUNCATE`, `REFERENCES`, `TRIGGER` et `MAINTAIN` pour `anon` et `authenticated`.
+- Vérification post-migration : entrée `pg_default_acl` de `postgres/public` pour les tables = `{postgres=arwdDxtm/postgres,anon=arwd/postgres,authenticated=arwd/postgres,service_role=arwdDxtm/postgres}`. Les rôles `anon` et `authenticated` conservent `SELECT`, `INSERT`, `UPDATE`, `DELETE` et n'ont plus les quatre privilèges retirés.
+- Historique : version `20261119012120` confirmée dans `supabase_migrations.schema_migrations`.
+- Limite non corrigée : les privilèges par défaut de `supabase_admin` n'ont pas été modifiés ; la session SQL courante ne peut pas prendre ce rôle superutilisateur. Les défauts concernant les fonctions et les séquences n'ont pas été modifiés dans ce lot.
+- Aucun privilège par défaut global ni autre schéma n'a été modifié. Aucune table existante, policy RLS, fonction, séquence ou donnée métier n'a été touchée par cette migration.
+- Tests : vérification SQL de l'ACL par défaut et de l'historique de migration réussie. Un contrôle auxiliaire avec une table fictive a été abandonné car la table de sonde n'existait pas ; aucun objet de test n'a été créé.
+- Déploiement : aucun. Fusion : aucune. `main2` et `main3-chatgpt` non modifiées. `production.html` non modifié.
+
+
+### 2026-11-19 — Audit fonction par fonction des 22 fonctions SECURITY DEFINER
+
+- Projet : `pbyoxfxngfutoiqjirkx`. Audit SQL en lecture seule ; aucune fonction, permission, policy, table ou donnée métier modifiée.
+- Périmètre : les 22 fonctions publiques signalées par Supabase Advisor, définition complète, propriétaire, `search_path`, ACL et droits effectifs contrôlés.
+- Résultat global :
+  - Les 22 fonctions appartiennent à `postgres`, sont `SECURITY DEFINER` et fixent `search_path = ''`.
+  - Les 22 sont exécutables par `authenticated` et `service_role`, mais pas par `anon` ni par `PUBLIC`.
+  - Seule exception publique : `sales_public_document(text)`, également exécutable par `anon`, cohérente avec le parcours de partage par jeton.
+- Contrôles d'autorisation relevés :
+  - Quotas/admin : les 4 fonctions `admin_*` appellent `private.is_super_admin()`, qui vérifie `auth.uid()` dans `user_roles`.
+  - Facturation cabinet : `billing_issue_invoice` et `billing_cancel_invoice` limitent l'accès aux cabinets retournés par `private.user_manager_cabinet_ids()` (membre actif avec rôle owner/admin).
+  - Dossiers : `delete_dossier_documents` filtre par `private.user_can_access_dossier`; `get_workspace_cockpit` refuse explicitement si le dossier n'est pas accessible.
+  - Portail : les fonctions de période/upload utilisent `private.portal_client_id()` et/ou `private.portal_can_upload_to()`; les actions de revue utilisent `private.user_client_ids()`. La relation `client_portal_access.user_id` est unique, donc le `LIMIT 1` du helper portail ne choisit pas entre plusieurs accès actifs pour un même utilisateur.
+  - Ventes : les fonctions d'action utilisent `private.sales_lock_own()` ou comparent directement `issuer_client_id` à `private.portal_client_id()`.
+- Vérifications complémentaires :
+  - Aucun utilisateur n'a plusieurs appartenances actives à des cabinets au moment du contrôle ; le comportement « premier cabinet » de `get_my_vision_credits()` n'a donc pas d'effet ambigu observé actuellement.
+  - Les 5 cabinets sont actifs au moment de l'audit. Le helper `private.user_manager_cabinet_ids()` vérifie l'appartenance active et le rôle owner/admin, mais ne joint pas `cabinets.is_active` ; à revoir si la désactivation d'un cabinet doit bloquer immédiatement les opérations de facturation.
+  - `billing_cancel_invoice` teste `sum(amount) > 0` ; la contrainte `invoice_payments_amount_check` impose `amount > 0`, donc tout paiement enregistré positif empêche l'annulation.
+- Points à confirmer fonctionnellement (pas de vulnérabilité inter-cabinets démontrée) :
+  1. `sales_public_document(text)` retourne tout document dont le statut est différent de `draft`, donc aussi les statuts `cancelled` et `voided` si un jeton de partage existe encore. Confirmer si le lien public doit rester consultable après annulation/annulation administrative ; ne pas changer sans décision produit.
+  2. `get_my_vision_credits()` sélectionne la première appartenance active par date de création sans paramètre de cabinet. Aucun utilisateur multi-cabinet n'est actuellement observé ; prévoir un choix explicite si ce cas devient possible.
+  3. `private.user_manager_cabinet_ids()` ne filtre pas `cabinets.is_active`. Aucun cabinet inactif n'est actuellement observé ; confirmer la règle attendue lors d'une désactivation.
+- Jetons de partage : la fonction de création génère deux UUID concaténés sans tirets (64 caractères hexadécimaux) ; la lecture publique exige au moins 40 caractères. Le jeton généré satisfait ce minimum avec une marge importante.
+- Supabase Advisor après audit : 1 alerte anon (fonction de partage ci-dessus) et 22 alertes authenticated (les fonctions auditées). L'alerte Auth `auth_leaked_password_protection` reste également présente et n'a pas été modifiée.
+- Conclusion : aucune faille d'accès inter-cabinets ou d'élévation de privilèges n'a été confirmée dans les 22 corps examinés. Les fonctions `SECURITY DEFINER` sont nécessaires à plusieurs opérations qui passent par des contrôles internes ; ne pas basculer globalement en `SECURITY INVOKER` ni révoquer globalement `EXECUTE`.
+- Tests dynamiques inter-utilisateurs/cabinets : non exécutés, car aucun contexte de session utilisateur isolé n'a été utilisé. L'audit repose sur les définitions SQL, ACL effectives, contraintes et helpers.
+- Aucune migration, aucun déploiement, aucun merge. `main2`, `main3-chatgpt` et `production.html` non modifiés.
+
 ### 2026-11-19 — Revue indépendante (Claude) et corrections sur `cursor/revue-securite`
 
 - Branche : `cursor/revue-securite`, partie de `main2-chatgpt` (eb8dbf8). `main2-chatgpt` et `main2` non modifiées.
