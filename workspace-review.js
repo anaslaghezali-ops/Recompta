@@ -525,7 +525,7 @@ export function createWorkspaceReview({
     try {
       // La revue ne modifie pas le relevé : elle reprend celui du serveur, et
       // la sauvegarde gardera un relevé importé entre-temps.
-      const workspace = await loadDossierWorkspace(dossierId, {
+      const workspace = await measurePerformance("review.load-before-save", () => loadDossierWorkspace(dossierId, {
         tracker,
         adoptLines: false,
         adoptBank: true,
@@ -1007,7 +1007,7 @@ export function createWorkspaceReview({
     setStatus("Chargement…");
     try {
       tracker = createWorkspaceTracker();
-      const data = await loadDossierWorkspace(dossierId, { tracker });
+      const data = await measurePerformance("review.load", () => loadDossierWorkspace(dossierId, { tracker }), { source: "review" });
       lines = [...(data?.lines || [])];
       documentsCache = [];
       clearSourceFiles();
