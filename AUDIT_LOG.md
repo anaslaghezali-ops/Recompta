@@ -224,3 +224,19 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Compilation Python des modules de test et du helper d'authentification : réussie dans l'environnement isolé.
 - Le workflow complet GitHub Actions reste à exécuter ; aucune validation CI globale n'est revendiquée.
 - Commit du test : `fd9a4d9`.
+
+
+### 2026-11-18 — Traçabilité GitHub finale du lot
+
+- Commits GitHub complémentaires consignés :
+  - `b29ec53` : extraction ZIP en flux borné ;
+  - `3cee28b` : correction du chemin d'import du test ZIP pour CI ;
+  - `176d459` : correction du passage de la clé publique dans la lecture RLS des jobs ;
+  - `42152b3` : plafond global de 20 fichiers et 100 Mio par requête d'extraction ;
+  - `ecea29b` et `1cd5c0f` : alignement du nom de migration sur la version réellement créée par Supabase, puis suppression du nom provisoire ;
+  - `fd9a4d9` : ajout des tests du helper d'authentification ;
+  - `8659cf3`, `1048b7b` et `4af38f8` : mises à jour successives du présent journal.
+- HEAD vérifié de `main2-chatgpt` : `4af38f80e05d8b51907bbb0fd5867cf01358fa95`.
+- Comparaison finale avec `main2` : 22 commits en avance, 0 en retard ; base commune toujours `ade6b47c256db8c2b9ac2377ec19996d2edad96a`.
+- Fichiers applicatifs et tests présents dans le diff : `backend/import_job_queue.py`, `backend/main.py`, `backend/request_auth.py`, `backend/scripts/test_request_auth.py`, `backend/scripts/test_zip_security.py`, `backend/zip_utils.py`, `docs/api-client.js`, `supabase/migrations/20261118235947_fix_billing_line_reassignment.sql`, `supabase/tests/test_sales_phase2.sql`, ainsi que ce journal.
+- `main2` n'a pas été modifiée ni fusionnée. Aucun déploiement n'a été déclenché.
