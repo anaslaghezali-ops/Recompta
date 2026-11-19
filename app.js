@@ -106,7 +106,7 @@ async function persistWorkspaceNow(eventType, summary, meta = {}) {
   const dossierId = dossierState.context.dossierId;
   setSaveStatus("Enregistrement…");
   try {
-    const saved = await saveDossierWorkspace(dossierId, getWorkspacePayload());
+    const saved = await measurePerformance("dossier.save", () => saveDossierWorkspace(dossierId, getWorkspacePayload()), { lineCount: state.lines.length, bankCount: state.bankTransactions.length });
     if (saved?.added || saved?.bankChanged) {
       // Données importées par le serveur pendant que la page était ouverte.
       if (saved.added) state.lines = saved.lines;
@@ -159,7 +159,7 @@ async function loadPersistedWorkspace() {
   setSaveStatus("Chargement du dossier…");
   try {
     workspaceTracker = createWorkspaceTracker();
-    const data = await loadDossierWorkspace(dossierState.context.dossierId, {
+    const data = await measurePerformance("dossier.load", () => loadDossierWorkspace(dossierState.context.dossierId, {
       tracker: workspaceTracker,
       adoptBank: true,
     });
