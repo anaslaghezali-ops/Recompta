@@ -78,15 +78,14 @@ function setMsg(id, text, ok = false) {
 // Rendu
 // ---------------------------------------------------------------------------
 function renderSummary() {
-  const s = salesSummary(state.sales, state.payments);
-  const now = new Date();
-  $("slCollectedLabel").textContent = `Encaissé en ${MONTHS[now.getMonth()]}`;
-  $("slCollected").textContent = `${formatMad(s.collectedMonth)} MAD`;
-  $("slOverdue").textContent = `${formatMad(s.overdueAmount)} MAD`;
-  $("slOverdueNote").textContent = s.overdueCount ? `${s.overdueCount} facture${s.overdueCount > 1 ? "s" : ""}` : "Aucune";
+  const s = salesOverview();
+  $("slCollectedLabel").textContent = s.text.collectedLabel;
+  $("slCollected").textContent = s.text.collected;
+  $("slOverdue").textContent = s.text.overdue;
+  $("slOverdueNote").textContent = s.text.overdueNote;
   $("slOverdueStat").classList.toggle("is-alert", s.overdueCount > 0);
-  $("slOpen").textContent = `${formatMad(s.openAmount)} MAD`;
-  $("slOpenNote").textContent = s.openCount ? `${s.openCount} facture${s.openCount > 1 ? "s" : ""}` : "Tout est encaissé";
+  $("slOpen").textContent = s.text.open;
+  $("slOpenNote").textContent = s.text.openNote;
   const badge = $("salesTabBadge");
   badge.hidden = !s.overdueCount;
   badge.textContent = String(s.overdueCount);
@@ -162,6 +161,158 @@ export async function refreshSales() {
   render();
   renderSettings();
   renderCatalogue();
+  for (const fn of salesListeners) {
+    try { fn(); } catch (err) { console.error(err); }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Aperçu des ventes (onglet « Suivi » du portail)
+// ---------------------------------------------------------------------------
+const salesListeners = new Set();
+/** Appelle `fn` après chaque rechargement des ventes (création, paiement, relance…). */
+export function onSalesChange(fn) {
+  salesListeners.add(fn);
+}
+
+const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
+
+/** Chiffres de l'en-tête de l'onglet Ventes (mêmes calculs, mêmes textes), null tant que rien n'est chargé. */
+export function salesOverview(today = new Date()) {
+  if (!state.loaded) return null;
+  const s = salesSummary(state.sales, state.payments, today);
+  return {
+    ...s,
+    hasSales: state.sales.length > 0,
+    text: {
+      collectedLabel: `Encaissé en ${MONTHS[today.getMonth()]}`,
+      collected: `${formatMad(s.collectedMonth)} MAD`,
+      overdue: `${formatMad(s.overdueAmount)} MAD`,
+      overdueNote: s.overdueCount ? plural(s.overdueCount, "facture") : "Aucune",
+      open: `${formatMad(s.openAmount)} MAD`,
+      openNote: s.openCount ? plural(s.openCount, "facture") : "Tout est encaissé",
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Suivi : calculs purs (sans accès au DOM ni à la base), testés par test-portal-suivi.mjs
+// ---------------------------------------------------------------------------
+const ymKey = (year, month) => `${year}-${String(month).padStart(2, "0")}`;
+const monthName = (year, month) => `${MONTHS[month - 1]} ${year}`;
+const ofMonth = (year, month) => (/^[aeiou]/.test(MONTHS[month - 1]) ? `d'${monthName(year, month)}` : `de ${monthName(year, month)}`);
+const isKept = (u) => u.status !== "rejected";
+// Un document refusé est considéré comme renvoyé si un document du même type arrive pour le même mois
+// au moins 5 minutes après lui (les envois groupés partent dans la même minute).
+const RESEND_GAP_MS = 5 * 60 * 1000;
+
+/**
+ * Achats des derniers mois : périodes du cabinet (hors mois futurs) + les trois mois précédents,
+ * les `count` plus récentes. Compte uniquement ce qui a été déposé par le portail.
+ */
+export function purchaseMonths({ dossiers = [], uploads = [], today = new Date(), count = 3 } = {}) {
+  const current = ymKey(today.getFullYear(), today.getMonth() + 1);
+  const periods = new Map();
+  for (const d of dossiers) {
+    const k = ymKey(d.period_year, d.period_month);
+    if (k <= current && !periods.has(k)) periods.set(k, { year: d.period_year, month: d.period_month, dossier: d });
+  }
+  for (let i = 1; i <= 3; i += 1) {
+    const dt = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    const k = ymKey(dt.getFullYear(), dt.getMonth() + 1);
+    if (!periods.has(k)) periods.set(k, { year: dt.getFullYear(), month: dt.getMonth() + 1, dossier: null });
+  }
+  return [...periods.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .slice(0, count)
+    .map(([key, p]) => {
+      const mine = p.dossier ? uploads.filter((u) => u.dossier_id === p.dossier.id && isKept(u)) : [];
+      return {
+        key,
+        year: p.year,
+        month: p.month,
+        invoiceCount: mine.filter((u) => u.doc_type === "invoice").length,
+        otherCount: mine.filter((u) => u.doc_type === "other").length,
+        bankSent: mine.some((u) => u.doc_type === "bank"),
+        closed: p.dossier?.status === "exported",
+      };
+    });
+}
+
+/**
+ * Liste « À faire » du Suivi. Chaque action : { key, tone, icon, title, detail, action, view, period?, filter?, scroll? }.
+ * Textes bruts : l'appelant les échappe avant de les insérer en HTML.
+ * `sales` = résultat de salesOverview() (null si les ventes ne sont pas chargées).
+ */
+export function portalTodo({ requests = [], uploads = [], dossiers = [], sales = null, today = new Date() } = {}) {
+  const items = [];
+  const byId = new Map(dossiers.map((d) => [d.id, d]));
+  const periodOf = (dossierId) => {
+    const d = byId.get(dossierId);
+    return d ? ymKey(d.period_year, d.period_month) : "";
+  };
+
+  const open = requests.filter((r) => r.status === "open");
+  if (open.length) {
+    const names = open.slice(0, 3).map((r) => r.label).join(", ");
+    items.push({
+      key: "requests", tone: "warn", icon: "inbox",
+      title: `Votre cabinet attend ${plural(open.length, "pièce")}`,
+      detail: open.length > 3 ? `${names}…` : names,
+      action: "Envoyer", view: "docs", period: periodOf(open[0].dossier_id), scroll: "ptRequestsSection",
+    });
+  }
+
+  const openIds = new Set(open.map((r) => r.id));
+  const rejected = uploads.filter((u) => u.status === "rejected"
+    && !(u.request_id && openIds.has(u.request_id))
+    && byId.get(u.dossier_id)?.status !== "exported"
+    && !uploads.some((o) => isKept(o) && o.dossier_id === u.dossier_id && o.doc_type === u.doc_type
+      && Date.parse(o.created_at) - Date.parse(u.created_at) >= RESEND_GAP_MS));
+  if (rejected.length) {
+    const first = rejected[0];
+    items.push({
+      key: "rejected", tone: "stop", icon: "alert-triangle",
+      title: `${plural(rejected.length, "document")} à renvoyer`,
+      detail: `${first.original_filename} : ${first.reject_reason || "document à reprendre"}${rejected.length > 1 ? "…" : ""}`,
+      action: "Renvoyer", view: "docs", period: periodOf(first.dossier_id), scroll: "ptSentTitle",
+    });
+  }
+
+  // Relevé du mois précédent : seulement si le client envoie déjà ses relevés par le portail,
+  // que le mois n'est pas clôturé et qu'aucune demande du cabinet ne le couvre déjà.
+  const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const prevKey = ymKey(prev.getFullYear(), prev.getMonth() + 1);
+  const prevDossier = dossiers.find((d) => ymKey(d.period_year, d.period_month) === prevKey) || null;
+  const usesPortalForBank = uploads.some((u) => u.doc_type === "bank" && isKept(u));
+  const prevBankSent = !!prevDossier && uploads.some((u) => u.dossier_id === prevDossier.id && u.doc_type === "bank" && isKept(u));
+  const prevBankAsked = !!prevDossier && open.some((r) => r.doc_type === "bank" && r.dossier_id === prevDossier.id);
+  if (usesPortalForBank && prevDossier?.status !== "exported" && !prevBankSent && !prevBankAsked) {
+    items.push({
+      key: "bank", tone: "warn", icon: "landmark",
+      title: `Relevé bancaire ${ofMonth(prev.getFullYear(), prev.getMonth() + 1)}`,
+      detail: "Pas encore envoyé par cet espace.",
+      action: "Envoyer", view: "docs", period: prevKey,
+    });
+  }
+
+  if (sales?.overdueCount) {
+    items.push({
+      key: "overdue", tone: "stop", icon: "bell-ring",
+      title: `${plural(sales.overdueCount, "facture")} de vente en retard`,
+      detail: `${formatMad(sales.overdueAmount)} MAD à encaisser`,
+      action: "Voir", view: "sales", filter: "overdue",
+    });
+  }
+  if (sales?.draftCount) {
+    items.push({
+      key: "drafts", tone: "warn", icon: "file-pen-line",
+      title: `${plural(sales.draftCount, "facture")} de vente en brouillon`,
+      detail: "À valider ou à émettre.",
+      action: "Voir", view: "sales", filter: "draft",
+    });
+  }
+  return items;
 }
 
 // ---------------------------------------------------------------------------
