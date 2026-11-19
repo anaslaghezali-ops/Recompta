@@ -3,7 +3,8 @@ import { getSession, SUPABASE_ANON_KEY } from "./auth-client.js?v=auth10";
 async function requireApiAuthorization() {
   const session = await getSession();
   if (!session?.access_token) {
-    throw new Error("Votre session a expiré. Reconnectez-vous puis réessayez.");
+    // Aucun compte connecté (outil solo ouvert sans connexion) ou session expirée.
+    throw new Error("Connectez-vous à Recompta pour lancer l'extraction, puis réessayez.");
   }
   return {
     Authorization: `Bearer ${session.access_token}`,

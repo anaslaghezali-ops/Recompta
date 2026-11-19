@@ -18,7 +18,7 @@ import {
   fetchServerHealth,
   getApiUrl,
   saveApiUrl,
-} from "./api-client.js?v=api7";
+} from "./api-client.js?v=sec1";
 import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
 import {
   countConfidenceIssues,
@@ -32,7 +32,7 @@ import {
   listImportJobs,
   startImportJobPolling,
   startInvoiceImportUpload,
-} from "./import-jobs-client.js?v=jobs31";
+} from "./import-jobs-client.js?v=sec1";
 import {
   createWorkspaceSaver,
   formatFileSize,
