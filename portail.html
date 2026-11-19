@@ -437,7 +437,7 @@
             <span>${esc(PORTAL_DOC_TYPES[u.doc_type]?.short || "")} · ${fmtDate(u.created_at)}</span>
             ${u.status === "rejected" ? `<em>À renvoyer : ${esc(u.reject_reason || "document à reprendre")}</em>` : ""}
           </div>
-          ${u.status === "rejected" ? `<button type="button" class="pt-btn" data-resend="${u.doc_type}">Renvoyer</button>` : '<span class="pt-ok">Reçu</span>'}
+          ${u.status === "rejected" ? `<button type="button" class="pt-btn" data-resend="${esc(u.doc_type)}">Renvoyer</button>` : '<span class="pt-ok">Reçu</span>'}
         </li>`).join("") : '<li class="pt-empty">Aucun document envoyé pour ce mois.</li>';
       icons();
     }
