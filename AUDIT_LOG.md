@@ -448,3 +448,12 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Défaut préexistant trouvé (présent avant ce chantier, non corrigé par la migration du 18/11) : supprimer un brouillon de facture contenant des lignes échoue avec « Facture émise… » (la facture est déjà supprimée quand la garde des lignes s'exécute en cascade). Migration préparée `20261119120000_billing_allow_draft_delete.sql`, testée en transaction annulée sur la production (brouillon supprimé ; facture émise, ses lignes et leur modification toujours refusées) et dans la suite SQL. **Non appliquée : accord d'Anas requis.**
 - Limite restante notée : `require_dossier_access` s'appuie sur la lecture de `client_dossiers`, que l'utilisateur du portail client peut lire pour son propre dossier ; il peut donc lancer l'analyse IA des documents non traités de son dossier (crédits du cabinet). Portée limitée à son dossier ; à restreindre aux membres du cabinet.
 - Retrait de la mémoire dans `/api/health` (choix de ce chantier) : la mesure reste visible dans le terminal du serveur.
+
+
+### 2026-11-19 — Mesures de performance : corrections et intégration (Claude, `cursor/mesures-perf`)
+
+- Partie de `main2-chatgpt` (d8e2052), puis fusion de `origin/main2` (vrai merge, conflit du journal résolu en gardant les deux historiques).
+- Erreurs de syntaxe corrigées (vérifiées par `node --check`) : `workspace-review.js` (mesure `review.save`, objet non fermé → l'onglet Revue ne se chargeait plus) et `app.js` (mesure `dossier.load`, parenthèse manquante → `production.html` ne se chargeait plus).
+- `performance-metrics.js` : mesures gardées dans `localStorage` (500 dernières, clé `recompta_perf_samples`), résumé médiane / pire cas, export JSON. Bouton « Exporter les mesures » dans `admin.html`. Toujours aucune requête réseau ni donnée métier.
+- Versions de cache `?v=perf2` sur les modules modifiés et toute la chaîne d'importeurs ; trois copies synchronisées (`performance-metrics.js` ajouté à `docs/` et `backend/static/`).
+- Contrôles : `node --check` sur tous les `.js` de la racine et tous les scripts module des pages ; résolution de tous les imports nommés (0 export manquant) ; tests JS et Python ; CI.

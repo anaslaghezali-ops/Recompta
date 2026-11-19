@@ -582,7 +582,7 @@
       STATUS_META,
     } from "./dossiers-client.js?v=dash3";
     import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
-    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=persist5";
+    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=perf2";
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
@@ -598,7 +598,7 @@
       countInvoiceDocuments,
       setDocumentExtractionStatus,
     } from "./dossier-documents.js?v=doc21";
-    import { formatFileSize } from "./import-dossier.js?v=imp1";
+    import { formatFileSize } from "./import-dossier.js?v=perf2";
     import {
       formatActiveImportLabel,
       getActiveImportSummary,
@@ -618,7 +618,7 @@
       importJobPageUrl,
     } from "./import-jobs-client.js?v=sec1";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=sec1";
-    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=sec1";
+    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=perf2";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -764,7 +764,7 @@
     async function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
       if (!bankMatchModulePromise) {
-        bankMatchModulePromise = import("./workspace-bank-match.js?v=bankws5");
+        bankMatchModulePromise = import("./workspace-bank-match.js?v=perf2");
       }
       const { createWorkspaceBankMatch } = await bankMatchModulePromise;
       bankMatchController = createWorkspaceBankMatch({
@@ -1078,7 +1078,7 @@
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
       if (!reviewModulePromise) {
-        reviewModulePromise = import("./workspace-review.js?v=review20");
+        reviewModulePromise = import("./workspace-review.js?v=perf2");
       }
       const { createWorkspaceReview } = await reviewModulePromise;
       reviewController = createWorkspaceReview({
@@ -1167,7 +1167,7 @@
     let salesController = null;
     async function ensureSalesController() {
       if (salesController) return salesController;
-      const { createWorkspaceSales } = await import("./workspace-sales.js?v=wsales2");
+      const { createWorkspaceSales } = await import("./workspace-sales.js?v=perf2");
       salesController = createWorkspaceSales({
         mountEl: document.getElementById("salesPanel"),
         getContext: () => ({

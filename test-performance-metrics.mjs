@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { clearPerformanceSnapshot, getPerformanceSnapshot, measurePerformance, measureSyncPerformance, startPerformance } from "./performance-metrics.js";
+import { clearPerformanceSnapshot, getPerformanceSnapshot, measurePerformance, measureSyncPerformance, startPerformance, summarizePerformance } from "./performance-metrics.js";
 clearPerformanceSnapshot();
 assert.equal(measureSyncPerformance("test.sync", () => 7, { rowCount: 2 }), 7);
 assert.equal(await measurePerformance("test.success", async () => 42, { lineCount: 3, dossierId: "must-not-be-kept" }), 42);
@@ -11,4 +11,11 @@ rows = getPerformanceSnapshot(); assert.equal(rows[2].ok, false);
 const finish = startPerformance("test.once"); finish(); finish();
 assert.equal(getPerformanceSnapshot().length, 4);
 clearPerformanceSnapshot(); assert.equal(getPerformanceSnapshot().length, 0);
+// Résumé : médiane et pire cas, erreurs exclues.
+clearPerformanceSnapshot();
+for (let i = 0; i < 3; i += 1) measureSyncPerformance("test.summary", () => i);
+const [summary] = summarizePerformance();
+assert.equal(summary.name, "test.summary"); assert.equal(summary.count, 3);
+assert.ok(summary.worstMs >= summary.medianMs);
+clearPerformanceSnapshot();
 console.log("performance-metrics: OK");

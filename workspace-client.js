@@ -1,4 +1,4 @@
-import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=persist5";
+import { loadDossierWorkspaceSummary } from "./dossier-persistence.js?v=perf2";
 import {
   formatMonthLabel,
   formatRelativeTime,

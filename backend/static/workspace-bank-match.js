@@ -14,7 +14,7 @@ import {
   loadDossierWorkspace,
   logDossierActivity,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=perf2";
 import { escapeHtml } from "./dashboard-ui.js?v=bill1";
 
 function formatMad(amount) {

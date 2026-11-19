@@ -1,4 +1,4 @@
-import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf1";
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf2";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -66,7 +66,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist6";
+} from "./dossier-persistence.js?v=perf2";
 
 // Lignes et relevé repris du dossier par cette page (fusion des imports
 // serveur concurrents, voir dossier-persistence.js).

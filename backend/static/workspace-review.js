@@ -1,3 +1,4 @@
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf2";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -26,7 +27,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=perf2";
 import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
@@ -525,17 +526,17 @@ export function createWorkspaceReview({
     try {
       // La revue ne modifie pas le relevé : elle reprend celui du serveur, et
       // la sauvegarde gardera un relevé importé entre-temps.
-      const workspace = await loadDossierWorkspace(dossierId, {
+      const workspace = await measurePerformance("review.load-before-save", () => loadDossierWorkspace(dossierId, {
         tracker,
         adoptLines: false,
         adoptBank: true,
-      });
-      const saved = await saveDossierWorkspace(dossierId, {
+      }), { source: "review" });
+      const saved = await measurePerformance("review.save", () => saveDossierWorkspace(dossierId, {
         lines,
         bankTransactions: workspace?.bank_transactions || [],
         bankMeta: workspace?.bank_meta || {},
         tracker,
-      });
+      }), { lineCount: lines.length });
       if (saved?.added) {
         // Un import s'est terminé pendant la revue : ses lignes sont gardées.
         lines = [...saved.lines];
@@ -824,6 +825,7 @@ export function createWorkspaceReview({
   }
 
   function renderTable() {
+    return measureSyncPerformance("workspace.review.render", () => {
     if (!els.tableBody) return;
     refreshConfidence();
     els.tableBody.innerHTML = "";
@@ -987,6 +989,8 @@ export function createWorkspaceReview({
     } else {
       refreshOpenPreview();
     }
+  
+    });
   }
 
   function render() {
@@ -1007,7 +1011,7 @@ export function createWorkspaceReview({
     setStatus("Chargement…");
     try {
       tracker = createWorkspaceTracker();
-      const data = await loadDossierWorkspace(dossierId, { tracker });
+      const data = await measurePerformance("review.load", () => loadDossierWorkspace(dossierId, { tracker }), { source: "review" });
       lines = [...(data?.lines || [])];
       documentsCache = [];
       clearSourceFiles();

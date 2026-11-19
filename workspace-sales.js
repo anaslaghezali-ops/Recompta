@@ -1,4 +1,4 @@
-import { measurePerformance } from "./performance-metrics.js?v=perf1";
+import { measurePerformance } from "./performance-metrics.js?v=perf2";
 /**
  * Onglet « Ventes » de l'espace client (cabinet) — phases 4 et 5.
  *  - TVA collectée du mois selon le régime du client (encaissement / débit),
@@ -10,7 +10,7 @@ import { measurePerformance } from "./performance-metrics.js?v=perf1";
  */
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import { getSupabase } from "./auth-client.js?v=auth10";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist6";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf2";
 import { collectedByRate, collectedCsv, matchSalesReceipts, paymentRows } from "./bank-sales-match.js?v=bsm1";
 
 const esc = (v) => escapeHtml(v ?? "");
