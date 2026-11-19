@@ -37,10 +37,13 @@ from normalize_results import (
 )
 from source_id import split_source_tag
 from zip_utils import (
+    IMPORT_EXTRACTION_BATCH_SIZE,
     MAX_SINGLE_FILE_BYTES,
     MAX_ZIP_ARCHIVE_BYTES,
+    ImportBudgetExceeded,
+    InvoiceExtractionBudget,
     is_zip_file,
-    iter_invoice_files,
+    iter_invoice_files_batched,
 )
 
 app = FastAPI(title="Recompta API", version="0.2.0")
@@ -241,43 +244,13 @@ async def extract_files(
     total_upload_bytes = 0
     results: list[ExtractionResult] = []
     pending: list[tuple[str, bytes, str, str]] = []
+    budget = InvoiceExtractionBudget()
     token = activate_client_ice_exclusions(client_ice)
     try:
-        for upload in files:
-            upload_name = upload.filename or "inconnu"
-            mime_type = upload.content_type or "application/octet-stream"
-            content = await read_upload_limited(upload, max_bytes=upload_limit(upload_name, mime_type))
-            total_upload_bytes += len(content)
-            if total_upload_bytes > MAX_EXTRACT_REQUEST_BYTES:
-                raise HTTPException(status_code=413, detail="Lot trop volumineux (maximum 100 Mio par requête).")
-            original_name, source_id = split_source_tag(upload_name)
-            try:
-                invoice_files = iter_invoice_files(original_name, content, mime_type)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-            if not invoice_files:
-                results.append(
-                    ExtractionResult(
-                        filename=original_name,
-                        source_id=source_id,
-                        lines=[],
-                        warnings=[
-                            "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
-                        ],
-                    )
-                )
-                continue
-
-            for relative_name, file_content, file_mime in invoice_files:
-                display_name = relative_name if relative_name != original_name else original_name
-                pending.append((display_name, file_content, file_mime, source_id))
-
         async def extract_one(
             name: str, data: bytes, mime: str, source_id: str
         ) -> ExtractionResult:
             # Une facture illisible ne doit jamais faire échouer tout le lot.
-            # Mêmes créneaux que la file d'import : plafond commun au serveur.
             async with extraction_slot(name):
                 try:
                     result = await extract_invoice(name, data, mime)
@@ -293,8 +266,51 @@ async def extract_files(
                         warnings=[f"Extraction échouée : {type(exc).__name__}: {exc}"],
                     )
 
-        results.extend(await asyncio.gather(*(extract_one(*item) for item in pending)))
+        async def flush_pending() -> None:
+            if not pending:
+                return
+            batch = list(pending)
+            pending.clear()
+            results.extend(await asyncio.gather(*(extract_one(*item) for item in batch)))
 
+        for upload in files:
+            upload_name = upload.filename or "inconnu"
+            mime_type = upload.content_type or "application/octet-stream"
+            content = await read_upload_limited(upload, max_bytes=upload_limit(upload_name, mime_type))
+            total_upload_bytes += len(content)
+            if total_upload_bytes > MAX_EXTRACT_REQUEST_BYTES:
+                raise HTTPException(status_code=413, detail="Lot trop volumineux (maximum 100 Mio par requête).")
+            original_name, source_id = split_source_tag(upload_name)
+            extracted_count = 0
+            stream = iter_invoice_files_batched(original_name, content, mime_type, budget=budget)
+            try:
+                for relative_name, file_content, file_mime in stream:
+                    extracted_count += 1
+                    display_name = relative_name if relative_name != original_name else original_name
+                    pending.append((display_name, file_content, file_mime, source_id))
+                    if len(pending) >= IMPORT_EXTRACTION_BATCH_SIZE:
+                        await flush_pending()
+            except ImportBudgetExceeded as exc:
+                raise HTTPException(status_code=413, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            finally:
+                stream.close()
+                del content
+
+            if not extracted_count:
+                results.append(
+                    ExtractionResult(
+                        filename=original_name,
+                        source_id=source_id,
+                        lines=[],
+                        warnings=[
+                            "Type non supporté. Utilisez des PDF, images (JPG/PNG) ou un fichier ZIP."
+                        ],
+                    )
+                )
+
+        await flush_pending()
         return normalize_extraction_results(results, client_ice=client_ice)
     finally:
         deactivate_client_ice_exclusions(token)

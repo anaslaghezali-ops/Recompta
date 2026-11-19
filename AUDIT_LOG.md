@@ -305,3 +305,14 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Branche modifiée : `main2-chatgpt` uniquement. Aucun changement sur `main2` ou `main3-chatgpt`.
 - Aucune modification Supabase et aucun déploiement.
 - CI à relancer et à vérifier avant de considérer le lot 1 validé.
+
+
+### 2026-11-19 — Budgets ZIP cumulés et extraction API par petits lots
+
+- Branche de travail : `main2-chatgpt` uniquement.
+- Ajout d'un budget partagé par requête/job : 100 Mio maximum de données décompressées et 1 000 documents maximum, en complément des limites individuelles et par archive existantes.
+- Ajout d'un itérateur ZIP en deux passes : prévalidation de tous les membres utiles et de leurs CRC sans conserver les contenus décompressés, puis émission d'un document à la fois.
+- La route `POST /api/extract` partage le budget entre les uploads et traite au maximum deux documents simultanément ; les octets d'un lot sont libérés avant le suivant.
+- Tests ajoutés : cumul décompressé multi-archives, plafond documentaire multi-archives et absence de consommation du budget lorsqu'une archive est rejetée.
+- Validation : à exécuter par GitHub Actions après le commit ; aucun résultat de test n'est présumé à ce stade.
+- Aucun changement Supabase, aucune fusion, aucun déploiement. `main2`, `main3-chatgpt` et `production.html` non modifiés.

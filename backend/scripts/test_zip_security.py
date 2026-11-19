@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from zip_utils import (
     MAX_SINGLE_FILE_BYTES,
+    ImportBudgetExceeded,
+    InvoiceExtractionBudget,
     iter_invoice_files,
 )
 
@@ -66,7 +68,61 @@ def test_accept_normal_zip() -> None:
     assert result[0][1] == payload
 
 
+def test_cumulative_uncompressed_budget_across_archives() -> None:
+    budget = InvoiceExtractionBudget(max_uncompressed_bytes=800, max_documents=10)
+    first = iter_invoice_files(
+        "first.zip", make_zip("one.pdf", b"a" * 500), "application/zip", budget=budget
+    )
+    assert len(first) == 1
+    assert budget.total_uncompressed_bytes == 500
+    try:
+        iter_invoice_files(
+            "second.zip", make_zip("two.pdf", b"b" * 500), "application/zip", budget=budget
+        )
+    except ImportBudgetExceeded as exc:
+        assert "données décompressées" in str(exc)
+    else:
+        raise AssertionError("Le budget décompressé cumulé aurait dû refuser le second ZIP")
+    assert budget.total_uncompressed_bytes == 500
+    assert budget.document_count == 1
+
+
+def test_cumulative_document_limit_across_archives() -> None:
+    budget = InvoiceExtractionBudget(max_uncompressed_bytes=5000, max_documents=1)
+    iter_invoice_files(
+        "first.zip", make_zip("one.pdf", b"a" * 500), "application/zip", budget=budget
+    )
+    try:
+        iter_invoice_files(
+            "second.zip", make_zip("two.pdf", b"b" * 500), "application/zip", budget=budget
+        )
+    except ImportBudgetExceeded as exc:
+        assert "documents extraits" in str(exc)
+    else:
+        raise AssertionError("Le plafond documentaire cumulé aurait dû refuser le second ZIP")
+    assert budget.document_count == 1
+
+
+def test_failed_archive_does_not_consume_shared_budget() -> None:
+    budget = InvoiceExtractionBudget(max_uncompressed_bytes=800, max_documents=10)
+    stream = BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr("one.pdf", b"a" * 500)
+        archive.writestr("two.pdf", b"b" * 500)
+    try:
+        iter_invoice_files("bad-lot.zip", stream.getvalue(), "application/zip", budget=budget)
+    except ImportBudgetExceeded:
+        pass
+    else:
+        raise AssertionError("Une archive dépassant le budget a été acceptée")
+    assert budget.total_uncompressed_bytes == 0
+    assert budget.document_count == 0
+
+
 def main() -> None:
+    test_cumulative_uncompressed_budget_across_archives()
+    test_cumulative_document_limit_across_archives()
+    test_failed_archive_does_not_consume_shared_budget()
     test_reject_path_traversal()
     test_reject_absolute_and_windows_paths()
     test_reject_zip_bomb_ratio()

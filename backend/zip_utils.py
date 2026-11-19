@@ -16,6 +16,10 @@ MAX_ZIP_MEMBERS = 1000
 MAX_ZIP_MEMBER_BYTES = 25 * 1024 * 1024
 MAX_ZIP_TOTAL_BYTES = 100 * 1024 * 1024
 MAX_ZIP_COMPRESSION_RATIO = 200
+MAX_IMPORT_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_IMPORT_DOCUMENTS = 1000
+IMPORT_EXTRACTION_BATCH_SIZE = 2
+
 EXTENSION_MIME = {
     ".pdf": "application/pdf",
     ".png": "image/png",
@@ -25,6 +29,43 @@ EXTENSION_MIME = {
     ".tiff": "image/tiff",
     ".tif": "image/tiff",
 }
+
+
+class ImportBudgetExceeded(ValueError):
+    """Le lot dépasse le budget cumulé de décompression ou de documents."""
+
+
+class InvoiceExtractionBudget:
+    """Budget cumulatif partagé par une requête API ou un job d'import."""
+
+    def __init__(
+        self,
+        *,
+        max_uncompressed_bytes: int = MAX_IMPORT_UNCOMPRESSED_BYTES,
+        max_documents: int = MAX_IMPORT_DOCUMENTS,
+    ) -> None:
+        self.max_uncompressed_bytes = max(1, int(max_uncompressed_bytes))
+        self.max_documents = max(1, int(max_documents))
+        self.total_uncompressed_bytes = 0
+        self.document_count = 0
+
+    def check_capacity(self, uncompressed_bytes: int, documents: int) -> None:
+        if self.total_uncompressed_bytes + uncompressed_bytes > self.max_uncompressed_bytes:
+            maximum_mib = self.max_uncompressed_bytes // (1024 * 1024)
+            raise ImportBudgetExceeded(
+                f"Lot refusé : plus de {maximum_mib} Mio de données décompressées "
+                "(maximum cumulé par requête/job)."
+            )
+        if self.document_count + documents > self.max_documents:
+            raise ImportBudgetExceeded(
+                f"Lot refusé : plus de {self.max_documents} documents extraits "
+                "(maximum cumulé par requête/job)."
+            )
+
+    def reserve(self, uncompressed_bytes: int, documents: int) -> None:
+        self.check_capacity(uncompressed_bytes, documents)
+        self.total_uncompressed_bytes += uncompressed_bytes
+        self.document_count += documents
 
 
 def mime_for_filename(filename: str) -> str:
@@ -41,15 +82,39 @@ def is_zip_file(filename: str, mime_type: str) -> bool:
     return ext == ".zip" or mime_type in {"application/zip", "application/x-zip-compressed"}
 
 
-def iter_invoice_files(filename: str, content: bytes, mime_type: str) -> list[tuple[str, bytes, str]]:
-    """Retourne une liste de (nom_relatif, contenu, mime_type), avec limites mémoire."""
+def iter_invoice_files(
+    filename: str,
+    content: bytes,
+    mime_type: str,
+    *,
+    budget: InvoiceExtractionBudget | None = None,
+) -> list[tuple[str, bytes, str]]:
+    """Compatibilité : retourne une liste, avec budget cumulatif optionnel."""
+    return list(iter_invoice_files_batched(filename, content, mime_type, budget=budget))
+
+
+def iter_invoice_files_batched(
+    filename: str,
+    content: bytes,
+    mime_type: str,
+    *,
+    budget: InvoiceExtractionBudget | None = None,
+):
+    """Produit les documents un par un après validation complète de l'archive.
+
+    La première passe vérifie les tailles, limites cumulées et CRC sans conserver
+    les contenus décompressés. La deuxième passe ne matérialise qu'un document à
+    la fois, ce qui permet à l'appelant de traiter les documents par petits lots.
+    """
+    active_budget = budget or InvoiceExtractionBudget()
     if is_zip_file(filename, mime_type):
-        return _extract_zip(content)
+        yield from _iter_zip_entries(content, active_budget)
+        return
     if is_invoice_file(filename):
         if len(content) > MAX_SINGLE_FILE_BYTES:
             raise ValueError("Fichier trop volumineux (maximum 25 Mio par document).")
-        return [(filename, content, mime_for_filename(filename))]
-    return []
+        active_budget.reserve(len(content), 1)
+        yield filename, content, mime_for_filename(filename)
 
 
 def storage_path_for_zip_member(zip_filename: str, member_path: str) -> str:
@@ -81,19 +146,23 @@ def _safe_member_name(raw_name: str) -> str:
     return path.as_posix()
 
 
-def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
+def _iter_zip_entries(content: bytes, budget: InvoiceExtractionBudget):
     if len(content) > MAX_ZIP_ARCHIVE_BYTES:
         raise ValueError("Archive ZIP trop volumineuse (maximum 100 Mio).")
 
-    files: list[tuple[str, bytes, str]] = []
-    total_uncompressed = 0
     try:
         with zipfile.ZipFile(BytesIO(content)) as archive:
             infos = archive.infolist()
             if len(infos) > MAX_ZIP_MEMBERS:
                 raise ValueError(f"Archive ZIP refusée : plus de {MAX_ZIP_MEMBERS} entrées.")
 
-            for info in infos:
+            # Prévalidation complète : aucun document n'est transmis au worker
+            # avant que tous les membres utiles de l'archive aient passé les contrôles.
+            members: list[tuple[str, zipfile.ZipInfo]] = []
+            archive_uncompressed = 0
+            archive_documents = 0
+
+            for info in sorted(infos, key=lambda item: item.filename.lower()):
                 if info.is_dir():
                     continue
 
@@ -123,7 +192,6 @@ def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
                 if info.compress_size > 0 and info.file_size / info.compress_size > MAX_ZIP_COMPRESSION_RATIO:
                     raise ValueError(f"Archive ZIP refusée : ratio de compression anormal pour « {base} ».")
 
-                payload_chunks: list[bytes] = []
                 member_size = 0
                 with archive.open(info, "r") as member:
                     while True:
@@ -133,19 +201,36 @@ def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
                         member_size += len(chunk)
                         if member_size > MAX_ZIP_MEMBER_BYTES:
                             raise ValueError(f"Archive ZIP refusée : « {base} » dépasse 25 Mio décompressés.")
-                        if total_uncompressed + member_size > MAX_ZIP_TOTAL_BYTES:
+                        if archive_uncompressed + member_size > MAX_ZIP_TOTAL_BYTES:
                             raise ValueError("Archive ZIP refusée : plus de 100 Mio de données décompressées.")
-                        payload_chunks.append(chunk)
+                        if budget.total_uncompressed_bytes + archive_uncompressed + member_size > budget.max_uncompressed_bytes:
+                            budget.check_capacity(archive_uncompressed + member_size, 0)
 
                 if member_size != info.file_size:
                     raise ValueError(f"Archive ZIP corrompue : taille inattendue pour « {base} ».")
-                total_uncompressed += member_size
-                payload = b"".join(payload_chunks)
-                if len(payload) < MIN_FILE_BYTES:
-                    continue
-                files.append((name, payload, mime_for_filename(name)))
+                archive_uncompressed += member_size
+                if member_size >= MIN_FILE_BYTES:
+                    archive_documents += 1
+                    budget.check_capacity(archive_uncompressed, archive_documents)
+                    members.append((name, info))
+
+            # Réserver le budget uniquement après la validation intégrale de l'archive.
+            budget.reserve(archive_uncompressed, archive_documents)
+
+            for name, info in members:
+                payload_chunks: list[bytes] = []
+                member_size = 0
+                with archive.open(info, "r") as member:
+                    while True:
+                        chunk = member.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        member_size += len(chunk)
+                        if member_size > MAX_ZIP_MEMBER_BYTES:
+                            raise ValueError(f"Archive ZIP refusée : « {PurePosixPath(name).name} » dépasse 25 Mio décompressés.")
+                        payload_chunks.append(chunk)
+                if member_size != info.file_size:
+                    raise ValueError(f"Archive ZIP corrompue : taille inattendue pour « {PurePosixPath(name).name} ».")
+                yield name, b"".join(payload_chunks), mime_for_filename(name)
     except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, zlib.error) as exc:
         raise ValueError("Archive ZIP invalide ou endommagée.") from exc
-
-    files.sort(key=lambda item: item[0].lower())
-    return files
