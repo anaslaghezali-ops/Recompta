@@ -10,7 +10,7 @@ import { measurePerformance } from "./performance-metrics.js?v=perf3";
  */
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import { getSupabase } from "./auth-client.js?v=auth10";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf3";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=suivi1";
 import { collectedByRate, collectedCsv, matchSalesReceipts, paymentRows } from "./bank-sales-match.js?v=bsm1";
 
 const esc = (v) => escapeHtml(v ?? "");

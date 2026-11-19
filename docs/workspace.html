@@ -582,7 +582,7 @@
       STATUS_META,
     } from "./dossiers-client.js?v=dash3";
     import { creditsDepleted, formatCreditsLabel, loadMyVisionCredits } from "./credits-client.js?v=credits3";
-    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=perf3";
+    import { listClientActivity, loadDossierWorkspace, loadDossierWorkspaceSummary, mergeWorkspaceSnapshot, reopenDossierPeriod, logDossierActivity } from "./dossier-persistence.js?v=suivi1";
     import {
       DOC_TYPE_ICONS,
       DOC_TYPE_LABELS,
@@ -598,7 +598,7 @@
       countInvoiceDocuments,
       setDocumentExtractionStatus,
     } from "./dossier-documents.js?v=doc21";
-    import { formatFileSize } from "./import-dossier.js?v=perf3";
+    import { formatFileSize } from "./import-dossier.js?v=suivi1";
     import {
       formatActiveImportLabel,
       getActiveImportSummary,
@@ -618,7 +618,8 @@
       importJobPageUrl,
     } from "./import-jobs-client.js?v=s6a";
     import { ensureImportWorkerRunning, getApiUrl, saveApiUrl, fetchServerHealth, kickImportJobWorker } from "./api-client.js?v=sec1";
-    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=s6a";
+    import { loadWorkspaceCockpit, pickActiveDossier } from "./workspace-client.js?v=suivi1";
+    import { startPerformance } from "./performance-metrics.js?v=perf3";
     import {
       bindSidebarMobile,
       escapeHtml,
@@ -764,7 +765,7 @@
     async function ensureBankMatchController() {
       if (bankMatchController) return bankMatchController;
       if (!bankMatchModulePromise) {
-        bankMatchModulePromise = import("./workspace-bank-match.js?v=perf3");
+        bankMatchModulePromise = import("./workspace-bank-match.js?v=suivi1");
       }
       const { createWorkspaceBankMatch } = await bankMatchModulePromise;
       bankMatchController = createWorkspaceBankMatch({
@@ -1073,21 +1074,34 @@
       await reloadCockpit(selectedDossierId);
     }
 
+    let reviewControllerPromise = null;
     async function ensureReviewController() {
       if (reviewController) return reviewController;
       const panel = document.getElementById("reviewPanel");
       if (!panel) return null;
-      if (!reviewModulePromise) {
-        reviewModulePromise = import("./workspace-review.js?v=s6a");
+      // Un seul contrôleur même si deux appels arrivent pendant le chargement du
+      // module (ouverture avec ?tab=review) : sinon écouteurs et saver en double.
+      if (!reviewControllerPromise) {
+        if (!reviewModulePromise) {
+          reviewModulePromise = import("./workspace-review.js?v=suivi1");
+        }
+        reviewControllerPromise = reviewModulePromise
+          .then(({ createWorkspaceReview }) => {
+            reviewController = createWorkspaceReview({
+              mountEl: panel,
+              getContext: getReviewContext,
+              onWorkspaceSaved: () => refreshCockpitMetadata().catch(() => {}),
+              onPeriodDeclared: () => handlePeriodDeclared(),
+            });
+            return reviewController;
+          })
+          .catch((error) => {
+            reviewControllerPromise = null; // permettre un nouvel essai
+            reviewModulePromise = null;
+            throw error;
+          });
       }
-      const { createWorkspaceReview } = await reviewModulePromise;
-      reviewController = createWorkspaceReview({
-        mountEl: panel,
-        getContext: getReviewContext,
-        onWorkspaceSaved: () => refreshCockpitMetadata().catch(() => {}),
-        onPeriodDeclared: () => handlePeriodDeclared(),
-      });
-      return reviewController;
+      return reviewControllerPromise;
     }
 
     async function openDeclarePeriod() {
@@ -1167,7 +1181,7 @@
     let salesController = null;
     async function ensureSalesController() {
       if (salesController) return salesController;
-      const { createWorkspaceSales } = await import("./workspace-sales.js?v=perf3");
+      const { createWorkspaceSales } = await import("./workspace-sales.js?v=suivi1");
       salesController = createWorkspaceSales({
         mountEl: document.getElementById("salesPanel"),
         getContext: () => ({
@@ -2936,8 +2950,26 @@
             persistAnalysisApiSettings();
             refreshAnalysisServerStatus().catch(() => {});
           });
-          await reloadCockpit(dossierParam, { refreshClient: false });
-          if (tabParam) setTab(tabParam, { view: viewParam });
+          // Mesure unique par ouverture de page : du chargement de la période
+          // active au premier affichage de l'onglet d'ouverture.
+          const endWorkspaceOpen = startPerformance("workspace.open");
+          try {
+            await reloadCockpit(dossierParam, { refreshClient: false });
+          } catch (error) {
+            endWorkspaceOpen(error);
+            throw error;
+          }
+          const openingTabReady = tabParam ? setTab(tabParam, { view: viewParam }) : null;
+          Promise.resolve(openingTabReady).then(
+            () => endWorkspaceOpen(null, {
+              lineCount: cockpit?.lineCount,
+              documentCount: documentsCache.length,
+            }),
+            (error) => {
+              endWorkspaceOpen(error);
+              throw error; // garder l'erreur visible dans la console, comme avant
+            },
+          );
           const dossierIds = (client?.dossiers || []).map((d) => d.id).filter(Boolean);
           if (dossierIds.length) {
             dismissHistoricImportJobs(dossierIds).catch(() => {});

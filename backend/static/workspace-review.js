@@ -27,7 +27,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=perf3";
+} from "./dossier-persistence.js?v=suivi1";
 import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
@@ -52,6 +52,36 @@ const DESIGNATIONS = [
 ];
 
 const SUPPLIER_SCOPED_BULK_FIELDS = new Set(["ice_frs", "if"]);
+
+// Sauvegarde à la fermeture : les écouteurs de page sont posés une seule fois,
+// même si plusieurs contrôleurs de revue étaient créés dans la même page.
+const pageExitSavers = new Set();
+let pageExitListenersInstalled = false;
+
+function flushPageExitSavers() {
+  for (const saver of pageExitSavers) {
+    saver.flush().catch(() => {}); // sans attendre : l'erreur est déjà affichée par la revue
+  }
+}
+
+function installPageExitSave(saver) {
+  pageExitSavers.add(saver);
+  if (pageExitListenersInstalled) return;
+  pageExitListenersInstalled = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPageExitSavers();
+  });
+  window.addEventListener("pagehide", flushPageExitSavers);
+  window.addEventListener("beforeunload", (event) => {
+    // Rien en attente (cas normal, ou autre onglet de l'espace) : aucune confirmation.
+    if (![...pageExitSavers].some((saver) => saver.hasPending())) return;
+    // Limite : l'écriture est asynchrone ; le navigateur peut l'interrompre si
+    // l'utilisateur confirme la fermeture avant qu'elle ne se termine.
+    event.preventDefault();
+    event.returnValue = "";
+    flushPageExitSavers();
+  });
+}
 
 export function createWorkspaceReview({
   mountEl,
@@ -1139,6 +1169,7 @@ export function createWorkspaceReview({
   saver = createDebouncedSaver(async ({ eventType, summary }) => {
     await persistNow(eventType, summary, { line_count: lines.length });
   }, 1500);
+  installPageExitSave(saver);
 
   return {
     load,

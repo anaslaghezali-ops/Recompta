@@ -505,3 +505,13 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Seul autre fichier construisant du HTML : `dashboard-ui.js`, qui échappe déjà.
 - Vérifié : aucun appelant ne passe de HTML voulu aux fonctions modifiées ; filtre d'URL testé (`javascript:`, `data:`, variantes avec espaces refusées).
 - Versions `?v=s6a` sur la chaîne d'importeurs ; copies synchronisées ; contrôle de syntaxe, résolution des imports et tests JS passés. Aucun changement Supabase.
+
+
+### 2026-11-19 — Lot parallèle : portail « Suivi » / « Achats », revue, CORS, index
+
+- Méthode : 4 agents sur des fichiers disjoints (worktrees), relecture et intégration par Claude sur `cursor/lot-portail-suivi`.
+- Portail (`portail.html`, `portal-sales.js`, `portal.css`, `test-portal-suivi.mjs`) : onglets Suivi (défaut) / Achats (ex-« Mes documents ») / Mes ventes ; ancres `#achats`, `#ventes`. Suivi = à faire, achats des 3 derniers mois, ventes ; uniquement des données déjà chargées (aucune requête ni table nouvelle) ; calculs des ventes partagés avec l'onglet Ventes. Données insérées échappées.
+- Revue (`workspace-review.js`, `dossier-persistence.js`, `workspace.html`) : `hasPending()` sur le saver ; enregistrement au passage en arrière-plan / `pagehide` ; confirmation au `beforeunload` si une sauvegarde est en attente. Mesure `workspace.open`. Correction ajoutée à l'intégration : `ensureReviewController` ne crée plus deux contrôleurs en cas d'appels simultanés.
+- Serveur (`backend/main.py`, `.env.example`, `scripts/test_cors.py`) : CORS limité à GitHub Pages, `*.app.github.dev`, localhost ; `CORS_ALLOWED_ORIGINS` pour ajouter une origine ou `*` en urgence.
+- Base : migration `20261119040000_index_foreign_keys.sql` (20 index, 3 partiels) + `supabase/tests/test_fk_indexes.sql` ; **non appliquée en production** (accord d'Anas requis).
+- Vérifications : contrôle de syntaxe, résolution des imports, tests JS (dont `test-portal-suivi.mjs`), tests Python (dont `test_cors.py`), suite SQL locale, copies synchronisées, versions `?v=suivi1`.

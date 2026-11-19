@@ -72,6 +72,10 @@ export function createDebouncedSaver(fn, delayMs = 2000) {
       // ne doit pas remettre en file un payload explicitement annulé.
       generation += 1;
     },
+    /** Vrai si un changement attend d'être écrit ou si une écriture est en cours. */
+    hasPending() {
+      return pending !== null || inFlight !== null;
+    },
   };
 }
 
