@@ -463,3 +463,10 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 
 - Accord explicite d'Anas (19/11, 02:26). Version enregistrée par Supabase : `20261119022708` ; fichier renommé en conséquence.
 - Vérification en transaction annulée après application : brouillon avec lignes supprimé ; ligne et facture émises toujours protégées.
+
+
+### 2026-11-19 — Liens publics : documents annulés de nouveau visibles avec leur statut
+
+- Décision d'Anas (19/11, 02:28) : afficher « Annulée » / « Refusé » plutôt que « lien plus valide ».
+- Migration `20261119022935_public_sales_document_show_cancelled` appliquée : retour au filtre `status <> 'draft'` (brouillons toujours exclus, jeton ≥ 40 caractères, droits inchangés).
+- Test SQL ajouté (`test_sales_phase2.sql`) : un document annulé reste lisible par son lien avec `status = 'cancelled'`.

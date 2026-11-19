@@ -172,6 +172,24 @@ begin
 end $$;
 reset role;
 
+-- Document annulé : toujours lisible par son lien, avec son statut (mention « Annulée »)
+do $$ begin
+  perform set_config('recompta.billing_internal', 'on', true);
+  update public.invoices set status = 'cancelled' where share_token = (select s from t2 where k = 'tok');
+end $$;
+set role anon;
+do $$
+declare doc jsonb := public.sales_public_document((select s from t2 where k = 'tok'));
+begin
+  assert doc is not null, 'document annulé encore lisible';
+  assert doc ->> 'status' = 'cancelled', 'statut annulé transmis';
+end $$;
+reset role;
+do $$ begin
+  perform set_config('recompta.billing_internal', 'on', true);
+  update public.invoices set status = 'issued' where share_token = (select s from t2 where k = 'tok');
+end $$;
+
 -- Société B : ne voit pas le catalogue ni les documents de A, ne peut rien émettre pour A
 do $$ begin perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000002b2","role":"authenticated"}', false); end $$;
 set role authenticated;

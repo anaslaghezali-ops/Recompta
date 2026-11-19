@@ -16,7 +16,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | A1 | Mettre le serveur du Codespace sur `main2` | ⏸️ | Ctrl+C, `git checkout main2`, `git pull origin main2`, relancer `uvicorn`. |
 | A2 | Purger la file d'import (libère ~1,28 Go sur 1 Go gratuit) | ⏸️ | Dans le Codespace : `python backend/scripts/purge_import_queue.py`, puis `--supprimer`. |
 | A3 | Correction « supprimer un brouillon de facture avec lignes » | ✅ 19/11 | Accord donné, migration `20261119022708_billing_allow_draft_delete` appliquée et vérifiée en production. |
-| A4 | Décision : lien public d'une facture annulée | ⏸️ | Aujourd'hui « lien plus valide ». Alternative : afficher la facture avec la mention « Annulée ». |
+| A4 | Lien public d'une facture annulée | ✅ 19/11 | Décision : afficher avec la mention « Annulée » / « Refusé ». Migration `20261119022935` appliquée. |
 | A5 | Mesures de référence (baseline) | ⬜ | 2 dossiers (petit + 369 lignes) × 5 fois : ouvrir la revue, modifier une ligne, ouvrir les ventes. Puis Administration → « Exporter les mesures » → envoyer le fichier. |
 | A6 | Envoyer le « pic » mémoire du terminal après un lot de ~20 factures | ⬜ | Décide si on passe `EXTRACTION_CONCURRENCY` de 2 à 3. |
 | A7 | Fermer la PR #169 (contenu déjà dans `main2`) | ⬜ | Sur GitHub → Pull requests → #169 → Close. |
@@ -86,6 +86,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- Liens publics des ventes : document annulé ou devis refusé de nouveau visible avec sa mention (décision d'Anas, migration appliquée) (A4).
 - Migration `billing_allow_draft_delete` appliquée en production avec l'accord d'Anas ; vérifiée (brouillon supprimable, facture émise et ses lignes protégées) (A3).
 - Sécurité de `main2-chatgpt` relue, corrigée et fusionnée dans `main2` (S1–S4).
 - Branche `main-old` = ancien `main` ; `main` aligné sur `main2` (avant sécurité).
