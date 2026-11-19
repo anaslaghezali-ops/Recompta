@@ -46,6 +46,7 @@ begin
   assert (select bool_and(d ? 'period_month') from jsonb_array_elements(r -> 'documents') d), 'période jointe';
   assert not exists (select 1 from jsonb_array_elements(r -> 'lines') l where l ? 'note_interne' or l ? 'field_confidence'), 'lignes réduites';
   assert (select count(*) from jsonb_array_elements(r -> 'lines') l where (l ->> 'from_bank')::boolean) = 1, 'ligne banque marquée';
+  assert (select count(*) from jsonb_array_elements(r -> 'lines') l where not (l ->> 'from_bank')::boolean) = 2, 'from_bank jamais nul';
 end $$;
 reset role;
 

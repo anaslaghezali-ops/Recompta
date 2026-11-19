@@ -96,7 +96,7 @@ begin
         'tva', l -> 'tva',
         'm_ttc', l -> 'm_ttc',
         'taux', l -> 'taux',
-        'from_bank', (l ->> '_from_bank') = 'true'
+        'from_bank', coalesce((l ->> '_from_bank') = 'true', false)
       ))
       from public.dossier_workspaces w
       join public.client_dossiers d on d.id = w.dossier_id
