@@ -1,3 +1,16 @@
+import { getSession, SUPABASE_ANON_KEY } from "./auth-client.js?v=auth10";
+
+async function requireApiAuthorization() {
+  const session = await getSession();
+  if (!session?.access_token) {
+    throw new Error("Votre session a expiré. Reconnectez-vous puis réessayez.");
+  }
+  return {
+    Authorization: `Bearer ${session.access_token}`,
+    apikey: SUPABASE_ANON_KEY,
+  };
+}
+
 const STORAGE_KEY = "recompta_api_url";
 
 export function getApiUrl() {
@@ -83,9 +96,9 @@ async function errorFromResponse(response) {
   } catch {
     detail = "";
   }
-  if (response.status === 302 || response.status === 401 || response.status === 403) {
-    return new Error(PORT_ACCESS_HINT);
-  }
+  if (response.status === 302) return new Error(PORT_ACCESS_HINT);
+  if (response.status === 401) return new Error("Votre session a expiré. Reconnectez-vous puis réessayez.");
+  if (response.status === 403) return new Error("Vous n'avez pas les droits nécessaires pour cette opération.");
   return new Error(detail || `Erreur serveur (${response.status})`);
 }
 
@@ -136,6 +149,7 @@ async function extractBatch(batch, apiUrl, normalizedIce) {
     `${apiUrl}/api/extract`,
     {
       method: "POST",
+      headers: await requireApiAuthorization(),
       body: formData,
     },
     2,
@@ -230,6 +244,7 @@ export async function parseBankStatementViaServer(file, apiUrl) {
     `${apiUrl}/api/import-bank-statement`,
     {
       method: "POST",
+      headers: await requireApiAuthorization(),
       body: formData,
     },
     2,
@@ -240,15 +255,10 @@ export async function parseBankStatementViaServer(file, apiUrl) {
   return response.json();
 }
 
-export async function kickImportJobWorker(apiUrl, { limit = 1 } = {}) {
-  if (!apiUrl) return null;
-  const response = await fetchOrExplain(
-    `${apiUrl.replace(/\/$/, "")}/api/import-jobs/process?limit=${limit}`,
-    { method: "POST" },
-    { attempts: 2, timeoutMs: WORKER_KICK_TIMEOUT_MS },
-  );
-  if (!response.ok) throw await errorFromResponse(response);
-  return response.json();
+export async function kickImportJobWorker() {
+  // Le worker de fond traite la file automatiquement. Aucun membre ne doit
+  // pouvoir déclencher manuellement un traitement global avec Service Role.
+  return null;
 }
 
 export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
@@ -270,10 +280,11 @@ export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
       };
     }
 
-    await kickImportJobWorker(apiUrl, { limit });
+    // Le worker de fond est démarré au lancement du backend ; les uploads
+    // le réveillent également. Ne pas exposer le déclenchement global aux membres.
     return {
       ok: true,
-      message: "Traitement lancé sur le serveur.",
+      message: "Worker actif : les imports sont traités automatiquement.",
       pollSeconds: health.import_worker_poll_seconds,
     };
   } catch (error) {
@@ -285,12 +296,13 @@ export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
   }
 }
 
-export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
+export async function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
   const base = (apiUrl || "").replace(/\/$/, "");
   if (!base || !jobId || !file) {
     return Promise.reject(new Error("Paramètres d'envoi invalides."));
   }
 
+  const authorization = await requireApiAuthorization();
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const formData = new FormData();
@@ -330,6 +342,8 @@ export function uploadImportJobFile(apiUrl, jobId, file, { onProgress } = {}) {
     xhr.addEventListener("abort", () => reject(new Error("Envoi annulé.")));
 
     xhr.open("POST", `${base}/api/import-jobs/${jobId}/upload`);
+    xhr.setRequestHeader("Authorization", authorization.Authorization);
+    xhr.setRequestHeader("apikey", authorization.apikey);
     xhr.send(formData);
   });
 }
@@ -342,7 +356,7 @@ export async function startDossierAnalysis(apiUrl, dossierId, { docType = "invoi
   }
   const response = await fetchOrExplain(
     `${apiUrl.replace(/\/$/, "")}/api/dossiers/${dossierId}/analyze?${params}`,
-    { method: "POST" },
+    { method: "POST", headers: await requireApiAuthorization() },
     { attempts: 2, timeoutMs: ANALYSIS_QUEUE_TIMEOUT_MS },
   );
   if (!response.ok) throw await errorFromResponse(response);
