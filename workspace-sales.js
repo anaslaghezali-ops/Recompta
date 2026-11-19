@@ -1,4 +1,4 @@
-/**
+import { measurePerformance } from "./performance-metrics.js?v=perf1";\n/**
  * Onglet « Ventes » de l'espace client (cabinet) — phases 4 et 5.
  *  - TVA collectée du mois selon le régime du client (encaissement / débit),
  *    détail exportable ;
@@ -51,7 +51,7 @@ export function createWorkspaceSales({ mountEl, getContext, toast }) {
     state.loading = true;
     render();
     try {
-      const [client, sales, payments, detail, ws] = await Promise.all([
+      const [client, sales, payments, detail, ws] = await measurePerformance("sales.load", () => Promise.all([
         db().from("cabinet_clients").select("vat_regime").eq("id", clientId).maybeSingle(),
         db().from("sales_invoices").select("*").eq("issuer_client_id", clientId),
         db().from("invoice_payments").select("*").eq("issuer_client_id", clientId).order("paid_on"),
