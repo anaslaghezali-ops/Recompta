@@ -81,6 +81,8 @@ app.add_middleware(
 _KEY_CHECK_TTL = 60.0
 _key_check_cache: dict[str, float | bool | str] = {"at": 0.0, "verified": False, "message": ""}
 _worker_task: asyncio.Task | None = None
+MAX_EXTRACT_REQUEST_FILES = 20
+MAX_EXTRACT_REQUEST_BYTES = 100 * 1024 * 1024
 
 
 async def read_upload_limited(upload: UploadFile, *, max_bytes: int) -> bytes:
@@ -235,7 +237,10 @@ async def extract_files(
 ) -> list[ExtractionResult]:
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
+    if len(files) > MAX_EXTRACT_REQUEST_FILES:
+        raise HTTPException(status_code=413, detail=f"Maximum {MAX_EXTRACT_REQUEST_FILES} fichiers par requête.")
 
+    total_upload_bytes = 0
     results: list[ExtractionResult] = []
     pending: list[tuple[str, bytes, str, str]] = []
     token = activate_client_ice_exclusions(client_ice)
@@ -244,6 +249,9 @@ async def extract_files(
             upload_name = upload.filename or "inconnu"
             mime_type = upload.content_type or "application/octet-stream"
             content = await read_upload_limited(upload, max_bytes=upload_limit(upload_name, mime_type))
+            total_upload_bytes += len(content)
+            if total_upload_bytes > MAX_EXTRACT_REQUEST_BYTES:
+                raise HTTPException(status_code=413, detail="Lot trop volumineux (maximum 100 Mio par requête).")
             original_name, source_id = split_source_tag(upload_name)
             try:
                 invoice_files = iter_invoice_files(original_name, content, mime_type)
