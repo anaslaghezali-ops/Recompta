@@ -1,4 +1,5 @@
-import { measurePerformance } from "./performance-metrics.js?v=perf1";\n/**
+import { measurePerformance } from "./performance-metrics.js?v=perf1";
+/**
  * Onglet « Ventes » de l'espace client (cabinet) — phases 4 et 5.
  *  - TVA collectée du mois selon le régime du client (encaissement / débit),
  *    détail exportable ;
@@ -57,7 +58,7 @@ export function createWorkspaceSales({ mountEl, getContext, toast }) {
         db().from("invoice_payments").select("*").eq("issuer_client_id", clientId).order("paid_on"),
         db().rpc("sales_collected_detail", { p_client_id: clientId, p_year: p.period_year, p_month: p.period_month }),
         loadDossierWorkspace(selectedDossierId).catch(() => ({ bank_transactions: [] })),
-      ]);
+      ]), { queryCount: 5 });
       fail(client.error); fail(sales.error); fail(payments.error); fail(detail.error);
       Object.assign(state, {
         regime: client.data?.vat_regime || "encaissement",
