@@ -9,7 +9,7 @@
  */
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import { getSupabase } from "./auth-client.js?v=auth10";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist6";
 import { collectedByRate, collectedCsv, matchSalesReceipts, paymentRows } from "./bank-sales-match.js?v=bsm1";
 
 const esc = (v) => escapeHtml(v ?? "");
