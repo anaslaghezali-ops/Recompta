@@ -26,7 +26,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=persist6";
 import {
   findDocumentForLine,
   fetchDossierDocumentBytes,
