@@ -406,3 +406,19 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Déploiement applicatif : aucun ; la correction est côté base Supabase et prend effet à l'appel suivant de la fonction.
 - Retour arrière : restaurer la définition antérieure de `sales_public_document(text)` via une migration corrective dédiée, après décision explicite.
 - État : correction appliquée et vérifiée sur Supabase ; fichier versionné sur `main2-chatgpt) ; non fusionnée vers `main2), aucun déploiement applicatif.
+
+
+### 2026-11-19 — Fiabilisation du saver différé des espaces dossier
+
+- Branche : `main2-chatgpt` uniquement.
+- Correction de `createDebouncedSaver` dans `dossier-persistence.js` :
+  - les écritures différées sont désormais sérialisées ; un seul appel à la fonction de sauvegarde peut être actif à la fois ;
+  - les modifications reçues pendant une écriture sont regroupées et le dernier état en attente est traité ensuite ;
+  - après un échec, le dernier payload non remplacé reste en attente et peut être retenté avec `flush()` ;
+  - `cancel()` vide l'attente et empêche la remise en file d'un payload annulé si l'écriture active échoue ;
+  - les valeurs falsy autres que `null` peuvent être sauvegardées.
+- Test ajouté : `test-debounced-saver.mjs` (coalescence, séquentialité, reprise après erreur, remplacement par une valeur falsy, annulation).
+- Cache navigateur : version du module passée de `persist5` à `persist6` dans `app.js`, `workspace-review.js` et `workspace-sales.js`.
+- Aucun changement de logique métier, aucune modification Supabase ou donnée métier.
+- `production.html` non modifié. `main2` et `main3-chatgpt` non modifiées. Aucun merge ni déploiement.
+- Validation automatisée : le test JS ciblé est intégré au workflow `.github/workflows/tests.yml`, qui exécute les fichiers `test-*.mjs` sur la PR ; résultat CI à confirmer après les commits.
