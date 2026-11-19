@@ -72,15 +72,40 @@ async def json_errors_with_cors(request: Request, call_next):
         )
 
 
-# allow_credentials doit rester False avec allow_origins="*" (spec CORS).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+# Origines autorisées à appeler l'API depuis un navigateur.
+# Le site servi par ce serveur (backend/static/) est sur la même origine : pas de CORS.
+DEFAULT_CORS_ORIGINS = ("https://anaslaghezali-ops.github.io",)
+# Développement local (tout port) et Codespaces (adresse qui change).
+DEFAULT_CORS_ORIGIN_REGEX = (
+    r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+    r"|https://[a-z0-9-]+\.app\.github\.dev"
 )
+
+
+def cors_settings(env: dict[str, str] | None = None) -> dict:
+    """Paramètres CORSMiddleware calculés depuis l'environnement.
+
+    CORS_ALLOWED_ORIGINS : origines en plus, séparées par des virgules (ex. le futur VPS).
+    CORS_ALLOWED_ORIGINS=* : toutes les origines (ancien comportement, secours).
+    allow_credentials reste False (obligatoire avec "*"; l'API utilise un jeton Bearer).
+    """
+    source = os.environ if env is None else env
+    extra = [o.strip().rstrip("/") for o in source.get("CORS_ALLOWED_ORIGINS", "").split(",")]
+    extra = [o for o in extra if o]
+    common = {
+        "allow_credentials": False,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+        "expose_headers": ["Content-Disposition"],
+    }
+    if "*" in extra:
+        return {"allow_origins": ["*"], **common}
+    origins = list(DEFAULT_CORS_ORIGINS)
+    origins += [o for o in extra if o not in origins]
+    return {"allow_origins": origins, "allow_origin_regex": DEFAULT_CORS_ORIGIN_REGEX, **common}
+
+
+app.add_middleware(CORSMiddleware, **cors_settings())
 
 
 # La vérification de clé est un aller-retour réseau vers OpenAI, appelé avant
