@@ -77,7 +77,7 @@ def test_authentication_checks_supabase_user_endpoint() -> None:
                 "authorization": "Bearer valid-user-token",
                 "apikey": "public-project-key",
             }))
-        assert result == {"id": "user-123", "access_token": "valid-user-token"}
+        assert result == {"id": "user-123", "access_token": "valid-user-token", "portal_client_id": None}
         assert fake.calls[0]["url"].endswith("/auth/v1/user")
         assert fake.calls[0]["headers"]["apikey"] == "public-project-key"
         assert fake.calls[0]["headers"]["Authorization"] == "Bearer valid-user-token"
@@ -119,12 +119,33 @@ def test_import_job_lookup_returns_rls_visible_dossier() -> None:
     asyncio.run(run())
 
 
+def test_portal_user_is_refused_on_cabinet_routes() -> None:
+    async def run():
+        fake = FakeAsyncClient(FakeResponse({"id": "client-1", "app_metadata": {"portal_client_id": 77}}))
+        with patch.object(request_auth.httpx, "AsyncClient", return_value=fake):
+            user = await request_auth.authenticate_request(make_request({
+                "authorization": "Bearer portal-token",
+                "apikey": "public-project-key",
+            }))
+        assert user["portal_client_id"] == 77
+        try:
+            request_auth.require_cabinet_user(user)
+        except HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("Un compte du portail a eu accès à une route du cabinet")
+        # Un membre du cabinet (sans marque portail) passe.
+        request_auth.require_cabinet_user({"id": "u", "access_token": "t", "portal_client_id": None})
+    asyncio.run(run())
+
+
 def main() -> None:
     test_authentication_requires_bearer_token()
     test_authentication_checks_supabase_user_endpoint()
     test_dossier_access_uses_user_jwt_and_rls()
     test_inaccessible_dossier_is_not_found()
     test_import_job_lookup_returns_rls_visible_dossier()
+    test_portal_user_is_refused_on_cabinet_routes()
     print("OK test_request_auth")
 
 

@@ -58,7 +58,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 | S2 | ZIP bornés (taille, nombre, chemins, bombes) | Autre | ✅ 19/11 | |
 | S3 | Garde des lignes de facture (déplacement) + droits SQL réduits | Autre | ✅ 19/11 | 4 migrations appliquées en production. |
 | S4 | CI Postgres 17 sur `main2`, versions de cache, progression ZIP | Claude | ✅ 19/11 | |
-| S5 | Le client du portail peut lancer l'analyse IA de son dossier (crédits du cabinet) | Dev | ⬜ | Restreindre `/api/dossiers/{id}/analyze` aux membres du cabinet. |
+| S5 | Le client du portail peut lancer l'analyse IA de son dossier (crédits du cabinet) | Claude | ✅ 19/11 | Comptes portail refusés (403) sur analyse, import, extraction et relevé. Actif après relance du serveur (A1). |
 | S6 | Échappement HTML systématique (~70 insertions non échappées) | Dev | ⬜ | Un seul `escapeHtml` partagé. |
 | S7 | CORS : n'autoriser que les adresses de Recompta | Dev | ⬜ | Aujourd'hui toutes les origines. |
 | S8 | Contrôle d'intégrité (SRI) des bibliothèques chargées depuis unpkg / jsdelivr | Dev | ⬜ | |
@@ -97,6 +97,7 @@ Qui : **Anas** · **Claude** · **Autre** (autre discussion) · **Dev** (n'impor
 ## Journal
 
 ### 19/11/2026
+- Serveur : routes d'analyse, d'import, d'extraction et de relevé réservées aux comptes du cabinet (S5).
 - Liens publics des ventes : document annulé ou devis refusé de nouveau visible avec sa mention (décision d'Anas, migration appliquée) (A4).
 - Migration `billing_allow_draft_delete` appliquée en production avec l'accord d'Anas ; vérifiée (brouillon supprimable, facture émise et ses lignes protégées) (A3).
 - Sécurité de `main2-chatgpt` relue, corrigée et fusionnée dans `main2` (S1–S4).

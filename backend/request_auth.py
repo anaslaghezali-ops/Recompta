@@ -44,7 +44,24 @@ async def authenticate_request(request: Request) -> dict[str, Any]:
     user = response.json()
     if not user.get("id"):
         raise HTTPException(status_code=401, detail="Session invalide.")
-    return {"id": str(user["id"]), "access_token": access_token.strip()}
+    app_metadata = user.get("app_metadata") or {}
+    return {
+        "id": str(user["id"]),
+        "access_token": access_token.strip(),
+        # Posé uniquement par l'Edge Function client-portal (non modifiable par
+        # l'utilisateur) : présent = compte d'un client du portail, pas du cabinet.
+        "portal_client_id": app_metadata.get("portal_client_id"),
+    }
+
+
+def require_cabinet_user(user: dict[str, Any]) -> None:
+    """Refuse les comptes du portail client sur les routes réservées au cabinet.
+
+    Un client du portail peut lire son propre dossier (RLS client_dossiers), mais
+    l'analyse IA consomme les crédits du cabinet et les imports relèvent du cabinet.
+    """
+    if user.get("portal_client_id"):
+        raise HTTPException(status_code=403, detail="Action réservée au cabinet.")
 
 
 async def require_dossier_access(dossier_id: int, access_token: str, api_key: str) -> None:

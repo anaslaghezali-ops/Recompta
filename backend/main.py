@@ -27,7 +27,12 @@ from import_job_worker import (
     process_pending_import_jobs,
     wait_for_job_finished,
 )
-from request_auth import authenticate_request, require_dossier_access, require_import_job_access
+from request_auth import (
+    authenticate_request,
+    require_cabinet_user,
+    require_dossier_access,
+    require_import_job_access,
+)
 from invoice_extractor import extract_invoice
 from models import ExportRequest, ExtractionResult
 from normalize_results import (
@@ -235,7 +240,7 @@ async def extract_files(
     files: Annotated[list[UploadFile], File(...)],
     client_ice: Annotated[str, Form()] = "",
 ) -> list[ExtractionResult]:
-    await authenticate_request(request)
+    require_cabinet_user(await authenticate_request(request))
     if not files:
         raise HTTPException(status_code=400, detail="Aucun fichier fourni")
     if len(files) > MAX_EXTRACT_REQUEST_FILES:
@@ -321,7 +326,7 @@ async def import_bank_statement(
     request: Request,
     file: Annotated[UploadFile, File(...)],
 ) -> BankStatementResult:
-    await authenticate_request(request)
+    require_cabinet_user(await authenticate_request(request))
     upload_name = file.filename or "releve_bancaire"
     mime_type = file.content_type or "application/octet-stream"
     content = await read_upload_limited(file, max_bytes=MAX_SINGLE_FILE_BYTES)
@@ -342,6 +347,7 @@ async def upload_import_job_file(
         )
 
     user = await authenticate_request(request)
+    require_cabinet_user(user)
     visible_job = await require_import_job_access(job_id, user["access_token"], request.headers.get("apikey", ""))
     filename = file.filename or "document"
     mime_type = file.content_type or "application/octet-stream"
@@ -389,6 +395,7 @@ async def analyze_dossier_documents(
             detail="Worker inactif : ajoutez SUPABASE_SERVICE_ROLE_KEY dans backend/.env.",
         )
     user = await authenticate_request(request)
+    require_cabinet_user(user)
     await require_dossier_access(dossier_id, user["access_token"], request.headers.get("apikey", ""))
     if doc_type not in {"invoice", "bank"}:
         raise HTTPException(status_code=400, detail="doc_type doit être invoice ou bank.")
