@@ -470,3 +470,11 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Décision d'Anas (19/11, 02:28) : afficher « Annulée » / « Refusé » plutôt que « lien plus valide ».
 - Migration `20261119022935_public_sales_document_show_cancelled` appliquée : retour au filtre `status <> 'draft'` (brouillons toujours exclus, jeton ≥ 40 caractères, droits inchangés).
 - Test SQL ajouté (`test_sales_phase2.sql`) : un document annulé reste lisible par son lien avec `status = 'cancelled'`.
+
+
+### 2026-11-19 — Routes du serveur réservées au cabinet (S5)
+
+- Constat : `require_dossier_access` lit `client_dossiers`, visible aussi par le client du portail pour son dossier ; il pouvait lancer l'analyse IA (crédits du cabinet).
+- Correction (`backend/request_auth.py`, `backend/main.py`) : `authenticate_request` lit `app_metadata.portal_client_id` (posé uniquement par l'Edge Function `client-portal`, non modifiable par l'utilisateur) ; `require_cabinet_user` renvoie 403 sur `/api/dossiers/{id}/analyze`, `/api/import-jobs/{id}/upload`, `/api/extract`, `/api/import-bank-statement`.
+- Vérifié en base (lecture seule) : 1 accès portail, marqué ; aucun membre de cabinet marqué. Le front du portail n'appelle pas ces routes.
+- Test : `test_request_auth.py` (compte portail refusé, membre accepté). Aucun changement Supabase.
