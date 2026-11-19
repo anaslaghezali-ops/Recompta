@@ -255,15 +255,10 @@ export async function parseBankStatementViaServer(file, apiUrl) {
   return response.json();
 }
 
-export async function kickImportJobWorker(apiUrl, { limit = 1 } = {}) {
-  if (!apiUrl) return null;
-  const response = await fetchOrExplain(
-    `${apiUrl.replace(/\/$/, "")}/api/import-jobs/process?limit=${limit}`,
-    { method: "POST", headers: await requireApiAuthorization() },
-    { attempts: 2, timeoutMs: WORKER_KICK_TIMEOUT_MS },
-  );
-  if (!response.ok) throw await errorFromResponse(response);
-  return response.json();
+export async function kickImportJobWorker() {
+  // Le worker de fond traite la file automatiquement. Aucun membre ne doit
+  // pouvoir déclencher manuellement un traitement global avec Service Role.
+  return null;
 }
 
 export async function ensureImportWorkerRunning(apiUrl, { limit = 2 } = {}) {
