@@ -386,6 +386,27 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Tests dynamiques inter-utilisateurs/cabinets : non exécutés, car aucun contexte de session utilisateur isolé n'a été utilisé. L'audit repose sur les définitions SQL, ACL effectives, contraintes et helpers.
 - Aucune migration, aucun déploiement, aucun merge. `main2`, `main3-chatgpt` et `production.html` non modifiés.
 
+
+### 2026-11-19 — Blocage des liens publics des factures de vente annulées
+
+- Type : correction Supabase + migration versionnée et journalisation GitHub.
+- Branche GitHub : `main2-chatgpt` uniquement ; aucune modification de `main2` ou `main3-chatgpt`.
+- Projet Supabase : `pbyoxfxngfutoiqjirkx`.
+- Constat confirmé avant correction : `public.sales_public_document(text)` recherchait un document avec `status <> 'draft'`. Un document `cancelled` ou `voided` conservant son `share_token` pouvait donc rester accessible par son lien public.
+- Correction appliquée : la fonction ne retourne désormais un document que si `issuer_client_id IS NOT NULL` et `status = 'issued'`.
+- Portée fonctionnelle : les factures et avoirs encore émis (`issued`) restent consultables ; les documents annulés (`cancelled`) ou invalidés (`voided`) ne sont plus retournés. Les brouillons restent exclus.
+- Contrôles conservés : jeton obligatoire d'au moins 40 caractères, `SECURITY DEFINER`, `search_path` vide, même structure JSON retournée, ACL inchangées.
+- Migration Supabase appliquée : `20261119014508_restrict_public_sales_document_to_issued_status`.
+- Fichier de migration : `supabase/migrations/20261119014508_restrict_public_sales_document_to_issued_status.sql`.
+- Commit du fichier de migration : `bdf60f6036c90c96f0fa3305e8c7afcd2777b854`.
+- Vérification post-migration : `pg_get_functiondef` confirme le filtre `status = 'issued'` ; Supabase confirme la migration `20261119014508) enregistrée ; `anon` et `authenticated` conservent `EXECUTE` sur cette fonction publique, sans changement de droits.
+- Données métier : aucune facture, aucun avoir, aucun jeton, aucun paiement ni aucune ligne n'a été modifié.
+- Tests : vérification SQL de la définition déployée, de la migration enregistrée et des droits d'exécution. Aucun appel public dynamique avec des jetons réels n'a été réalisé afin de ne pas exposer de données métier.
+- Limites : le test de comportement sur des documents de chaque statut reste à effectuer dans un environnement de test isolé ; aucun document existant n'a été modifié.
+- Déploiement applicatif : aucun ; la correction est côté base Supabase et prend effet à l'appel suivant de la fonction.
+- Retour arrière : restaurer la définition antérieure de `sales_public_document(text)` via une migration corrective dédiée, après décision explicite.
+- État : correction appliquée et vérifiée sur Supabase ; fichier versionné sur `main2-chatgpt) ; non fusionnée vers `main2), aucun déploiement applicatif.
+
 ### 2026-11-19 — Revue indépendante (Claude) et corrections sur `cursor/revue-securite`
 
 - Branche : `cursor/revue-securite`, partie de `main2-chatgpt` (eb8dbf8). `main2-chatgpt` et `main2` non modifiées.
