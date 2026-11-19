@@ -1,3 +1,4 @@
+import { measurePerformance } from "./performance-metrics.js?v=perf2";
 /**
  * Onglet « Ventes » de l'espace client (cabinet) — phases 4 et 5.
  *  - TVA collectée du mois selon le régime du client (encaissement / débit),
@@ -9,7 +10,7 @@
  */
 import { escapeHtml, initLucide } from "./dashboard-ui.js?v=bill1";
 import { getSupabase } from "./auth-client.js?v=auth10";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf2";
 import { collectedByRate, collectedCsv, matchSalesReceipts, paymentRows } from "./bank-sales-match.js?v=bsm1";
 
 const esc = (v) => escapeHtml(v ?? "");
@@ -51,13 +52,13 @@ export function createWorkspaceSales({ mountEl, getContext, toast }) {
     state.loading = true;
     render();
     try {
-      const [client, sales, payments, detail, ws] = await Promise.all([
+      const [client, sales, payments, detail, ws] = await measurePerformance("sales.load", () => Promise.all([
         db().from("cabinet_clients").select("vat_regime").eq("id", clientId).maybeSingle(),
         db().from("sales_invoices").select("*").eq("issuer_client_id", clientId),
         db().from("invoice_payments").select("*").eq("issuer_client_id", clientId).order("paid_on"),
         db().rpc("sales_collected_detail", { p_client_id: clientId, p_year: p.period_year, p_month: p.period_month }),
         loadDossierWorkspace(selectedDossierId).catch(() => ({ bank_transactions: [] })),
-      ]);
+      ]), { queryCount: 5 });
       fail(client.error); fail(sales.error); fail(payments.error); fail(detail.error);
       Object.assign(state, {
         regime: client.data?.vat_regime || "encaissement",

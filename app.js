@@ -1,3 +1,4 @@
+import { measurePerformance, measureSyncPerformance } from "./performance-metrics.js?v=perf2";
 import {
   applyFieldValueBulk,
   applySupplierFieldValueBulk,
@@ -65,7 +66,7 @@ import {
   logDossierActivity,
   markDossierExported,
   saveDossierWorkspace,
-} from "./dossier-persistence.js?v=persist5";
+} from "./dossier-persistence.js?v=perf2";
 
 // Lignes et relevé repris du dossier par cette page (fusion des imports
 // serveur concurrents, voir dossier-persistence.js).
@@ -106,7 +107,7 @@ async function persistWorkspaceNow(eventType, summary, meta = {}) {
   const dossierId = dossierState.context.dossierId;
   setSaveStatus("Enregistrement…");
   try {
-    const saved = await saveDossierWorkspace(dossierId, getWorkspacePayload());
+    const saved = await measurePerformance("dossier.save", () => saveDossierWorkspace(dossierId, getWorkspacePayload()), { lineCount: state.lines.length, bankCount: state.bankTransactions.length });
     if (saved?.added || saved?.bankChanged) {
       // Données importées par le serveur pendant que la page était ouverte.
       if (saved.added) state.lines = saved.lines;
@@ -159,10 +160,10 @@ async function loadPersistedWorkspace() {
   setSaveStatus("Chargement du dossier…");
   try {
     workspaceTracker = createWorkspaceTracker();
-    const data = await loadDossierWorkspace(dossierState.context.dossierId, {
+    const data = await measurePerformance("dossier.load", () => loadDossierWorkspace(dossierState.context.dossierId, {
       tracker: workspaceTracker,
       adoptBank: true,
-    });
+    }));
     state.lines = data.lines || [];
     state.bankTransactions = data.bank_transactions || [];
     state.bankMeta = { ...state.bankMeta, ...(data.bank_meta || {}) };
@@ -540,6 +541,7 @@ function lineNeedsReviewRow(line, isDuplicate) {
 }
 
 function renderTable() {
+    return measureSyncPerformance("app.review.render", () => {
   refreshAllFieldConfidence();
   els.linesTableBody.innerHTML = "";
   const duplicates = new Set(findDuplicateLineIndexes(state.lines));
@@ -695,7 +697,9 @@ function renderTable() {
 
     els.linesTableBody.appendChild(tr);
   });
-}
+
+    });
+  }
 
 function addFiles(fileList) {
   const incoming = Array.from(fileList);

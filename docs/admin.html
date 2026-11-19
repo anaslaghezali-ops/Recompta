@@ -15,6 +15,7 @@
       </a>
       <nav aria-label="Navigation">
         <button type="button" id="settingsBtn">Paramètres</button>
+        <button type="button" id="perfExportBtn" title="Durées mesurées dans ce navigateur (aucune donnée comptable)">Exporter les mesures</button>
         <a href="index.html">Site public</a>
         <button type="button" id="signOutBtn">Déconnexion</button>
       </nav>
@@ -105,6 +106,7 @@
 
   <script type="module">
     import { signOut } from "./auth-client.js?v=auth10";
+    import { downloadPerformanceSnapshot } from "./performance-metrics.js?v=perf2";
     import {
       createCabinetWithOwner,
       generatePassword,
@@ -764,6 +766,11 @@
       state.filter = btn.dataset.filter;
       document.querySelectorAll("#filters button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
       renderList();
+    });
+
+    $("perfExportBtn").addEventListener("click", () => {
+      const count = downloadPerformanceSnapshot();
+      if (!count) window.alert("Aucune mesure dans ce navigateur. Utilisez d'abord l'espace client, puis revenez ici.");
     });
 
     $("signOutBtn").addEventListener("click", async () => {

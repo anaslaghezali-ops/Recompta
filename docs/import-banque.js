@@ -10,7 +10,7 @@ import {
   saveBankAlias,
 } from "./bank-match-client.js";
 import { getApiUrl, saveApiUrl, fetchServerHealth, ensureImportWorkerRunning, parseBankStatementViaServer } from "./api-client.js?v=sec1";
-import { loadDossierWorkspace } from "./dossier-persistence.js?v=persist5";
+import { loadDossierWorkspace } from "./dossier-persistence.js?v=perf2";
 import {
   JOB_STATUS_LABELS,
   jobProgressPercent,
@@ -28,7 +28,7 @@ import {
   renderImportContextBar,
   shortFilename,
   workspaceBackHref,
-} from "./import-dossier.js?v=imp1";
+} from "./import-dossier.js?v=perf2";
 import { uploadDossierDocument } from "./dossier-documents.js?v=doc21";
 
 const els = {};

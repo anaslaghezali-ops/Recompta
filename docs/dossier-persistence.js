@@ -10,12 +10,38 @@ const DEFAULT_BANK_META = {
 export function createDebouncedSaver(fn, delayMs = 2000) {
   let timer = null;
   let pending = null;
+  let inFlight = null;
+  let generation = 0;
 
-  function run() {
-    if (!pending) return Promise.resolve();
+  async function run() {
+    // Une seule écriture à la fois. Les changements arrivés pendant l'écriture
+    // sont regroupés dans le dernier payload et traités juste après.
+    if (inFlight) {
+      await inFlight;
+      return run();
+    }
+    if (pending === null) return;
+
     const payload = pending;
+    const runGeneration = generation;
     pending = null;
-    return fn(payload);
+    const operation = Promise.resolve().then(() => fn(payload));
+    inFlight = operation;
+
+    try {
+      await operation;
+    } catch (error) {
+      // Garder le dernier état en échec pour qu'un flush ultérieur puisse
+      // le retenter. Un payload plus récent le remplace déjà.
+      if (generation === runGeneration && pending === null) {
+        pending = payload;
+      }
+      throw error;
+    } finally {
+      if (inFlight === operation) inFlight = null;
+    }
+
+    if (pending !== null) return run();
   }
 
   return {
@@ -23,16 +49,22 @@ export function createDebouncedSaver(fn, delayMs = 2000) {
       pending = payload;
       clearTimeout(timer);
       timer = setTimeout(() => {
+        timer = null;
         run().catch(() => {});
       }, delayMs);
     },
     flush() {
       clearTimeout(timer);
+      timer = null;
       return run();
     },
     cancel() {
       clearTimeout(timer);
+      timer = null;
       pending = null;
+      // Une écriture déjà commencée n'est pas annulable, mais son échec
+      // ne doit pas remettre en file un payload explicitement annulé.
+      generation += 1;
     },
   };
 }

@@ -407,6 +407,34 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Retour arrière : restaurer la définition antérieure de `sales_public_document(text)` via une migration corrective dédiée, après décision explicite.
 - État : correction appliquée et vérifiée sur Supabase ; fichier versionné sur `main2-chatgpt) ; non fusionnée vers `main2), aucun déploiement applicatif.
 
+
+### 2026-11-19 — Fiabilisation du saver différé des espaces dossier
+
+- Branche : `main2-chatgpt` uniquement.
+- Correction de `createDebouncedSaver` dans `dossier-persistence.js` :
+  - les écritures différées sont désormais sérialisées ; un seul appel à la fonction de sauvegarde peut être actif à la fois ;
+  - les modifications reçues pendant une écriture sont regroupées et le dernier état en attente est traité ensuite ;
+  - après un échec, le dernier payload non remplacé reste en attente et peut être retenté avec `flush()` ;
+  - `cancel()` vide l'attente et empêche la remise en file d'un payload annulé si l'écriture active échoue ;
+  - les valeurs falsy autres que `null` peuvent être sauvegardées.
+- Test ajouté : `test-debounced-saver.mjs` (coalescence, séquentialité, reprise après erreur, remplacement par une valeur falsy, annulation).
+- Cache navigateur : version du module passée de `persist5` à `persist6` dans `app.js`, `workspace-review.js` et `workspace-sales.js`.
+- Aucun changement de logique métier, aucune modification Supabase ou donnée métier.
+- `production.html` non modifié. `main2` et `main3-chatgpt` non modifiées. Aucun merge ni déploiement.
+- Validation automatisée : le test JS ciblé est intégré au workflow `.github/workflows/tests.yml`, qui exécute les fichiers `test-*.mjs` sur la PR ; résultat CI à confirmer après les commits.
+\n\n
+
+### 2026-11-19 — Première instrumentation locale des performances
+
+- Branche : `main2-chatgpt` uniquement.
+- Ajout de `performance-metrics.js` : mesures de durée en mémoire, limitées aux 200 derniers échantillons, sans requête réseau ni stockage persistant.
+- Accès manuel depuis la console du navigateur : `window.RecomptaPerf.snapshot()` pour lire les mesures et `window.RecomptaPerf.clear()` pour les effacer.
+- Données conservées : nom de l'opération, durée, horodatage, succès/échec et compteurs numériques explicitement autorisés. Les identifiants, montants, libellés et contenus de factures ne sont pas enregistrés.
+- Premiers points instrumentés : chargement/sauvegarde du dossier dans l'application, chargement/sauvegarde de la revue et chargement parallèle des ventes.
+- Test ajouté : `test-performance-metrics.mjs` (succès, erreur, filtrage des métadonnées, idempotence et effacement).
+- Cette étape met en place les mesures ; elle ne constitue pas encore une baseline. Les durées réelles devront être relevées sur des sessions représentatives avant toute optimisation.
+- Aucun changement Supabase, aucune donnée métier, aucun déploiement ni merge. `production.html` non modifié.
+
 ### 2026-11-19 — Revue indépendante (Claude) et corrections sur `cursor/revue-securite`
 
 - Branche : `cursor/revue-securite`, partie de `main2-chatgpt` (eb8dbf8). `main2-chatgpt` et `main2` non modifiées.
@@ -420,3 +448,12 @@ Pour Supabase : préparer une migration versionnée, la relire, obtenir l'accord
 - Défaut préexistant trouvé (présent avant ce chantier, non corrigé par la migration du 18/11) : supprimer un brouillon de facture contenant des lignes échoue avec « Facture émise… » (la facture est déjà supprimée quand la garde des lignes s'exécute en cascade). Migration préparée `20261119120000_billing_allow_draft_delete.sql`, testée en transaction annulée sur la production (brouillon supprimé ; facture émise, ses lignes et leur modification toujours refusées) et dans la suite SQL. **Non appliquée : accord d'Anas requis.**
 - Limite restante notée : `require_dossier_access` s'appuie sur la lecture de `client_dossiers`, que l'utilisateur du portail client peut lire pour son propre dossier ; il peut donc lancer l'analyse IA des documents non traités de son dossier (crédits du cabinet). Portée limitée à son dossier ; à restreindre aux membres du cabinet.
 - Retrait de la mémoire dans `/api/health` (choix de ce chantier) : la mesure reste visible dans le terminal du serveur.
+
+
+### 2026-11-19 — Mesures de performance : corrections et intégration (Claude, `cursor/mesures-perf`)
+
+- Partie de `main2-chatgpt` (d8e2052), puis fusion de `origin/main2` (vrai merge, conflit du journal résolu en gardant les deux historiques).
+- Erreurs de syntaxe corrigées (vérifiées par `node --check`) : `workspace-review.js` (mesure `review.save`, objet non fermé → l'onglet Revue ne se chargeait plus) et `app.js` (mesure `dossier.load`, parenthèse manquante → `production.html` ne se chargeait plus).
+- `performance-metrics.js` : mesures gardées dans `localStorage` (500 dernières, clé `recompta_perf_samples`), résumé médiane / pire cas, export JSON. Bouton « Exporter les mesures » dans `admin.html`. Toujours aucune requête réseau ni donnée métier.
+- Versions de cache `?v=perf2` sur les modules modifiés et toute la chaîne d'importeurs ; trois copies synchronisées (`performance-metrics.js` ajouté à `docs/` et `backend/static/`).
+- Contrôles : `node --check` sur tous les `.js` de la racine et tous les scripts module des pages ; résolution de tous les imports nommés (0 export manquant) ; tests JS et Python ; CI.
