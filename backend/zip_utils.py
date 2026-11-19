@@ -3,6 +3,7 @@ from __future__ import annotations
 import mimetypes
 import stat
 import zipfile
+import zlib
 from io import BytesIO
 from pathlib import PurePosixPath
 
@@ -102,6 +103,8 @@ def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
                     raise ValueError("Archive ZIP refusée : les liens symboliques ne sont pas acceptés.")
                 if info.flag_bits & 0x1:
                     raise ValueError("Archive ZIP refusée : les fichiers chiffrés ne sont pas acceptés.")
+                if info.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+                    raise ValueError("Archive ZIP refusée : méthode de compression non prise en charge.")
 
                 base = PurePosixPath(name).name
                 if not base or base.startswith(".") or base.startswith("._"):
@@ -120,17 +123,28 @@ def _extract_zip(content: bytes) -> list[tuple[str, bytes, str]]:
                 if info.compress_size > 0 and info.file_size / info.compress_size > MAX_ZIP_COMPRESSION_RATIO:
                     raise ValueError(f"Archive ZIP refusée : ratio de compression anormal pour « {base} ».")
 
-                total_uncompressed += info.file_size
-                if total_uncompressed > MAX_ZIP_TOTAL_BYTES:
-                    raise ValueError("Archive ZIP refusée : plus de 100 Mio de données décompressées.")
+                payload_chunks: list[bytes] = []
+                member_size = 0
+                with archive.open(info, "r") as member:
+                    while True:
+                        chunk = member.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        member_size += len(chunk)
+                        if member_size > MAX_ZIP_MEMBER_BYTES:
+                            raise ValueError(f"Archive ZIP refusée : « {base} » dépasse 25 Mio décompressés.")
+                        if total_uncompressed + member_size > MAX_ZIP_TOTAL_BYTES:
+                            raise ValueError("Archive ZIP refusée : plus de 100 Mio de données décompressées.")
+                        payload_chunks.append(chunk)
 
-                payload = archive.read(info)
-                if len(payload) != info.file_size:
+                if member_size != info.file_size:
                     raise ValueError(f"Archive ZIP corrompue : taille inattendue pour « {base} ».")
+                total_uncompressed += member_size
+                payload = b"".join(payload_chunks)
                 if len(payload) < MIN_FILE_BYTES:
                     continue
                 files.append((name, payload, mime_for_filename(name)))
-    except zipfile.BadZipFile as exc:
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError, EOFError, zlib.error) as exc:
         raise ValueError("Archive ZIP invalide ou endommagée.") from exc
 
     files.sort(key=lambda item: item[0].lower())
